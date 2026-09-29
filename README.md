@@ -130,8 +130,56 @@ Status of the project and planned work. Done items reflect the current build.
 - [ ] Undo / replay via per-move snapshots
 - [ ] Optional sound and haptic feedback on mobile
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
-- [ ] Deploy as a GitHub Pages site
+- [x] Deploy as a GitHub Pages site
+      (live at https://tiborh.github.io/jumping_squares/)
 - [ ] Score/history panel and simple match statistics
+
+### Future game modes / rule sets (design notes)
+
+The long-term vision is **one board, many selectable rule sets** — configurable
+options that turn the same grid into different games. Captured here as design
+notes before implementation; nothing below is built yet.
+
+**1. Starting conditions (how the board begins).** Selectable option:
+
+- **Start with 1** — every square begins with one point (the classic
+  KJumpingCube convention).
+- **Start empty (0)** — the current default; squares begin neutral and empty.
+- **Initial-occupation phase** — when starting empty, an opening phase where
+  players take turns claiming squares one-by-one before normal play begins.
+  This is arguably the truest meaning of "starting from zero".
+- **Random allotment (Risk-like)** — instead of manual claiming, each player is
+  randomly allotted an initial set of squares/points, then normal play begins.
+
+**2. Point-adding mode (what a click does).** Selectable option:
+
+- **Adder mode (default)** — one click adds one point. Simple and
+  deterministic. This is "Jumping Squares".
+- **Die mode ("Jumping Dice")** — a click *rolls a die* for that square; the
+  rolled value is added (or set). Sub-rules to decide:
+  - *Zero result*: the click may roll a 0 — the square stays unoccupied. This
+    needs clear feedback that the click registered (e.g. the rolled value
+    flashes up somewhere easy to notice, then fades) so a "nothing happened"
+    click isn't mistaken for an unregistered tap.
+  - *Occupation rule*: (a) a click occupies only on a non-zero result, versus
+    (b) a click occupies regardless of the numeric result — and this can be
+    tied to the chosen starting value.
+  - *Overflow threshold ("splitting point")*: still position-dependent
+    (2 / 3 / 4 for corner / edge / interior), matching neighbour count.
+
+**3. Presentation follows mode.** The look adapts to the active rules:
+
+- In **die mode**, a square's dot layout mirrors the pips on a real die
+  (dice-face arrangement), reinforcing the casting metaphor.
+- In **adder mode**, the current pip rendering applies.
+
+**4. Distribution speed (settable).** How fast overflow/cascade resolves:
+
+- **Instantaneous** — resolve the whole cascade immediately (current
+  behaviour).
+- **Slow / stepped** — animate the cascade step-by-step. Better for learning
+  the rules and for clearer visual feedback. The engine already emits per-step
+  overflow events, so this is a rendering concern, not an engine change.
 
 Contributions and suggestions are welcome — see the license terms below.
 
