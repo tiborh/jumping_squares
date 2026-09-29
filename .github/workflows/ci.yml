@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2025 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Continuous integration: runs the dependency-free Node test harness on every
+# push and pull request. This is the "proof of correctness" gate — the rule
+# engine (js/game.js) must pass all assertions, including the version-wiring
+# check that catches cache-busting drift.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege: this job only needs to read the repo contents.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run rule verification harness
+        run: node test/game.test.js

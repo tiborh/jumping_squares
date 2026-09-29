@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2025 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Dependency Review: on pull requests, inspects any newly added/changed
+# dependencies for known vulnerabilities and license conflicts BEFORE they
+# merge. The project is currently dependency-free, so this is a guardrail for
+# the future — it stays quiet until a manifest (e.g. package.json) is added.
+
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Review dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail the PR if a dependency has a known vulnerability of this
+          # severity or higher.
+          fail-on-severity: moderate
+          # Flag copyleft-incompatible or otherwise disallowed licences.
+          # AGPL-3.0 is our project licence; adjust this list as needed.
+          comment-summary-in-pr: on-failure
