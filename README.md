@@ -13,6 +13,10 @@ Pure JavaScript, no build step, no dependencies — just open the HTML file.
 Iteration 1: a playable **5×5, two-human-player** game with a responsive
 board that fills the screen (works on desktop and mobile).
 
+> **Navigating this README:** it's a long document. On GitHub, use the
+> **outline menu** (the ☰ icon at the top-left of the rendered file) for an
+> always-up-to-date table of contents generated from the headings.
+
 ## How to play
 
 Open `index.html` in any modern browser (double-click it, or serve the folder).
