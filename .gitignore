@@ -1,0 +1,70 @@
+# .gitignore — Jumping Squares
+#
+# This project is intentionally text-only (HTML/CSS/JS + Markdown), with no
+# build step and no dependencies. The entries below keep OS/editor cruft and
+# any future tooling artefacts out of the repository.
+
+# --- OS-generated files ------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Editor / IDE ------------------------------------------------------------
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+.idea/
+.vscode/
+*.sublime-workspace
+*.sublime-project
+
+# --- Logs & debug output -----------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Node.js (only relevant if tooling/tests-with-deps are added later) ------
+node_modules/
+package-lock.json.bak
+.npm/
+.cache/
+coverage/
+
+# --- Environment / secrets (defensive; none expected in this project) --------
+.env
+.env.*
+*.local
+
+# --- Binary files ------------------------------------------------------------
+# The repo is text-only for now. Ignore common binary/media types by default so
+# nothing large sneaks in. When an images folder is added later, add a negated
+# exception INSIDE that folder to allow its assets, e.g. create images/.gitignore:
+#
+#     # images/.gitignore
+#     !*.png
+#     !*.svg
+#     !*.webp
+#
+# ...or un-ignore specific paths here with lines like:
+#     !images/**/*.png
+#
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.mp3
+*.wav
+*.ogg
+*.zip
+*.tar
+*.gz

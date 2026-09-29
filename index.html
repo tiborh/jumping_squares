@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: 2025 tiborh
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Jumping Squares</title>
+  <style>
+    :root {
+      /* Player colours. Extendable: add --p3, --p4 for more players. */
+      --p1: #e6484d;
+      --p2: #3d7bd6;
+      --empty: #2a2d34;
+      --grid-gap: 2px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      background: #16181d;
+      color: #e8e8ea;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      /* Use dynamic viewport height on mobile where available. */
+      height: 100dvh;
+    }
+
+    #topbar {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #1e2128;
+      border-bottom: 1px solid #2c2f38;
+    }
+
+    #turn {
+      font-weight: 600;
+      font-size: clamp(14px, 3.5vw, 20px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .turn-dot {
+      width: 1em;
+      height: 1em;
+      border-radius: 50%;
+      display: inline-block;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
+    }
+
+    #status {
+      font-size: clamp(12px, 3vw, 16px);
+      opacity: 0.85;
+    }
+
+    /* Small, low-contrast build tag pinned to the bottom-left corner. Visible
+       for cache checks (esp. on mobile where the tab title is hidden), but
+       deliberately understated and out of the way of the board. */
+    #build-tag {
+      position: fixed;
+      left: 6px;
+      bottom: 4px;
+      font-size: clamp(10px, 2.4vw, 12px);
+      opacity: 0.35;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      pointer-events: none; /* never intercept taps meant for the board */
+      z-index: 5;
+    }
+
+    button {
+      font: inherit;
+      color: #e8e8ea;
+      background: #2c313c;
+      border: 1px solid #3a4150;
+      border-radius: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    button:active { background: #3a4150; }
+
+    /* Board fills all remaining space and stays centred/square-ish. */
+    #board-wrap {
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      min-height: 0;
+    }
+
+    #board {
+      display: grid;
+      gap: var(--grid-gap);
+      background: #3a3f4b;
+      padding: var(--grid-gap);
+      border-radius: 10px;
+      /* Dimensions set inline by JS to a square that fits the wrap. */
+    }
+
+    .cell {
+      background: var(--empty);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: background-color 120ms ease, transform 80ms ease;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .cell.p1 { background: var(--p1); }
+    .cell.p2 { background: var(--p2); }
+    .cell.playable:hover { filter: brightness(1.12); }
+    .cell.bump { transform: scale(0.92); }
+
+    /* Pip layout: dots arranged to read like dice, scale with cell size. */
+    .pips {
+      width: 70%;
+      height: 70%;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 8%;
+      place-items: center;
+    }
+    .pip {
+      width: 42%;
+      height: 42%;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+    }
+    /* Show a numeric fallback when value is large (defensive; normally <=4). */
+    .count {
+      color: rgba(255,255,255,0.95);
+      font-weight: 700;
+      font-size: 40%;
+    }
+
+    #winner-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 10;
+    }
+    #winner-overlay.show { display: flex; }
+    #winner-overlay .msg {
+      font-size: clamp(22px, 7vw, 44px);
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topbar">
+      <div id="turn">
+        <span class="turn-dot" id="turn-dot"></span>
+        <span id="turn-label">Player 1</span>
+      </div>
+      <div id="status"></div>
+      <button id="new-game">New Game</button>
+    </div>
+    <div id="board-wrap">
+      <div id="board" role="grid" aria-label="Jumping Squares board"></div>
+    </div>
+  </div>
+
+  <span id="build-tag" title="Build version (helps confirm you're not on a cached build)"></span>
+
+  <div id="winner-overlay">
+    <div class="msg" id="winner-msg"></div>
+    <button id="play-again">Play Again</button>
+  </div>
+
+  <script src="js/game.js?v=5"></script>
+  <script src="js/ui.js?v=5"></script>
+</body>
+</html>
