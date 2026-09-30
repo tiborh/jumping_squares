@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v19 — "What's new" panel
+## v20 — "What's new" panel
 
 Player-facing:
 
@@ -45,8 +45,14 @@ Background:
   internal-only bumps are omitted, and each entry is a single player-facing
   line. Entries can be flagged **experimental** for early-test features that
   aren't complete yet. A test guards against the newest entry drifting past the
-  current `VERSION`. This file stays the fuller version, with the background and
-  lessons that are too wordy for the in-app panel or a commit message.
+  current `VERSION` (and now rejects malformed version strings outright, so a
+  typo like `19oops` can't slip through `parseInt`). This file stays the fuller
+  version, with the background and lessons that are too wordy for the in-app
+  panel or a commit message.
+- Accessibility refinements from review: keyboard focus indicators are a
+  visible ring (not a color-only shift), and while What's new is open the
+  About layer behind it is made `inert`/`aria-hidden` so there's only one
+  active modal for assistive tech — restored (with focus) on close.
 
 ## v18 — About dialog accessibility & tap-target fix
 

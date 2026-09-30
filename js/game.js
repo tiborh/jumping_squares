@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '19';
+  var VERSION = '20';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,7 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
-    { v: '19', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
+    { v: '20', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
     { v: '18', text: 'About/Settings dialogs handle keyboard focus; the corner build tag no longer overlaps the board.' },
     { v: '16', text: 'Click the small build tag (bottom-left corner) to open the About panel: description, source link, licence.' },
     { v: '15', text: 'Settings (\u2699): choose how a cascade spreads \u2014 Instant, timed (100\u20131000 ms), or manual \u203A Step with a preview.' },

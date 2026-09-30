@@ -101,13 +101,19 @@
       transition: opacity 120ms ease;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Subtle reveal on hover/focus so a curious pointer discovers it, without
+    /* Subtle reveal on hover so a curious pointer discovers it, without
        advertising itself the rest of the time. */
-    #build-tag:hover,
+    #build-tag:hover {
+      opacity: 0.85;
+      text-decoration: underline;
+    }
+    /* Keyboard focus gets a clearly visible ring (not opacity-only). */
     #build-tag:focus-visible {
       opacity: 0.85;
       text-decoration: underline;
-      outline: none;
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 3px;
     }
 
     button {
@@ -410,8 +416,14 @@
       cursor: pointer;
       text-decoration: underline;
     }
-    #whatsnew-open:hover,
-    #whatsnew-open:focus-visible { color: #c7e4ff; outline: none; }
+    #whatsnew-open:hover { color: #c7e4ff; }
+    /* Keep a clearly visible focus ring for keyboard users (not color-only). */
+    #whatsnew-open:focus-visible {
+      color: #c7e4ff;
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
 
     /* --- What's new overlay -------------------------------------------------
        A sub-dialog of About: a short, curated list of recent player-facing
@@ -607,7 +619,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=19"></script>
-  <script src="js/ui.js?v=19"></script>
+  <script src="js/game.js?v=20"></script>
+  <script src="js/ui.js?v=20"></script>
 </body>
 </html>

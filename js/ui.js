@@ -586,11 +586,24 @@
 
   function openWhatsNew() {
     whatsnewOverlay.classList.add('show');
+    // onOpen() must run first: it records the currently focused trigger (which
+    // lives inside the About card) and moves focus into the What's new dialog.
+    // Only then do we make the About layer inert — doing it earlier would pull
+    // focus off the trigger before it's recorded, breaking focus restoration.
     whatsnewFocus.onOpen();
+    // The About layer stays visually behind this sub-dialog, but must not be a
+    // second active modal for assistive tech.
+    aboutCard.setAttribute('inert', '');
+    aboutCard.setAttribute('aria-hidden', 'true');
   }
   function closeWhatsNew() {
     whatsnewOverlay.classList.remove('show');
-    whatsnewFocus.onClose();
+    // Re-enable the About layer BEFORE restoring focus — focus can't land on an
+    // element inside an inert subtree, and onClose() restores focus to the
+    // What's new trigger, which lives inside the About card.
+    aboutCard.removeAttribute('inert');
+    aboutCard.removeAttribute('aria-hidden');
+    whatsnewFocus.onClose(); // restores focus to the What's new trigger in About
   }
 
   whatsnewOpen.addEventListener('click', openWhatsNew);

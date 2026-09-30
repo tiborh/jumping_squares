@@ -403,14 +403,17 @@ console.log('changelog wiring');
   var cl = G.CHANGELOG;
   ok(Array.isArray(cl) && cl.length > 0, 'engine exports a non-empty CHANGELOG');
 
-  // Every entry is well-formed: a non-empty version string, a non-empty text,
-  // and (if present) a boolean experimental flag.
+  // Every entry is well-formed: a version that is a pure decimal build number,
+  // a non-empty text, and (if present) a boolean experimental flag. Requiring a
+  // strict /^\d+$/ version means a typo like "19oops" is rejected here rather
+  // than being silently coerced to 19 by parseInt in the checks below.
+  var DECIMAL = /^\d+$/;
   var wellFormed = cl.every(function (e) {
-    return e && typeof e.v === 'string' && e.v.length > 0 &&
+    return e && typeof e.v === 'string' && DECIMAL.test(e.v) &&
            typeof e.text === 'string' && e.text.length > 0 &&
            (e.experimental === undefined || typeof e.experimental === 'boolean');
   });
-  ok(wellFormed, 'every CHANGELOG entry has string v, string text, optional boolean experimental');
+  ok(wellFormed, 'every CHANGELOG entry has a decimal v, non-empty text, optional boolean experimental');
 
   // Entries are authored newest-first (non-increasing numeric version), so the
   // panel shows the most recent changes at the top.
