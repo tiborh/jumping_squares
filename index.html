@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  SPDX-FileCopyrightText: 2025 tiborh
+  SPDX-FileCopyrightText: 2025 - 2026 tiborh
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <html lang="en">
@@ -121,13 +121,19 @@
     }
     button:active { background: #3a4150; }
 
-    /* Board fills all remaining space and stays centred/square-ish. */
+    /* Board fills all remaining space and stays centred/square-ish.
+       The extra bottom padding reserves a strip for the fixed build tag
+       (bottom-left corner). sizeBoard() subtracts the wrap's actual computed
+       padding, so the board is sized within the true content box and can never
+       render a cell under the tag — the now-interactive tag can't steal taps
+       meant for the board, even on short/narrow viewports. */
     #board-wrap {
       flex: 1 1 auto;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 8px;
+      padding-bottom: 28px; /* 8px base + ~20px tag-safe strip */
       min-height: 0;
     }
 
@@ -466,7 +472,7 @@
       </div>
 
       <p class="about-license">
-        © 2025 tiborh. Free software under the
+        © 2025–2026 tiborh. Free software under the
         <a href="https://www.gnu.org/licenses/agpl-3.0.html"
            target="_blank" rel="noopener noreferrer">GNU AGPL-3.0-or-later</a>.
         An independent, from-scratch implementation inspired by the
@@ -475,7 +481,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=16"></script>
-  <script src="js/ui.js?v=16"></script>
+  <script src="js/game.js?v=18"></script>
+  <script src="js/ui.js?v=18"></script>
 </body>
 </html>
