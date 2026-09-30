@@ -59,13 +59,19 @@ for f in "$@"; do
       rest = substr($0, idx + length("SPDX-FileCopyrightText:"))
       while (substr(rest,1,1) == " " || substr(rest,1,1) == "\t") rest = substr(rest,2)
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
-        span = substr(rest, 1, RLENGTH)
+        span_len = RLENGTH
+        span = substr(rest, 1, span_len)
         if (match(span, /[0-9]{4}[ \t]*$/)) newest = substr(span, RSTART, 4)
       } else if (match(rest, /^[0-9]{4}/)) {
+        span_len = 4
         newest = substr(rest, 1, 4)
       } else {
         next
       }
+      # Only treat it as a real header if the holder ("tiborh") follows the year
+      # span — otherwise it is prose/code that merely mentions the marker.
+      holder = substr(rest, span_len + 1)
+      if (holder !~ /^[ \t]+tiborh([ \t].*)?$/) next
       if (newest != year) { bad = 1 }
     }
     END { exit (bad ? 1 : 0) }

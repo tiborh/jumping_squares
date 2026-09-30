@@ -34,9 +34,15 @@
         span_len = 4
       }
       holder = substr(rest, span_len + 1)
-      if (start == year) { newspan = start } else { newspan = start " - " year }
-      newline = head lead newspan holder
-      if (newline != line) { line = newline; changed = 1 }
+      # Only rewrite a GENUINE header: the year span must be followed by
+      # whitespace and the copyright holder ("tiborh"). This prevents rewriting
+      # prose or code that merely mentions the marker with a nearby number
+      # (e.g. documentation or this very rule) — only real headers change.
+      if (holder ~ /^[ \t]+tiborh([ \t].*)?$/) {
+        if (start == year) { newspan = start } else { newspan = start " - " year }
+        newline = head lead newspan holder
+        if (newline != line) { line = newline; changed = 1 }
+      }
     }
   }
   print line
