@@ -33,6 +33,7 @@
   var statusEl = document.getElementById('status');
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
+  var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
 
@@ -82,17 +83,37 @@
   }
 
   function render() {
+    // Compute the shadow preview for the next generation (step mode only).
+    var shadow = stepping.active ? nextStepShadow() : null;
+
     for (var i = 0; i < state.cells.length; i++) {
       var cell = state.cells[i];
       var el = cellEls[i];
-      el.classList.remove('p1', 'p2', 'p3', 'p4', 'playable');
+      el.classList.remove('p1', 'p2', 'p3', 'p4', 'playable',
+                          'shadow-next', 'shadow-p1', 'shadow-p2');
       if (cell.owner !== G.EMPTY) el.classList.add('p' + cell.owner);
       // Mark cells the current player can click (helps on touch screens).
-      if (state.winner === G.EMPTY &&
+      // Not while a manual cascade is being stepped.
+      if (!stepping.active && state.winner === G.EMPTY &&
           (cell.owner === G.EMPTY || cell.owner === state.current)) {
         el.classList.add('playable');
       }
+      // Shadow preview: cells the next step will change.
+      if (shadow && shadow.hasOwnProperty(i)) {
+        el.classList.add('shadow-next', 'shadow-p' + shadow[i]);
+      }
       el.innerHTML = pipMarkup(cell.value);
+    }
+
+    // Step button: visible while a manual cascade is in progress; enabled only
+    // when another generation remains.
+    if (stepBtn) {
+      if (stepping.active) {
+        stepBtn.hidden = false;
+        stepBtn.disabled = !G.hasOverflow(state);
+      } else {
+        stepBtn.hidden = true;
+      }
     }
 
     // Turn indicator.
@@ -115,7 +136,9 @@
   }
 
   // --- input ---------------------------------------------------------------
-  var busy = false;
+  var busy = false; // true while a cascade animation is playing (locks input)
+  var playToken = 0; // bumped by newGame() to invalidate in-flight animations
+
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
     var r = parseInt(this.dataset.r, 10);
@@ -127,12 +150,118 @@
     var self = this;
     setTimeout(function () { self.classList.remove('bump'); }, 90);
 
-    var ok = G.applyMove(state, state.current, r, c);
-    if (ok) render();
+    // Step mode: place the dot, then let the player advance the cascade one
+    // generation at a time with the > button (with a shadow preview).
+    if (settings.stepMode) {
+      startStepMode(r, c);
+      return;
+    }
+
+    playMoveAnimated(r, c, settings.delayMs);
+  }
+
+  // --- manual step mode ("> Step" slider endpoint) -------------------------
+  // stepping.active is true while a placed move is being resolved by hand.
+  // While active: input on the board is locked, the > button is shown, and the
+  // next generation is previewed as a shadow on the cells it will change.
+  var stepping = { active: false };
+
+  function startStepMode(r, c) {
+    if (!G.placeDot(state, state.current, r, c)) return;
+    if (!G.hasOverflow(state)) {
+      // No propagation: behave like a normal placement.
+      G.finalizeAfterCascade(state);
+      render();
+      return;
+    }
+    stepping.active = true;
+    busy = true; // lock board input; only the > button advances now
+    render();    // shows the placement + first shadow preview + active > button
+  }
+
+  function commitOneStep() {
+    if (!stepping.active) return;
+    G.stepOverflowsOnce(state);
+    if (state.winner !== G.EMPTY || !G.hasOverflow(state)) {
+      // Cascade finished on this step.
+      G.finalizeAfterCascade(state);
+      stepping.active = false;
+      busy = false;
+    }
+    render();
+  }
+
+  /**
+   * Indices that the NEXT generation will change, with the incoming owner.
+   * Computed by cloning the state and stepping once, then diffing. Used to
+   * draw the shadow preview. Returns { idx: owner, ... } or null if none.
+   */
+  function nextStepShadow() {
+    if (!G.hasOverflow(state)) return null;
+    var clone = G.cloneState(state);
+    G.stepOverflowsOnce(clone);
+    var changed = {};
+    for (var i = 0; i < state.cells.length; i++) {
+      if (clone.cells[i].value !== state.cells[i].value ||
+          clone.cells[i].owner !== state.cells[i].owner) {
+        changed[i] = clone.cells[i].owner;
+      }
+    }
+    return changed;
+  }
+
+  /**
+   * Place a dot and play out any cascade one generation at a time, pausing
+   * `delayMs` between generations so the spread is visible. Input is locked
+   * (busy) until the cascade fully resolves and the turn is finalised.
+   * delayMs === 0 resolves back-to-back (effectively instant) via the same
+   * code path, so behaviour is consistent across the slider range.
+   */
+  function playMoveAnimated(r, c, delayMs) {
+    if (!G.placeDot(state, state.current, r, c)) return;
+    render(); // show the placement immediately
+
+    // No propagation: just finalise the turn (matches "only the click action").
+    if (!G.hasOverflow(state)) {
+      G.finalizeAfterCascade(state);
+      render();
+      return;
+    }
+
+    busy = true;
+    var myToken = playToken;
+    function stepOnce() {
+      // Abort if a new game started while this animation was pending.
+      if (myToken !== playToken) return;
+      // Stop if a winner emerged mid-cascade or the board stabilised.
+      if (state.winner === G.EMPTY && G.hasOverflow(state)) {
+        G.stepOverflowsOnce(state);
+        render();
+        // Re-check: another generation pending?
+        if (state.winner === G.EMPTY && G.hasOverflow(state)) {
+          scheduleNext();
+          return;
+        }
+      }
+      // Cascade complete.
+      G.finalizeAfterCascade(state);
+      render();
+      busy = false;
+    }
+    function scheduleNext() {
+      if (myToken !== playToken) return;
+      if (delayMs > 0) setTimeout(stepOnce, delayMs);
+      else stepOnce(); // 0 ms: resolve immediately, no visible pause
+    }
+    // Kick off the first generation after the initial delay.
+    scheduleNext();
   }
 
   // --- new game ------------------------------------------------------------
   function newGame() {
+    playToken++;   // invalidate any in-flight cascade animation
+    busy = false;  // unlock input
+    stepping.active = false; // cancel any manual step-through in progress
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
@@ -141,6 +270,7 @@
 
   document.getElementById('new-game').addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
+  stepBtn.addEventListener('click', commitOneStep);
 
   // --- settings ------------------------------------------------------------
   // Increment 1: menu shell + propagation-speed slider. The value is stored in
@@ -150,7 +280,7 @@
   var STEP_INDEX = 11;
   var settings = {
     // delayMs: null means STEP mode; otherwise 0..1000 (ms between cascade steps)
-    delayMs: 0,
+    delayMs: 500, // default: a readable middle speed (matches slider index 5)
     stepMode: false,
   };
 
@@ -201,8 +331,20 @@
   });
 
   delayRange.addEventListener('input', function () {
+    var wasStepping = stepping.active;
     sliderIndexToSetting(parseInt(this.value, 10));
     updateDelayReadout();
+    // If the player leaves step mode while a manual cascade is mid-resolution,
+    // finish it instantly so the board can't get stuck waiting for > clicks.
+    if (wasStepping && !settings.stepMode) {
+      while (state.winner === G.EMPTY && G.hasOverflow(state)) {
+        G.stepOverflowsOnce(state);
+      }
+      G.finalizeAfterCascade(state);
+      stepping.active = false;
+      busy = false;
+      render();
+    }
   });
 
   // Initialise readout from the default slider position.

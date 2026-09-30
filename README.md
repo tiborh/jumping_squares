@@ -34,10 +34,24 @@ Rules:
   it sends one point to each neighbour and drops by capacity+1. Neighbours it
   spreads into become **your** colour — capturing the opponent's cells.
 - Overflows can **chain-react** across the board in a cascade.
-- You **win** when your opponent has no cells left.
+- You **win** by owning the **entire** board — no opponent cells **and** no
+  empty/neutral cells left. (A win is only declared once every player has taken
+  at least one turn, so an opening cascade can't end the game prematurely.)
 
 Use **New Game** (top right) to restart. On a phone, the board auto-sizes to
 fill the viewport and re-fits on rotation.
+
+**Propagation speed (Settings).** Click **⚙ Settings** to control how a cascade
+resolves, via a slider:
+
+- **Instant** — the whole cascade resolves immediately.
+- **100–1000 ms** — the cascade animates one "generation" at a time, pausing
+  that long between steps so you can watch the wave spread and capture cells.
+  The default is **500 ms** (a readable middle speed, good for learning).
+- **› Step** (far end) — manual mode: after a move that propagates, a **`>`**
+  button appears and you advance the cascade one step at a time. The next step
+  is previewed as a **shadow** on the cells it will change, so you can see where
+  the wave is about to go before committing it.
 
 ## Project structure
 
@@ -62,7 +76,8 @@ node test/game.test.js
 
 Exit code is `0` when all assertions pass, `1` otherwise (CI-friendly).
 The suite covers capacities, legal-move rules, single overflow, capture,
-chain-reaction cascades, win detection, state-snapshot independence, and
+chain-reaction cascades, win detection, state-snapshot independence,
+stepped-cascade equivalence (the stepped path matches the instant result), and
 version-tag consistency (see below).
 
 ## Versioning & cache-busting
@@ -102,8 +117,11 @@ The architecture keeps rules and rendering separate to make extensions easy:
   matching `.p3` / `.p4` classes; the logic is already player-count agnostic.
 - **AI opponent** — `cloneState()` enables lookahead/search without mutating the
   live game.
-- **Animations** — `applyMove()` accepts an optional events collector that
-  records each overflow step (`{ from, to, owner }`) for animating cascades.
+- **Animations** *(implemented)* — the engine exposes incremental cascade
+  stepping (`placeDot`, `hasOverflow`, `stepOverflowsOnce`,
+  `finalizeAfterCascade`) so the UI can resolve a cascade one generation at a
+  time; this powers the settable propagation speed and the manual **› Step**
+  mode. `applyMove` still resolves instantly in one call.
 - **Undo / replay** — snapshot with `cloneState()` before each move.
 
 ## Roadmap / to-do
@@ -120,16 +138,19 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] Correct win rule for this variant: win only by owning the **entire**
       board (no opponent cells **and** no neutral cells)
 - [x] Fair opening: no win can be declared before every player has moved
+- [x] Settable **propagation speed** (Settings): instant, 100–1000 ms animated
+      cascades (default 500 ms), and a manual **› Step** mode with a `>` button
+      and a shadow preview of the next step
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (49 assertions, no dependencies)
+- [x] Node test harness (66 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
 
 - [ ] Board-size and player-count picker in the UI (engine already supports it)
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
-- [ ] Animated cascades (engine already emits overflow step events)
+- [x] Animated cascades — settable speed + manual step mode (see Done above)
 - [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS)
 - [ ] Undo / replay via per-move snapshots
 - [ ] Optional sound and haptic feedback on mobile
@@ -179,13 +200,15 @@ notes before implementation; nothing below is built yet.
   (dice-face arrangement), reinforcing the casting metaphor.
 - In **adder mode**, the current pip rendering applies.
 
-**4. Distribution speed (settable).** How fast overflow/cascade resolves:
+**4. Distribution speed (settable).** *(Implemented — see "Propagation speed"
+under How to play.)* How fast an overflow/cascade resolves:
 
-- **Instantaneous** — resolve the whole cascade immediately (current
-  behaviour).
-- **Slow / stepped** — animate the cascade step-by-step. Better for learning
-  the rules and for clearer visual feedback. The engine already emits per-step
-  overflow events, so this is a rendering concern, not an engine change.
+- **Instantaneous** — resolve the whole cascade immediately.
+- **Slow / stepped** — animate the cascade one generation at a time (100–1000
+  ms, default 500 ms), or switch to fully manual **› Step** mode. Better for
+  learning the rules and for clearer visual feedback. Built on the engine's
+  per-step overflow stepping (`stepOverflowsOnce`); a rendering/timing concern
+  layered over the pure rules.
 
 ### Dev / prod deployment (future plan)
 
