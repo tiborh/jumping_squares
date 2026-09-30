@@ -60,12 +60,19 @@
 
   // --- responsive sizing: largest square that fits the wrap ----------------
   function sizeBoard() {
-    // clientWidth/clientHeight already exclude #board-wrap's padding (content
-    // box), including the extra bottom strip that keeps the board clear of the
-    // fixed build tag. `pad` is just a small extra safety margin on top of that.
-    var pad = 16;
-    var availW = boardWrap.clientWidth - pad;
-    var availH = boardWrap.clientHeight - pad;
+    // clientWidth/clientHeight INCLUDE padding, so subtract the wrap's actual
+    // computed padding to get the true content area. The extra bottom padding
+    // (a tag-safe strip) is therefore fully honoured: the board can never be
+    // sized under the fixed, interactive build tag, even on short/narrow
+    // viewports. A small extra margin keeps the board off the very edges.
+    var cs = getComputedStyle(boardWrap);
+    var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    var margin = 8; // small breathing room beyond the padding
+    var availW = boardWrap.clientWidth - padX - margin;
+    var availH = boardWrap.clientHeight - padY - margin;
+    if (availW < 1) availW = 1;
+    if (availH < 1) availH = 1;
     // Keep cells square: constrain by aspect ratio of the grid.
     var cellSize = Math.floor(Math.min(availW / state.cols, availH / state.rows));
     if (cellSize < 1) cellSize = 1;

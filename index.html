@@ -123,10 +123,10 @@
 
     /* Board fills all remaining space and stays centred/square-ish.
        The extra bottom padding reserves a strip for the fixed build tag
-       (bottom-left corner): because clientHeight excludes padding, the board
-       is sized within the reduced area and can never render a cell under the
-       tag — so the now-interactive tag can't steal taps meant for the board,
-       even on short/narrow viewports. */
+       (bottom-left corner). sizeBoard() subtracts the wrap's actual computed
+       padding, so the board is sized within the true content box and can never
+       render a cell under the tag — the now-interactive tag can't steal taps
+       meant for the board, even on short/narrow viewports. */
     #board-wrap {
       flex: 1 1 auto;
       display: flex;
@@ -481,7 +481,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=17"></script>
-  <script src="js/ui.js?v=17"></script>
+  <script src="js/game.js?v=18"></script>
+  <script src="js/ui.js?v=18"></script>
 </body>
 </html>
