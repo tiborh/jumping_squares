@@ -2,8 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Dependabot: keeps the GitHub Actions used in workflows up to date (security
-# patches + version bumps) via automated pull requests. The npm section is
-# included for the future — it stays dormant until a package.json exists.
+# patches + version bumps) via automated pull requests.
+#
+# NOTE: there is intentionally no `npm` ecosystem here. This project ships no
+# `package.json` (it's dependency-free, no build step), and Dependabot does NOT
+# stay silently dormant for a missing manifest — it runs and FAILS with
+# "dependency_file_not_found: /package.json not found", producing a recurring
+# red run. Add an `npm` block back only if/when a real `package.json` exists.
 
 version: 2
 updates:
@@ -17,13 +22,3 @@ updates:
     labels:
       - dependencies
       - github-actions
-
-  # Dormant unless/until a package.json is added.
-  - package-ecosystem: npm
-    directory: /
-    schedule:
-      interval: weekly
-    commit-message:
-      prefix: 'deps'
-    labels:
-      - dependencies
