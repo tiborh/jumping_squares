@@ -53,6 +53,10 @@ resolves, via a slider:
   is previewed as a **shadow** on the cells it will change, so you can see where
   the wave is about to go before committing it.
 
+Opening **Settings** while a cascade is animating **pauses** it (the board
+freezes); it resumes when you close the dialog. Changing the speed mid-cascade
+applies from that point on.
+
 ## Project structure
 
 ```
