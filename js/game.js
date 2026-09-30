@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025 tiborh
+ * SPDX-FileCopyrightText: 2025 - 2026 tiborh
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Jumping Squares — pure game logic (no DOM dependencies).
@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '16';
+  var VERSION = '17';
 
   // Owner sentinel for an empty/neutral cell.
   var EMPTY = 0;

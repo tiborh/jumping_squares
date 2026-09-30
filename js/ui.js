@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025 tiborh
+ * SPDX-FileCopyrightText: 2025 - 2026 tiborh
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * Jumping Squares — browser UI / renderer.
@@ -60,7 +60,10 @@
 
   // --- responsive sizing: largest square that fits the wrap ----------------
   function sizeBoard() {
-    var pad = 16; // matches #board-wrap padding budget
+    // clientWidth/clientHeight already exclude #board-wrap's padding (content
+    // box), including the extra bottom strip that keeps the board clear of the
+    // fixed build tag. `pad` is just a small extra safety margin on top of that.
+    var pad = 16;
     var availW = boardWrap.clientWidth - pad;
     var availH = boardWrap.clientHeight - pad;
     // Keep cells square: constrain by aspect ratio of the grid.
@@ -321,10 +324,13 @@
   };
 
   var settingsOverlay = document.getElementById('settings-overlay');
+  var settingsCard = document.getElementById('settings-card');
   var settingsBtn = document.getElementById('settings-btn');
   var settingsClose = document.getElementById('settings-close');
   var delayRange = document.getElementById('delay-range');
   var delayValue = document.getElementById('delay-value');
+
+  var settingsFocus = null; // focus manager, created after helper is defined
 
   function sliderIndexToSetting(index) {
     if (index >= STEP_INDEX) {
@@ -346,6 +352,70 @@
     delayValue.textContent = delayLabel();
   }
 
+  // --- accessible dialog focus management ----------------------------------
+  // Shared by the Settings and About dialogs. When a modal opens we (1) remember
+  // what had focus, (2) move focus into the dialog, and (3) trap Tab within it
+  // so keyboard/screen-reader users can't wander behind the overlay. On close
+  // we restore focus to the element that opened the dialog.
+  function focusables(container) {
+    var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+              'select:not([disabled]), textarea:not([disabled]), ' +
+              '[tabindex]:not([tabindex="-1"])';
+    return Array.prototype.filter.call(
+      container.querySelectorAll(sel),
+      function (el) {
+        // Skip hidden/zero-size nodes (e.g. a hidden step button).
+        return el.offsetWidth > 0 || el.offsetHeight > 0 ||
+               el === document.activeElement;
+      }
+    );
+  }
+
+  // Build an open/close pair that manages focus for a given overlay + card.
+  // `preferredFocusId` is focused first on open (falls back to first focusable).
+  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
+    var lastFocused = null;
+
+    function onKeydown(e) {
+      if (e.key !== 'Tab') return;
+      var items = focusables(cardEl);
+      if (items.length === 0) { e.preventDefault(); return; }
+      var first = items[0];
+      var last = items[items.length - 1];
+      var active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !cardEl.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !cardEl.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    return {
+      onOpen: function () {
+        lastFocused = document.activeElement;
+        var pref = preferredFocusId && document.getElementById(preferredFocusId);
+        var items = focusables(cardEl);
+        var target = pref || items[0] || cardEl;
+        // Defer focus until after the overlay is shown/laid out.
+        setTimeout(function () { if (target && target.focus) target.focus(); }, 0);
+        overlayEl.addEventListener('keydown', onKeydown);
+      },
+      onClose: function () {
+        overlayEl.removeEventListener('keydown', onKeydown);
+        if (lastFocused && lastFocused.focus) lastFocused.focus();
+        lastFocused = null;
+      },
+    };
+  }
+
+  settingsFocus = makeDialogFocusManager(settingsOverlay, settingsCard, 'settings-close');
+
   function openSettings() {
     // Pause any in-flight animated cascade so it doesn't resolve in the
     // background while the dialog is open.
@@ -358,9 +428,11 @@
       if (busy) resumeAnimation = animSchedule;
     }
     settingsOverlay.classList.add('show');
+    settingsFocus.onOpen();
   }
   function closeSettings() {
     settingsOverlay.classList.remove('show');
+    settingsFocus.onClose();
     paused = false;
     // Resume a paused animated cascade, if one was in progress.
     if (resumeAnimation) {
@@ -436,10 +508,18 @@
   // Reached only via the discreet build tag (bottom-left). Shows what the game
   // is, the exact build, a link to the source, and the licence.
   var aboutOverlay = document.getElementById('about-overlay');
+  var aboutCard = document.getElementById('about-card');
   var aboutClose = document.getElementById('about-close');
+  var aboutFocus = makeDialogFocusManager(aboutOverlay, aboutCard, 'about-close');
 
-  function openAbout() { aboutOverlay.classList.add('show'); }
-  function closeAbout() { aboutOverlay.classList.remove('show'); }
+  function openAbout() {
+    aboutOverlay.classList.add('show');
+    aboutFocus.onOpen();
+  }
+  function closeAbout() {
+    aboutOverlay.classList.remove('show');
+    aboutFocus.onClose();
+  }
 
   aboutClose.addEventListener('click', closeAbout);
   // Click on the dimmed backdrop (outside the card) closes it.
