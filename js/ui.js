@@ -432,6 +432,27 @@
   sliderIndexToSetting(parseInt(delayRange.value, 10));
   updateDelayReadout();
 
+  // --- about dialog --------------------------------------------------------
+  // Reached only via the discreet build tag (bottom-left). Shows what the game
+  // is, the exact build, a link to the source, and the licence.
+  var aboutOverlay = document.getElementById('about-overlay');
+  var aboutClose = document.getElementById('about-close');
+
+  function openAbout() { aboutOverlay.classList.add('show'); }
+  function closeAbout() { aboutOverlay.classList.remove('show'); }
+
+  aboutClose.addEventListener('click', closeAbout);
+  // Click on the dimmed backdrop (outside the card) closes it.
+  aboutOverlay.addEventListener('click', function (e) {
+    if (e.target === aboutOverlay) closeAbout();
+  });
+  // Escape closes it (desktop convenience).
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && aboutOverlay.classList.contains('show')) {
+      closeAbout();
+    }
+  });
+
   // Resize handling (orientation changes, window resize).
   window.addEventListener('resize', sizeBoard);
   window.addEventListener('orientationchange', function () {
@@ -446,7 +467,13 @@
   console.log('Jumping Squares build ' + BUILD + ' loaded');
   document.title = 'Jumping Squares (' + BUILD + ')';
   var buildTagEl = document.getElementById('build-tag');
-  if (buildTagEl) buildTagEl.textContent = BUILD;
+  if (buildTagEl) {
+    buildTagEl.textContent = BUILD;
+    // The tag doubles as a discreet "About" trigger (see index.html styling).
+    buildTagEl.addEventListener('click', openAbout);
+  }
+  var aboutVersionEl = document.getElementById('about-version');
+  if (aboutVersionEl) aboutVersionEl.textContent = 'Build ' + BUILD;
 
   buildGrid();
   sizeBoard();
