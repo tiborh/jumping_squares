@@ -57,8 +57,12 @@ for f in "$@"; do
       awk 'NR>1{printf "%s", prev "\n"} {prev=$0} END{printf "%s", prev}' "$tmp" > "$tmp.trim"
       mv "$tmp.trim" "$tmp"
     fi
-    [ -x "$p" ] && chmod +x "$tmp"
-    mv "$tmp" "$p"
+    # Write the new content BACK INTO the original file (rather than mv'ing the
+    # temp over it), so the file's existing permissions and ownership are fully
+    # preserved — a private 0600 file stays 0600 instead of taking the temp's
+    # umask-derived mode.
+    cat "$tmp" > "$p"
+    rm -f "$tmp"
     printf '%s\0' "$f"   # original path, so callers re-stage the same name
   else
     rm -f "$tmp"
