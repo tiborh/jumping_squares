@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '5';
+  var VERSION = '6';
 
   // Owner sentinel for an empty/neutral cell.
   var EMPTY = 0;
