@@ -47,6 +47,31 @@ jobs:
           git diff --name-only --diff-filter=ACMR -z "$BASE_SHA...$HEAD_SHA" |
             xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
 
-      - name: Check whole tree (push)
+      - name: Check changed files (push)
         if: github.event_name == 'push'
-        run: .githooks/check-copyright-year.sh
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          # Check only the files changed by THIS push, not the whole tree.
+          # Checking the whole tree would turn `main` red every New Year for
+          # unchanged headers from the previous year (a post-merge job can't
+          # block the merge that introduced the staleness) — noise, not safety.
+          # The PR job already gates changes before merge; per-commit staleness
+          # is caught when a file is next touched (and by the pre-commit hook).
+          #
+          # Guard the zero-SHA (new branch / first push / force-push edge cases):
+          # fall back to comparing against the first parent of the tip commit.
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            BEFORE_SHA=$(git rev-parse "$AFTER_SHA^" 2>/dev/null || echo "")
+          fi
+          if [ -z "$BEFORE_SHA" ]; then
+            echo "No usable base commit; skipping push-diff check."
+            exit 0
+          fi
+          echo "Changed files:"
+          git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+            tr '\0' '\n'
+          git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+            xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh

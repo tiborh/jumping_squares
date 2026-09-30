@@ -36,7 +36,15 @@ HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 AWK_FILE="$HOOK_DIR/spdx-year.awk"
 FIXER="$HOOK_DIR/fix-copyright-year.sh"
 
-[ -f "$AWK_FILE" ] || { echo "pre-commit: missing $AWK_FILE" >&2; exit 0; }
+# The rewrite depends on the shared awk. If it's missing, FAIL the commit
+# loudly rather than silently skipping (a broken hook must be noticed; CI is
+# the backstop, but a local failure is the clearer signal). Bypass consciously
+# with `git commit --no-verify` if truly needed.
+if [ ! -f "$AWK_FILE" ]; then
+  echo "pre-commit: missing $AWK_FILE — cannot verify/update copyright years." >&2
+  echo "  (fix the .githooks/ checkout, or bypass with 'git commit --no-verify')" >&2
+  exit 1
+fi
 
 # True if the given file ends with a newline byte.
 ends_with_newline() {

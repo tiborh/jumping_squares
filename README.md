@@ -99,17 +99,24 @@ git config core.hooksPath .githooks
 
 The hook logic lives in `.githooks/`:
 
-- `pre-commit` — runs on commit; delegates the rewrite to the fixer.
-- `fix-copyright-year.sh <file …>` — rewrites years in place (single source of
-  the logic; also runnable by hand).
+- `spdx-year.awk` — the single source of the year-rewrite (used directly by
+  both the hook, on staged content, and the fixer, on working-tree files).
+- `pre-commit` — runs on commit; rewrites the **staged** content of each header
+  file via `spdx-year.awk` and updates the index, then refreshes the working
+  tree via the fixer.
+- `fix-copyright-year.sh <file …>` — rewrites years in place in the working
+  tree (wraps `spdx-year.awk`; also runnable by hand).
 - `check-copyright-year.sh [file …]` — verifies (without modifying) that
   headers include the current year; exits non-zero if any are stale.
 
 You can bypass the hook in an emergency with `git commit --no-verify`. The
 **Copyright year** CI workflow is the enforceable safety net: it runs
-`check-copyright-year.sh` over the files changed in a pull request (and the
-whole tree on pushes to `main`), so a bypassed hook or a web-UI edit that
-leaves a stale year fails CI rather than slipping through.
+`check-copyright-year.sh` over the files changed in a pull request (against the
+merge base) and the files changed by each push to `main`, so a bypassed hook or
+a web-UI edit that leaves a stale year fails CI rather than slipping through.
+(It checks only *changed* files, not the whole tree, so a new year doesn't turn
+`main` red for untouched headers — each header is refreshed when its file is
+next edited.)
 
 ## Versioning & cache-busting
 
