@@ -5,9 +5,10 @@
 # safety net behind the local pre-commit hook (.githooks/pre-commit), which can
 # be bypassed with --no-verify and does not cover web-UI edits.
 #
-# On pull requests it checks only the files changed in the PR (so it won't fail
-# a PR for pre-existing staleness elsewhere). On pushes to main it checks the
-# whole tree.
+# On pull requests it checks only the files changed in the PR (against the
+# merge base), so it won't fail a PR for pre-existing staleness elsewhere. On
+# pushes it checks the files changed by that push (falling back to the whole
+# tree only when the pre-push commit is unavailable, e.g. a force-push).
 
 name: Copyright year
 
@@ -19,6 +20,13 @@ on:
 
 permissions:
   contents: read
+
+# Use bash for all run steps: GitHub invokes it as `bash -eo pipefail`, so a
+# failure anywhere in a `git diff | xargs …` pipeline surfaces instead of being
+# masked by the exit status of the last stage.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   check:
