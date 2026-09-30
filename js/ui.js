@@ -409,8 +409,13 @@
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
         var target = pref || items[0] || cardEl;
-        // Defer focus until after the overlay is shown/laid out.
-        setTimeout(function () { if (target && target.focus) target.focus(); }, 0);
+        // Focus synchronously. The overlay's `.show` class is added by the
+        // caller before onOpen(), so the card is already displayed and
+        // focusable. Doing this synchronously matters for nested dialogs: the
+        // caller can then make the layer behind inert *after* focus has already
+        // moved into this dialog, with no transient "focused element inside an
+        // inert subtree" window.
+        if (target && target.focus) target.focus();
         overlayEl.addEventListener('keydown', onKeydown);
       },
       onClose: function () {
@@ -586,23 +591,26 @@
 
   function openWhatsNew() {
     whatsnewOverlay.classList.add('show');
-    // onOpen() must run first: it records the currently focused trigger (which
-    // lives inside the About card) and moves focus into the What's new dialog.
-    // Only then do we make the About layer inert — doing it earlier would pull
-    // focus off the trigger before it's recorded, breaking focus restoration.
+    // onOpen() runs first and moves focus into the What's new dialog
+    // synchronously; only then do we make the About layer inert. This ordering
+    // means the trigger (inside About) never sits focused inside an inert
+    // subtree, even transiently.
     whatsnewFocus.onOpen();
     // The About layer stays visually behind this sub-dialog, but must not be a
-    // second active modal for assistive tech.
-    aboutCard.setAttribute('inert', '');
-    aboutCard.setAttribute('aria-hidden', 'true');
+    // second active modal for assistive tech. Inert the whole About OVERLAY
+    // (the element that carries role="dialog" aria-modal="true"), so its modal
+    // semantics are removed too — not just the card contents. The What's new
+    // overlay is a sibling, so it is unaffected.
+    aboutOverlay.setAttribute('inert', '');
+    aboutOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeWhatsNew() {
     whatsnewOverlay.classList.remove('show');
     // Re-enable the About layer BEFORE restoring focus — focus can't land on an
     // element inside an inert subtree, and onClose() restores focus to the
     // What's new trigger, which lives inside the About card.
-    aboutCard.removeAttribute('inert');
-    aboutCard.removeAttribute('aria-hidden');
+    aboutOverlay.removeAttribute('inert');
+    aboutOverlay.removeAttribute('aria-hidden');
     whatsnewFocus.onClose(); // restores focus to the What's new trigger in About
   }
 

@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v20 — "What's new" panel
+## v21 — "What's new" panel
 
 Player-facing:
 
@@ -50,9 +50,12 @@ Background:
   version, with the background and lessons that are too wordy for the in-app
   panel or a commit message.
 - Accessibility refinements from review: keyboard focus indicators are a
-  visible ring (not a color-only shift), and while What's new is open the
-  About layer behind it is made `inert`/`aria-hidden` so there's only one
-  active modal for assistive tech — restored (with focus) on close.
+  visible ring (not a color-only shift); while What's new is open the whole
+  About overlay behind it is made `inert`/`aria-hidden` (removing its
+  `aria-modal` too, so there's only one active modal for assistive tech); and
+  focus moves into the sub-dialog **synchronously** before About goes inert, so
+  no control is ever focused inside an inert subtree even briefly. All restored
+  (with focus) on close.
 
 ## v18 — About dialog accessibility & tap-target fix
 
