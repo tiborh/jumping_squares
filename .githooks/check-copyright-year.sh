@@ -41,8 +41,15 @@ fi
 stale=0
 
 for f in "$@"; do
-  [ -f "$f" ] || continue
-  grep -q "$MARKER" "$f" 2>/dev/null || continue
+  # Guard option-like filenames (e.g. "-n"): normalise to "./name" so grep/awk
+  # treat it as a path, not a flag.
+  case "$f" in
+    /*|./*) p="$f" ;;
+    *)      p="./$f" ;;
+  esac
+
+  [ -f "$p" ] || continue
+  grep -q "$MARKER" -- "$p" 2>/dev/null || continue
 
   # awk exits 0 if every header line already shows the current year, 1 if any
   # header line is stale.
@@ -62,7 +69,7 @@ for f in "$@"; do
       if (newest != year) { bad = 1 }
     }
     END { exit (bad ? 1 : 0) }
-  ' "$f" || {
+  ' "$p" || {
     echo "stale copyright year (missing $YEAR): $f"
     stale=1
   }

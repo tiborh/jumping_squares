@@ -27,10 +27,17 @@ YEAR=$(date +%Y)
 MARKER='SPDX-FileCopyrightText:'
 
 for f in "$@"; do
-  [ -f "$f" ] || continue
-  grep -q "$MARKER" "$f" 2>/dev/null || continue
+  # Guard against filenames that look like options (e.g. a file named "-n"):
+  # normalise to "./name" so grep/awk/mv treat it as a path, not a flag.
+  case "$f" in
+    /*|./*) p="$f" ;;
+    *)      p="./$f" ;;
+  esac
 
-  tmp="$f.spdxtmp.$$"
+  [ -f "$p" ] || continue
+  grep -q "$MARKER" -- "$p" 2>/dev/null || continue
+
+  tmp="$p.spdxtmp.$$"
   awk -v year="$YEAR" '
     {
       line = $0
@@ -59,11 +66,12 @@ for f in "$@"; do
       print line
     }
     END { if (changed) exit 10; else exit 0 }
-  ' "$f" > "$tmp" 2>/dev/null && rc=0 || rc=$?
+  ' "$p" > "$tmp" 2>/dev/null && rc=0 || rc=$?
 
   if [ "$rc" -eq 10 ]; then
-    [ -x "$f" ] && chmod +x "$tmp"
-    mv "$tmp" "$f"
+    [ -x "$p" ] && chmod +x "$tmp"
+    mv "$tmp" "$p"
+    # Print the ORIGINAL path (as given) so callers re-stage the same name.
     printf '%s\0' "$f"
   else
     rm -f "$tmp"
