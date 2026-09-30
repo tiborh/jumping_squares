@@ -101,13 +101,19 @@
       transition: opacity 120ms ease;
       -webkit-tap-highlight-color: transparent;
     }
-    /* Subtle reveal on hover/focus so a curious pointer discovers it, without
+    /* Subtle reveal on hover so a curious pointer discovers it, without
        advertising itself the rest of the time. */
-    #build-tag:hover,
+    #build-tag:hover {
+      opacity: 0.85;
+      text-decoration: underline;
+    }
+    /* Keyboard focus gets a clearly visible ring (not opacity-only). */
     #build-tag:focus-visible {
       opacity: 0.85;
       text-decoration: underline;
-      outline: none;
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 3px;
     }
 
     button {
@@ -395,6 +401,114 @@
       opacity: 0.65;
       line-height: 1.4;
     }
+
+    /* "What's new" trigger inside the About card: a plain, quiet text link — a
+       button for accessibility, styled to read as a link so it doesn't shout. */
+    #whatsnew-open {
+      align-self: flex-start;
+      background: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      color: #9fd0ff;
+      font: inherit;
+      font-size: clamp(13px, 3.4vw, 15px);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #whatsnew-open:hover { color: #c7e4ff; }
+    /* Keep a clearly visible focus ring for keyboard users (not color-only). */
+    #whatsnew-open:focus-visible {
+      color: #c7e4ff;
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+
+    /* --- What's new overlay -------------------------------------------------
+       A sub-dialog of About: a short, curated list of recent player-facing
+       changes. Same card language as the other dialogs. Layered above About. */
+    #whatsnew-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 30;
+    }
+    #whatsnew-overlay.show { display: flex; }
+
+    #whatsnew-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 460px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #whatsnew-card .whatsnew-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #whatsnew-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 24px);
+    }
+    #whatsnew-close {
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+    }
+    /* The list of entries, newest first. */
+    #whatsnew-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #whatsnew-list li {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: clamp(13px, 3.4vw, 15px);
+      line-height: 1.4;
+    }
+    #whatsnew-list .wn-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      opacity: 0.7;
+      font-size: clamp(11px, 2.9vw, 13px);
+      font-variant-numeric: tabular-nums;
+    }
+    /* Muted pill marking an early-test / not-yet-complete feature. */
+    #whatsnew-list .wn-experimental {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 999px;
+      border: 1px solid #7a5;
+      color: #bfe3a0;
+      background: rgba(120,170,80,0.12);
+      font-size: clamp(10px, 2.6vw, 12px);
+      letter-spacing: 0.02em;
+      opacity: 0.9;
+    }
+    #whatsnew-card .whatsnew-foot {
+      font-size: clamp(12px, 3vw, 14px);
+      opacity: 0.8;
+    }
+    #whatsnew-card a { color: #9fd0ff; }
   </style>
 </head>
 <body>
@@ -471,6 +585,8 @@
            target="_blank" rel="noopener noreferrer">Source code on GitHub ↗</a>
       </div>
 
+      <button id="whatsnew-open" type="button">What's new</button>
+
       <p class="about-license">
         © 2025–2026 tiborh. Free software under the
         <a href="https://www.gnu.org/licenses/agpl-3.0.html"
@@ -481,7 +597,29 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=18"></script>
-  <script src="js/ui.js?v=18"></script>
+  <div id="whatsnew-overlay" role="dialog" aria-modal="true" aria-labelledby="whatsnew-title">
+    <div id="whatsnew-card">
+      <div class="whatsnew-head">
+        <h2 id="whatsnew-title">What's new</h2>
+        <button id="whatsnew-close" title="Close" aria-label="Close what's new">✕</button>
+      </div>
+
+      <ul id="whatsnew-list"><!-- entries injected by js/ui.js from engine CHANGELOG --></ul>
+
+      <p class="whatsnew-foot">
+        The most recent, player-relevant changes. For the fuller history with
+        background and detail, see the
+        <a id="whatsnew-changelog"
+           href="https://github.com/tiborh/jumping_squares/blob/main/CHANGELOG.md"
+           target="_blank" rel="noopener noreferrer">changelog ↗</a>
+        or the
+        <a href="https://github.com/tiborh/jumping_squares/commits/main"
+           target="_blank" rel="noopener noreferrer">commit history ↗</a>.
+      </p>
+    </div>
+  </div>
+
+  <script src="js/game.js?v=21"></script>
+  <script src="js/ui.js?v=21"></script>
 </body>
 </html>

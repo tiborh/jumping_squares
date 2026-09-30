@@ -409,8 +409,13 @@
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
         var target = pref || items[0] || cardEl;
-        // Defer focus until after the overlay is shown/laid out.
-        setTimeout(function () { if (target && target.focus) target.focus(); }, 0);
+        // Focus synchronously. The overlay's `.show` class is added by the
+        // caller before onOpen(), so the card is already displayed and
+        // focusable. Doing this synchronously matters for nested dialogs: the
+        // caller can then make the layer behind inert *after* focus has already
+        // moved into this dialog, with no transient "focused element inside an
+        // inert subtree" window.
+        if (target && target.focus) target.focus();
         overlayEl.addEventListener('keydown', onKeydown);
       },
       onClose: function () {
@@ -533,10 +538,91 @@
   aboutOverlay.addEventListener('click', function (e) {
     if (e.target === aboutOverlay) closeAbout();
   });
-  // Escape closes it (desktop convenience).
+  // Escape closes it (desktop convenience) — but only when the What's new
+  // sub-dialog (layered above About) isn't open; that one handles Escape first.
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && aboutOverlay.classList.contains('show')) {
+    if (e.key === 'Escape' && aboutOverlay.classList.contains('show') &&
+        !whatsnewOverlay.classList.contains('show')) {
       closeAbout();
+    }
+  });
+
+  // --- what's new (sub-dialog of About) ------------------------------------
+  // A short, curated list of recent player-facing changes, sourced from the
+  // engine's CHANGELOG. Reached by choice from About; never pushed at the user.
+  var whatsnewOverlay = document.getElementById('whatsnew-overlay');
+  var whatsnewCard = document.getElementById('whatsnew-card');
+  var whatsnewOpen = document.getElementById('whatsnew-open');
+  var whatsnewClose = document.getElementById('whatsnew-close');
+  var whatsnewList = document.getElementById('whatsnew-list');
+  var whatsnewFocus = makeDialogFocusManager(whatsnewOverlay, whatsnewCard, 'whatsnew-close');
+
+  // Render the curated entries once (newest first, as authored in the engine).
+  // Built with DOM APIs (not innerHTML) so entry text is inserted as plain text
+  // and can't be interpreted as markup.
+  function renderWhatsNew() {
+    var entries = (G.CHANGELOG || []);
+    whatsnewList.innerHTML = '';
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var li = document.createElement('li');
+
+      var meta = document.createElement('div');
+      meta.className = 'wn-meta';
+      var ver = document.createElement('span');
+      ver.textContent = 'v' + entry.v;
+      meta.appendChild(ver);
+      if (entry.experimental) {
+        var pill = document.createElement('span');
+        pill.className = 'wn-experimental';
+        pill.textContent = 'experimental';
+        meta.appendChild(pill);
+      }
+
+      var text = document.createElement('div');
+      text.textContent = entry.text;
+
+      li.appendChild(meta);
+      li.appendChild(text);
+      whatsnewList.appendChild(li);
+    }
+  }
+  renderWhatsNew();
+
+  function openWhatsNew() {
+    whatsnewOverlay.classList.add('show');
+    // onOpen() runs first and moves focus into the What's new dialog
+    // synchronously; only then do we make the About layer inert. This ordering
+    // means the trigger (inside About) never sits focused inside an inert
+    // subtree, even transiently.
+    whatsnewFocus.onOpen();
+    // The About layer stays visually behind this sub-dialog, but must not be a
+    // second active modal for assistive tech. Inert the whole About OVERLAY
+    // (the element that carries role="dialog" aria-modal="true"), so its modal
+    // semantics are removed too — not just the card contents. The What's new
+    // overlay is a sibling, so it is unaffected.
+    aboutOverlay.setAttribute('inert', '');
+    aboutOverlay.setAttribute('aria-hidden', 'true');
+  }
+  function closeWhatsNew() {
+    whatsnewOverlay.classList.remove('show');
+    // Re-enable the About layer BEFORE restoring focus — focus can't land on an
+    // element inside an inert subtree, and onClose() restores focus to the
+    // What's new trigger, which lives inside the About card.
+    aboutOverlay.removeAttribute('inert');
+    aboutOverlay.removeAttribute('aria-hidden');
+    whatsnewFocus.onClose(); // restores focus to the What's new trigger in About
+  }
+
+  whatsnewOpen.addEventListener('click', openWhatsNew);
+  whatsnewClose.addEventListener('click', closeWhatsNew);
+  whatsnewOverlay.addEventListener('click', function (e) {
+    if (e.target === whatsnewOverlay) closeWhatsNew();
+  });
+  // Escape closes the What's new sub-dialog first (it's on top of About).
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && whatsnewOverlay.classList.contains('show')) {
+      closeWhatsNew();
     }
   });
 
