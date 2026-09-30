@@ -147,7 +147,7 @@ Status of the project and planned work. Done items reflect the current build.
       and a shadow preview of the next step
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (66 assertions, no dependencies)
+- [x] Node test harness (72 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
