@@ -115,7 +115,9 @@
   }
 
   // --- input ---------------------------------------------------------------
-  var busy = false;
+  var busy = false; // true while a cascade animation is playing (locks input)
+  var playToken = 0; // bumped by newGame() to invalidate in-flight animations
+
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
     var r = parseInt(this.dataset.r, 10);
@@ -127,12 +129,67 @@
     var self = this;
     setTimeout(function () { self.classList.remove('bump'); }, 90);
 
-    var ok = G.applyMove(state, state.current, r, c);
-    if (ok) render();
+    // Step mode (slider at the far end) is handled in a later increment; for
+    // now fall back to instant resolution so the game stays fully playable.
+    if (settings.stepMode) {
+      if (G.applyMove(state, state.current, r, c)) render();
+      return;
+    }
+
+    playMoveAnimated(r, c, settings.delayMs);
+  }
+
+  /**
+   * Place a dot and play out any cascade one generation at a time, pausing
+   * `delayMs` between generations so the spread is visible. Input is locked
+   * (busy) until the cascade fully resolves and the turn is finalised.
+   * delayMs === 0 resolves back-to-back (effectively instant) via the same
+   * code path, so behaviour is consistent across the slider range.
+   */
+  function playMoveAnimated(r, c, delayMs) {
+    if (!G.placeDot(state, state.current, r, c)) return;
+    render(); // show the placement immediately
+
+    // No propagation: just finalise the turn (matches "only the click action").
+    if (!G.hasOverflow(state)) {
+      G.finalizeAfterCascade(state);
+      render();
+      return;
+    }
+
+    busy = true;
+    var myToken = playToken;
+    function stepOnce() {
+      // Abort if a new game started while this animation was pending.
+      if (myToken !== playToken) return;
+      // Stop if a winner emerged mid-cascade or the board stabilised.
+      if (state.winner === G.EMPTY && G.hasOverflow(state)) {
+        G.stepOverflowsOnce(state);
+        render();
+        // Re-check: another generation pending?
+        if (state.winner === G.EMPTY && G.hasOverflow(state)) {
+          scheduleNext();
+          return;
+        }
+      }
+      // Cascade complete.
+      G.finalizeAfterCascade(state);
+      render();
+      busy = false;
+    }
+    function scheduleNext() {
+      if (myToken !== playToken) return;
+      if (delayMs > 0) setTimeout(stepOnce, delayMs);
+      else stepOnce(); // 0 ms: resolve immediately, no visible pause
+    }
+    // Kick off the first generation after the initial delay.
+    scheduleNext();
   }
 
   // --- new game ------------------------------------------------------------
   function newGame() {
+    playToken++;   // invalidate any in-flight cascade animation
+    busy = false;  // unlock input
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
