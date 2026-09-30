@@ -42,9 +42,9 @@ jobs:
           # NUL-delimited so paths with spaces/newlines/globs stay intact and
           # can't be silently skipped (which would let a stale header pass).
           echo "Changed files:"
-          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA...$HEAD_SHA" |
+          git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA...$HEAD_SHA" |
             tr '\0' '\n'
-          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA...$HEAD_SHA" |
+          git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA...$HEAD_SHA" |
             xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
 
       - name: Check changed files (push)
@@ -70,9 +70,9 @@ jobs:
              && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
              && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
             echo "Changed files (since $BEFORE_SHA):"
-            git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+            git diff --name-only --diff-filter=ACMRT -z "$BEFORE_SHA" "$AFTER_SHA" |
               tr '\0' '\n'
-            git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+            git diff --name-only --diff-filter=ACMRT -z "$BEFORE_SHA" "$AFTER_SHA" |
               xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
           else
             echo "Pre-push commit unavailable; checking the whole tree."

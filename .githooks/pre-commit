@@ -64,11 +64,20 @@ while IFS= read -r -d '' path; do
   git cat-file blob "$idx_old" > "$tmp_old"
   rc=0
   awk -v year="$YEAR" -f "$AWK_FILE" -- "$tmp_old" > "$tmp_new" || rc=$?
-  if [ "$rc" -ne 10 ]; then
+  if [ "$rc" -eq 0 ]; then
+    # Already current: nothing to do.
     rm -f "$tmp_old" "$tmp_new"
     continue
+  elif [ "$rc" -ne 10 ]; then
+    # A real awk error (not the 0/10 sentinels): do NOT silently allow the
+    # commit with an unverified header — report and fail so it's noticed.
+    rm -f "$tmp_old" "$tmp_new"
+    echo "pre-commit: awk failed on staged '$path' (rc=$rc); aborting commit." >&2
+    echo "  (investigate, or bypass consciously with 'git commit --no-verify')" >&2
+    exit 1
   fi
 
+  # rc == 10: header rewritten.
   # Preserve original EOF: if the staged blob had no trailing newline, strip the
   # one awk's print added.
   if ! ends_with_newline "$tmp_old" && ends_with_newline "$tmp_new"; then
@@ -87,6 +96,6 @@ while IFS= read -r -d '' path; do
   [ -x "$FIXER" ] && "$FIXER" "$path" >/dev/null 2>&1 || true
 
   echo "copyright: updated staged year in $path (current $YEAR)"
-done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+done < <(git diff --cached --name-only --diff-filter=ACMRT -z)
 
 exit 0
