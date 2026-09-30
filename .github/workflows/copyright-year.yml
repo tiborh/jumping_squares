@@ -37,13 +37,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Files changed in this PR (added/copied/modified/renamed), passed
+          # Files changed in this PR relative to the MERGE BASE (three-dot), so
+          # advancing `main` doesn't pull in unrelated base-only changes. Passed
           # NUL-delimited so paths with spaces/newlines/globs stay intact and
           # can't be silently skipped (which would let a stale header pass).
           echo "Changed files:"
-          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA" |
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA...$HEAD_SHA" |
             tr '\0' '\n'
-          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA" |
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA...$HEAD_SHA" |
             xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
 
       - name: Check whole tree (push)

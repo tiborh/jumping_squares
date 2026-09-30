@@ -9,18 +9,19 @@
 #
 # For every STAGED file carrying an SPDX copyright header, update its year span
 # to include the current (commit-time) year, preserving the original start
-# year. The rewrite acts on the *staged (index) content*, and updates the index
-# blob directly (git hash-object + update-index). The matching working-tree
-# line is updated too when it still shows the staged (old) value.
+# year. The rewrite acts on the *staged (index) content* and updates the index
+# blob directly (git hash-object + update-index), then refreshes the matching
+# working-tree file via the shared fixer.
 #
-# Operating on the index — not the working tree — is deliberate: it avoids
-# staging unrelated unstaged hunks of a partially-staged file, and it fixes the
-# year that is actually about to be committed even if the working-tree header
-# was already edited.
+# Operating on the index — not by re-adding the working tree — is deliberate:
+# it avoids staging unrelated unstaged hunks of a partially-staged file, and it
+# fixes the year actually about to be committed even if the working-tree header
+# was edited separately.
 #
-# Filename-safe end to end: staged paths flow as NUL-delimited records from
-# `git diff -z` into a NUL-reading consumer; option-like paths are handled by
-# using `--` / `./` prefixes and git's own pathspec handling.
+# The rewrite logic is the shared spdx-year.awk (single source, also used by
+# fix-copyright-year.sh). Byte-faithful: awk reads/writes real streams/files and
+# the original end-of-file state (trailing newline or not) is preserved. The
+# year is taken in UTC so dev machines and CI agree around New Year.
 #
 # Enable once per clone with:
 #     git config core.hooksPath .githooks
@@ -29,80 +30,55 @@
 
 set -eu
 
-YEAR=$(date +%Y)
+YEAR=$(date -u +%Y)
 MARKER='SPDX-FileCopyrightText:'
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AWK_FILE="$HOOK_DIR/spdx-year.awk"
+FIXER="$HOOK_DIR/fix-copyright-year.sh"
 
-# awk program that rewrites the year span on stdin -> stdout. Exit 10 if it
-# changed anything, 0 otherwise. Shared, inline, so it works on index content.
-AWK_PROG='
-  {
-    line = $0
-    if (line ~ /SPDX-FileCopyrightText:[ \t]*[0-9]{4}/) {
-      idx = index(line, "SPDX-FileCopyrightText:")
-      head = substr(line, 1, idx + length("SPDX-FileCopyrightText:") - 1)
-      rest = substr(line, idx + length("SPDX-FileCopyrightText:"))
-      lead = ""
-      while (substr(rest, 1, 1) == " " || substr(rest, 1, 1) == "\t") {
-        lead = lead substr(rest, 1, 1); rest = substr(rest, 2)
-      }
-      if (match(rest, /^[0-9]{4}/)) {
-        start = substr(rest, 1, 4)
-        if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) { span_len = RLENGTH } else { span_len = 4 }
-        holder = substr(rest, span_len + 1)
-        if (start == year) { newspan = start } else { newspan = start " - " year }
-        newline = head lead newspan holder
-        if (newline != line) { line = newline; changed = 1 }
-      }
-    }
-    print line
-  }
-  END { if (changed) exit 10; else exit 0 }
-'
+[ -f "$AWK_FILE" ] || { echo "pre-commit: missing $AWK_FILE" >&2; exit 0; }
 
-changed_any=0
+# True if the given file ends with a newline byte.
+ends_with_newline() {
+  [ -s "$1" ] || return 1
+  [ "$(tail -c 1 -- "$1" | od -An -tx1 | tr -d ' \n')" = "0a" ]
+}
 
-# Read staged, present files as NUL records (handles spaces/newlines/globs).
-# `git cat-file`/`git show :path` reads the INDEX (staged) content of each path.
-git diff --cached --name-only --diff-filter=ACMR -z |
+# Read staged, present files as NUL records (spaces/newlines/globs safe).
 while IFS= read -r -d '' path; do
-  # Only files that carry the header (checked against staged content).
-  if ! git show ":$path" 2>/dev/null | grep -q "$MARKER"; then
+  # Check + rewrite against the INDEX (staged) content, not the working tree.
+  git show ":$path" 2>/dev/null | grep -q "$MARKER" || continue
+  idx_old=$(git rev-parse ":$path" 2>/dev/null) || continue
+
+  # Materialise the staged blob, then rewrite it byte-faithfully via the shared
+  # awk into a temp. awk exit 10 = changed, 0 = already current, else = error.
+  tmp_old=$(mktemp); tmp_new=$(mktemp)
+  git cat-file blob "$idx_old" > "$tmp_old"
+  rc=0
+  awk -v year="$YEAR" -f "$AWK_FILE" -- "$tmp_old" > "$tmp_new" || rc=$?
+  if [ "$rc" -ne 10 ]; then
+    rm -f "$tmp_old" "$tmp_new"
     continue
   fi
 
-  # Rewrite the staged content.
-  staged_new=$(git show ":$path" 2>/dev/null | awk -v year="$YEAR" "$AWK_PROG") && rc=0 || rc=$?
-  [ "$rc" -eq 10 ] || continue   # rc 0 = no change; anything else = skip
+  # Preserve original EOF: if the staged blob had no trailing newline, strip the
+  # one awk's print added.
+  if ! ends_with_newline "$tmp_old" && ends_with_newline "$tmp_new"; then
+    awk 'NR>1{printf "%s", prev "\n"} {prev=$0} END{printf "%s", prev}' "$tmp_new" > "$tmp_new.trim"
+    mv "$tmp_new.trim" "$tmp_new"
+  fi
 
   # Write the new blob and point the index entry at it, preserving mode.
   mode=$(git ls-files --stage -- "$path" | awk '{print $1}')
-  blob=$(printf '%s\n' "$staged_new" | git hash-object -w --stdin)
+  blob=$(git hash-object -w -- "$tmp_new")
+  rm -f "$tmp_old" "$tmp_new"
   git update-index --cacheinfo "$mode,$blob,$path"
 
-  # If the working-tree file still matches the OLD staged content's header
-  # (i.e. it wasn't independently edited), refresh it too so the tree and index
-  # agree and the author sees the change. Guarded to avoid clobbering unrelated
-  # working edits: only rewrite in place via the fixer, which changes only the
-  # header line.
-  case "$path" in /*|./*) wp="$path" ;; *) wp="./$path" ;; esac
-  if [ -f "$wp" ]; then
-    tmp="$wp.spdxtmp.$$"
-    if awk -v year="$YEAR" "$AWK_PROG" -- "$wp" > "$tmp" 2>/dev/null; then
-      : # rc 0: working tree already current, discard tmp
-      rm -f "$tmp"
-    else
-      # rc 10: header rewritten; keep mode and replace.
-      [ -x "$wp" ] && chmod +x "$tmp"
-      mv "$tmp" "$wp"
-    fi
-  fi
+  # Refresh the working-tree file too (shared fixer; changes only the header
+  # line, so unrelated working edits are preserved; option-like names handled).
+  [ -x "$FIXER" ] && "$FIXER" "$path" >/dev/null 2>&1 || true
 
   echo "copyright: updated staged year in $path (current $YEAR)"
-  changed_any=1
-done
-
-# Note: `changed_any` set inside the while-subshell doesn't propagate out in
-# POSIX sh (pipe subshell). That's fine — we don't need the value after the
-# loop; the messages above are the user-visible signal.
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
 
 exit 0

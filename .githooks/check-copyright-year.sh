@@ -25,7 +25,7 @@
 
 set -eu
 
-YEAR=$(date +%Y)
+YEAR=$(date -u +%Y)   # UTC so dev machines and CI agree around New Year
 MARKER='SPDX-FileCopyrightText:'
 
 # With no arguments, check every tracked file, NUL-safe. Guard against an empty
