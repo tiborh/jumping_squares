@@ -59,8 +59,10 @@ for f in "$@"; do
       head = substr($0, 1, idx - 1)
       rest = substr($0, idx + length("SPDX-FileCopyrightText:"))
       while (substr(rest,1,1) == " " || substr(rest,1,1) == "\t") rest = substr(rest,2)
-      # Only a genuine header: comment-leader-only prefix, and the holder tail.
-      if (head !~ /^[ \t]*([#*/<!-]+[ \t]*)*$/) next
+      # Only a genuine header: recognised comment leader (#, //, /*, *, <!--)
+      # or whitespace-only prefix — NOT a bare "-" (so YAML/Markdown list items
+      # are data, not headers). Plus the holder tail check below.
+      if (head !~ /^[ \t]*(#|\/\/|\/\*|\*|<!--)?[ \t]*$/) next
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
         span_len = RLENGTH
         span = substr(rest, 1, span_len)

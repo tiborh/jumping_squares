@@ -27,10 +27,14 @@
       lead = lead substr(rest, 1, 1)
       rest = substr(rest, 2)
     }
-    # The marker must start the line after only a COMMENT LEADER — whitespace
-    # and comment punctuation (# * / < ! -). This rejects the marker embedded
-    # mid-line inside code or a quoted string.
-    head_ok = (prefix ~ /^[ \t]*([#*/<!-]+[ \t]*)*$/)
+    # The marker must start the line after only a recognised COMMENT LEADER:
+    # optional indent, then optionally one of  #  //  /*  *  <!--  (each maybe
+    # followed by whitespace). A pure-whitespace prefix is also allowed (e.g.
+    # an indented line inside an HTML <!-- ... --> block). Crucially this does
+    # NOT accept a bare "-", so a YAML/Markdown list item like
+    #   - SPDX-FileCopyrightText: 2025 tiborh
+    # is treated as data, not a header, and left untouched.
+    head_ok = (prefix ~ /^[ \t]*(#|\/\/|\/\*|\*|<!--)?[ \t]*$/)
     if (head_ok && match(rest, /^[0-9]{4}/)) {
       start = substr(rest, 1, 4)
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
