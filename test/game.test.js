@@ -235,6 +235,88 @@ console.log('full-capture win on 2x2');
      'winner flag consistent with ownership');
 })();
 
+console.log('stepped cascade: matches instant result');
+(function () {
+  // Build a scenario that cascades widely, then resolve it two ways from
+  // identical starting states: (a) instant via applyMove, (b) stepped via
+  // placeDot + stepOverflowsOnce loop + finalizeAfterCascade. Final board,
+  // owners, current player and winner must be identical.
+  function scenario() {
+    var s = G.createGame({ rows: 4, cols: 4, players: 2 });
+    // Preload a contested, near-critical board.
+    for (var p = 1; p <= s.players; p++) s.turnsTaken[p] = 1;
+    setCell(s, 1, 1, 1, 4); // interior at capacity (cap 4)
+    setCell(s, 1, 2, 1, 4);
+    setCell(s, 2, 1, 2, 3);
+    setCell(s, 2, 2, 2, 4);
+    setCell(s, 0, 0, 2, 2); // a p2 corner elsewhere so nobody is wiped out
+    s.current = 1;
+    return s;
+  }
+
+  // (a) instant
+  var a = scenario();
+  G.applyMove(a, 1, 1, 1);
+
+  // (b) stepped
+  var b = scenario();
+  var placed = G.placeDot(b, 1, 1, 1);
+  ok(placed, 'stepped: placeDot accepted the move');
+  var steps = 0;
+  while (G.hasOverflow(b) && b.winner === G.EMPTY) {
+    var changed = G.stepOverflowsOnce(b);
+    ok(changed, 'stepped: each generation with overflow reports a change');
+    steps++;
+    if (steps > 1000) { ok(false, 'stepped: runaway (no convergence)'); break; }
+  }
+  G.finalizeAfterCascade(b);
+
+  ok(steps >= 1, 'stepped: took at least one generation for a cascading move');
+
+  // Compare final states.
+  var sameCells = true;
+  for (var i = 0; i < a.cells.length; i++) {
+    if (a.cells[i].owner !== b.cells[i].owner ||
+        a.cells[i].value !== b.cells[i].value) { sameCells = false; break; }
+  }
+  ok(sameCells, 'stepped final board equals instant final board');
+  eq(b.current, a.current, 'stepped current player equals instant');
+  eq(b.winner, a.winner, 'stepped winner equals instant');
+})();
+
+console.log('stepped cascade: no-overflow move takes zero steps');
+(function () {
+  var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+  s.turnsTaken[1] = 1; s.turnsTaken[2] = 1;
+  s.current = 1;
+  G.placeDot(s, 1, 2, 2);                 // single dot on interior, cap 4
+  ok(!G.hasOverflow(s), 'no overflow pending after a simple placement');
+  eq(G.stepOverflowsOnce(s), false, 'stepOverflowsOnce is a no-op when stable');
+  G.finalizeAfterCascade(s);
+  eq(s.current, 2, 'turn advances after a no-overflow stepped move');
+})();
+
+console.log('stepped generation is simultaneous / deterministic');
+(function () {
+  // Two cells over capacity in the same generation must both spread from the
+  // pre-generation snapshot into a shared neighbour (order-independent).
+  // 3x3: edges (0,1) and (1,0) both neighbour the corner (0,0) and centre (1,1).
+  var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+  s.turnsTaken[1] = 1; s.turnsTaken[2] = 1;
+  setCell(s, 0, 1, 1, 4); // edge, cap 3 -> over by 1 (value 4)
+  setCell(s, 1, 0, 1, 4); // edge, cap 3 -> over by 1 (value 4)
+  // Shared neighbours start empty: (0,0) corner and (1,1) centre.
+  var changed = G.stepOverflowsOnce(s);
+  ok(changed, 'a generation occurred');
+  // Each edge (cap 3, value 4) sends 1 to each of its 3 neighbours, keeps 1.
+  eq(cell(s, 0, 1).value, 1, 'first edge keeps remainder (4-3=1)');
+  eq(cell(s, 1, 0).value, 1, 'second edge keeps remainder (4-3=1)');
+  // (0,0) is a neighbour of BOTH edges -> receives 1 from each = 2.
+  eq(cell(s, 0, 0).value, 2, 'shared corner received one from each edge (=2)');
+  // (1,1) is a neighbour of BOTH edges -> receives 1 from each = 2.
+  eq(cell(s, 1, 1).value, 2, 'shared centre received one from each edge (=2)');
+})();
+
 console.log('clone independence');
 (function () {
   var s = G.createGame({ rows: 3, cols: 3 });
