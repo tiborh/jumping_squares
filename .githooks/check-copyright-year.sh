@@ -72,7 +72,7 @@ for f in "$@"; do
         next
       }
       holder = substr(rest, span_len + 1)
-      if (holder !~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?$/) next
+      if (holder !~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?\r?$/) next
       if (newest != year) { bad = 1 }
     }
     END { exit (bad ? 1 : 0) }

@@ -40,11 +40,11 @@
       }
       holder = substr(rest, span_len + 1)
       # The year span must be followed by whitespace and EXACTLY the holder
-      # "tiborh" to end of line (allowing only trailing whitespace or a comment
-      # closer like " -->"). This, with the comment-leader check above, means
-      # only genuine header lines are rewritten — never prose, fixtures, or code
-      # that merely embeds the marker with a nearby number.
-      if (holder ~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?$/) {
+      # "tiborh" to end of line (allowing trailing whitespace, a comment closer
+      # like " -->", and/or a CRLF carriage return). With the comment-leader
+      # check above, only genuine header lines are rewritten — never prose,
+      # fixtures, or code that merely embeds the marker with a nearby number.
+      if (holder ~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?\r?$/) {
         if (start == year) { newspan = start } else { newspan = start " - " year }
         newline = head lead newspan holder
         if (newline != line) { line = newline; changed = 1 }
