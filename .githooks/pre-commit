@@ -10,6 +10,16 @@
 # The actual rewrite lives in .githooks/fix-copyright-year.sh (single source of
 # the logic; also runnable by hand).
 #
+# Filename-safe end to end: staged paths flow as NUL-delimited records from
+# `git diff -z` into the fixer (via `xargs -0`), and the fixer emits the paths
+# it changed as NUL records, which are re-staged via `xargs -0 git add --`. So
+# paths with spaces, newlines or glob metacharacters are handled correctly.
+#
+# Note: if a file has BOTH staged and unstaged changes, re-staging it here also
+# stages the (header) rewrite in the working tree — which is the intended fix.
+# It does not stage unrelated unstaged hunks beyond the header line the fixer
+# touched, because the fixer only rewrites the header line in place.
+#
 # Enable once per clone with:
 #     git config core.hooksPath .githooks
 # (see README "Development"). Bypass in an emergency with `git commit
@@ -17,33 +27,22 @@
 
 set -eu
 
-# Directory of this hook, so we can find the sibling fixer regardless of cwd.
 HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FIXER="$HOOK_DIR/fix-copyright-year.sh"
 
 [ -x "$FIXER" ] || { echo "pre-commit: missing $FIXER" >&2; exit 0; }
 
-# Staged, still-present files (added/copied/modified/renamed), NUL-safe.
-staged=$(git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n')
-[ -z "$staged" ] && exit 0
-
-changed=0
-# Feed files to the fixer one at a time; it prints paths it actually changed.
-# (One-at-a-time keeps odd filenames simple in this POSIX loop.)
-OLDIFS=$IFS
-IFS='
-'
-for f in $staged; do
-  [ -f "$f" ] || continue
-  out=$("$FIXER" "$f")
-  if [ -n "$out" ]; then
-    git add -- "$f"
-    echo "copyright: updated year in $f (current $(date +%Y))"
-    changed=1
-  fi
-done
-IFS=$OLDIFS
-
-[ "$changed" -eq 1 ] && echo "copyright: headers updated and re-staged for this commit."
+# Staged, still-present files (added/copied/modified/renamed), then fixer, then
+# re-stage exactly the files the fixer changed. All hand-offs are NUL-delimited.
+git diff --cached --name-only --diff-filter=ACMR -z |
+  xargs -0 "$FIXER" |
+  xargs -0 sh -c '
+    [ "$#" -gt 0 ] || exit 0
+    for f in "$@"; do
+      git add -- "$f"
+      echo "copyright: updated year in $f (current '"$(date +%Y)"')"
+    done
+    echo "copyright: headers updated and re-staged for this commit."
+  ' sh
 
 exit 0

@@ -37,16 +37,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Files changed in this PR (added/copied/modified/renamed).
-          changed=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA")
-          if [ -z "$changed" ]; then
-            echo "No changed files to check."
-            exit 0
-          fi
+          # Files changed in this PR (added/copied/modified/renamed), passed
+          # NUL-delimited so paths with spaces/newlines/globs stay intact and
+          # can't be silently skipped (which would let a stale header pass).
           echo "Changed files:"
-          echo "$changed"
-          # shellcheck disable=SC2086
-          .githooks/check-copyright-year.sh $changed
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA" |
+            tr '\0' '\n'
+          git diff --name-only --diff-filter=ACMR -z "$BASE_SHA" "$HEAD_SHA" |
+            xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
 
       - name: Check whole tree (push)
         if: github.event_name == 'push'

@@ -11,8 +11,9 @@
 # year, and the holder tail. Files with no header, or already current, are
 # left untouched.
 #
-# Prints the paths it changed, one per line (so callers can re-stage them).
-# Exits 0 always (a missing/updated header is not an error here).
+# Prints the paths it changed, NUL-delimited (so callers can re-stage them
+# safely with `xargs -0 git add --`, preserving odd filenames). Exits 0 always
+# (a missing/already-current header is not an error here).
 #
 # Usage:
 #   .githooks/fix-copyright-year.sh <file ...>
@@ -63,7 +64,7 @@ for f in "$@"; do
   if [ "$rc" -eq 10 ]; then
     [ -x "$f" ] && chmod +x "$tmp"
     mv "$tmp" "$f"
-    echo "$f"
+    printf '%s\0' "$f"
   else
     rm -f "$tmp"
     if [ "$rc" -ne 0 ]; then

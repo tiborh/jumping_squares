@@ -10,8 +10,14 @@
 # each stale file and exits non-zero if any are stale; exits 0 otherwise.
 #
 # Usage:
-#   .githooks/check-copyright-year.sh [file ...]
-#   # with no args, checks all tracked files that contain the header
+#   .githooks/check-copyright-year.sh [file ...]      # check the given files
+#   .githooks/check-copyright-year.sh                 # check all tracked files
+#
+# Filename-safe: explicit arguments are consumed with "$@" (boundaries intact),
+# and the no-argument case enumerates tracked files NUL-delimited via
+# `git ls-files -z | xargs -0`, so paths with spaces/newlines/globs are handled
+# correctly. This matters because a silently-skipped file would let a stale
+# header pass the "safety net".
 #
 # This is the enforceable safety net behind the local pre-commit hook (which
 # can be bypassed with --no-verify and doesn't cover web-UI edits). CI runs it
@@ -22,31 +28,31 @@ set -eu
 YEAR=$(date +%Y)
 MARKER='SPDX-FileCopyrightText:'
 
-# Collect the file list: explicit args, or all tracked files if none given.
-if [ "$#" -gt 0 ]; then
-  files=$*
-else
-  files=$(git ls-files)
+# With no arguments, check every tracked file, NUL-safe. Guard against an empty
+# file list so we never recurse with zero args (which some xargs run once).
+if [ "$#" -eq 0 ]; then
+  if [ -z "$(git ls-files)" ]; then
+    exit 0
+  fi
+  git ls-files -z | xargs -0 "$0"
+  exit $?
 fi
 
 stale=0
 
-for f in $files; do
+for f in "$@"; do
   [ -f "$f" ] || continue
   grep -q "$MARKER" "$f" 2>/dev/null || continue
 
-  # For each header line, check whether the current year is present as the
-  # newest year. awk exits 0 if all header lines are current, 1 if any stale.
+  # awk exits 0 if every header line already shows the current year, 1 if any
+  # header line is stale.
   awk -v year="$YEAR" '
     /SPDX-FileCopyrightText:[ \t]*[0-9]{4}/ {
       idx = index($0, "SPDX-FileCopyrightText:")
       rest = substr($0, idx + length("SPDX-FileCopyrightText:"))
-      # skip leading blanks
       while (substr(rest,1,1) == " " || substr(rest,1,1) == "\t") rest = substr(rest,2)
-      # newest year is the range-end if present, else the single year
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
         span = substr(rest, 1, RLENGTH)
-        # extract the trailing 4-digit year of the span
         if (match(span, /[0-9]{4}[ \t]*$/)) newest = substr(span, RSTART, 4)
       } else if (match(rest, /^[0-9]{4}/)) {
         newest = substr(rest, 1, 4)
