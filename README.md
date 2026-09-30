@@ -133,6 +133,8 @@ Status of the project and planned work. Done items reflect the current build.
 - [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS)
 - [ ] Undo / replay via per-move snapshots
 - [ ] Optional sound and haptic feedback on mobile
+- [ ] Icon buttons for Settings / New Game to save top-bar space on narrow
+      screens (portrait phones get crowded once more controls are added)
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
 - [x] Deploy as a GitHub Pages site
       (live at https://tiborh.github.io/jumping_squares/)

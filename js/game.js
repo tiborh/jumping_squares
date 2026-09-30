@@ -225,6 +225,90 @@
     }
   }
 
+  // ---- incremental (stepped) cascade --------------------------------------
+  //
+  // The functions above resolve a whole cascade at once (used for the instant
+  // path and by the existing tests). For animated / manual step-by-step play
+  // the UI needs to advance the cascade one "generation" at a time, rendering
+  // the intermediate board between generations. A generation = every cell that
+  // is currently over capacity overflows once, simultaneously. Visually this
+  // is a wave spreading outward — the phenomenon we want players to be able to
+  // watch (how one placement can flip a board).
+
+  /** Indices of all cells currently over capacity (value > neighbour count). */
+  function cellsOverCapacity(state) {
+    var out = [];
+    for (var i = 0; i < state.cells.length; i++) {
+      var r = Math.floor(i / state.cols);
+      var c = i % state.cols;
+      if (state.cells[i].value > capacity(state, r, c)) out.push(i);
+    }
+    return out;
+  }
+
+  /** True if any cell is over capacity (i.e. the cascade is not yet stable). */
+  function hasOverflow(state) {
+    return cellsOverCapacity(state).length > 0;
+  }
+
+  /**
+   * Perform exactly ONE generation of overflows: every cell that is currently
+   * over capacity overflows once, simultaneously. Mutates state.cells.
+   *
+   * "Simultaneously" matters: we read the set of overflowing cells first, then
+   * apply all their spreads against a snapshot of the pre-generation values, so
+   * that two neighbours overflowing in the same generation both contribute to a
+   * shared neighbour (order-independent, deterministic).
+   *
+   * @param {Object} state
+   * @param {Object} [events] - optional collector: { steps: [...] }, one entry
+   *                            per overflowing cell in this generation.
+   * @returns {boolean} true if this generation changed anything (a step
+   *                    happened); false if the board was already stable.
+   */
+  function stepOverflowsOnce(state, events) {
+    var over = cellsOverCapacity(state);
+    if (over.length === 0) return false;
+
+    // Snapshot current values AND owners so the generation resolves against a
+    // fixed pre-generation state (true simultaneity, order-independent).
+    var baseValue = state.cells.map(function (cl) { return cl.value; });
+    var baseOwner = state.cells.map(function (cl) { return cl.owner; });
+
+    // Deltas applied to values; owner captures applied as we go.
+    var delta = new Array(state.cells.length).fill(0);
+
+    for (var k = 0; k < over.length; k++) {
+      var i = over[k];
+      var r = Math.floor(i / state.cols);
+      var c = i % state.cols;
+      var nbrs = neighbours(state, r, c);
+      var owner = baseOwner[i]; // read from snapshot, not the mutating state
+
+      // This cell sends one point to each neighbour (based on its snapshot).
+      delta[i] -= nbrs.length;
+      for (var n = 0; n < nbrs.length; n++) {
+        var j = nbrs[n];
+        delta[j] += 1;
+        state.cells[j].owner = owner; // capture (last writer in a generation
+                                      // wins; ties are rare and cosmetic)
+      }
+
+      if (events) {
+        events.steps.push({ from: i, to: nbrs.slice(), owner: owner });
+      }
+    }
+
+    // Commit deltas; recompute owners for emptied cells.
+    for (var m = 0; m < state.cells.length; m++) {
+      if (delta[m] !== 0) {
+        state.cells[m].value = baseValue[m] + delta[m];
+        if (state.cells[m].value === 0) state.cells[m].owner = EMPTY;
+      }
+    }
+    return true;
+  }
+
   /**
    * Apply a move: player adds one point to (r, c), then resolve cascades.
    * @param {Object} state
@@ -256,6 +340,45 @@
     return true;
   }
 
+  // ---- stepped-move helpers (for animated / manual cascade playback) -------
+  //
+  // The instant path (applyMove) places a dot and resolves the whole cascade in
+  // one call. For animation/manual stepping the UI needs to (1) place the dot,
+  // (2) advance the cascade one generation at a time via stepOverflowsOnce,
+  // rendering between generations, then (3) finalise the turn. These two
+  // helpers provide steps (1) and (3); the middle is driven by the UI.
+
+  /**
+   * Place a single dot for `player` at (r, c) and update move bookkeeping, but
+   * do NOT resolve any resulting overflow. Use with stepOverflowsOnce +
+   * finalizeAfterCascade to drive a stepped cascade.
+   * @returns {boolean} true if placed (legal move); false if illegal.
+   */
+  function placeDot(state, player, r, c) {
+    if (!canPlay(state, player, r, c)) return false;
+    var i = idx(state, r, c);
+    state.cells[i].value += 1;
+    state.cells[i].owner = player;
+    state.moveCount += 1;
+    state.turnsTaken[player] += 1;
+    return true;
+  }
+
+  /**
+   * Finalise a turn after a (possibly stepped) cascade has fully resolved:
+   * set the winner if the board is decided, otherwise advance to the next
+   * player. Mirrors the tail of applyMove. Safe to call when there was no
+   * overflow at all.
+   */
+  function finalizeAfterCascade(state) {
+    var w = checkWinner(state);
+    if (w !== EMPTY) {
+      state.winner = w;
+    } else {
+      state.current = (state.current % state.players) + 1;
+    }
+  }
+
   /** Deep-ish clone for snapshots (undo, AI lookahead). */
   function cloneState(state) {
     return {
@@ -284,6 +407,11 @@
     ownershipCounts: ownershipCounts,
     checkWinner: checkWinner,
     applyMove: applyMove,
+    cellsOverCapacity: cellsOverCapacity,
+    hasOverflow: hasOverflow,
+    stepOverflowsOnce: stepOverflowsOnce,
+    placeDot: placeDot,
+    finalizeAfterCascade: finalizeAfterCascade,
     cloneState: cloneState,
   };
 });
