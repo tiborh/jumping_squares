@@ -142,6 +142,73 @@
   document.getElementById('new-game').addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
 
+  // --- settings ------------------------------------------------------------
+  // Increment 1: menu shell + propagation-speed slider. The value is stored in
+  // `settings` but not yet wired to cascade playback (that arrives in later
+  // increments). Slider index maps: 0..10 -> 0..1000 ms (100 ms steps);
+  // index 11 -> STEP mode (manual, advance each cascade step with a button).
+  var STEP_INDEX = 11;
+  var settings = {
+    // delayMs: null means STEP mode; otherwise 0..1000 (ms between cascade steps)
+    delayMs: 0,
+    stepMode: false,
+  };
+
+  var settingsOverlay = document.getElementById('settings-overlay');
+  var settingsBtn = document.getElementById('settings-btn');
+  var settingsClose = document.getElementById('settings-close');
+  var delayRange = document.getElementById('delay-range');
+  var delayValue = document.getElementById('delay-value');
+
+  function sliderIndexToSetting(index) {
+    if (index >= STEP_INDEX) {
+      settings.stepMode = true;
+      settings.delayMs = null;
+    } else {
+      settings.stepMode = false;
+      settings.delayMs = index * 100; // 0,100,...,1000
+    }
+  }
+
+  function delayLabel() {
+    if (settings.stepMode) return '\u203A Step';   // '›'
+    if (settings.delayMs === 0) return 'Instant';
+    return settings.delayMs + ' ms';
+  }
+
+  function updateDelayReadout() {
+    delayValue.textContent = delayLabel();
+  }
+
+  function openSettings() {
+    settingsOverlay.classList.add('show');
+  }
+  function closeSettings() {
+    settingsOverlay.classList.remove('show');
+  }
+
+  settingsBtn.addEventListener('click', openSettings);
+  settingsClose.addEventListener('click', closeSettings);
+  // Click on the dimmed backdrop (outside the card) closes the menu.
+  settingsOverlay.addEventListener('click', function (e) {
+    if (e.target === settingsOverlay) closeSettings();
+  });
+  // Escape closes it (desktop convenience).
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && settingsOverlay.classList.contains('show')) {
+      closeSettings();
+    }
+  });
+
+  delayRange.addEventListener('input', function () {
+    sliderIndexToSetting(parseInt(this.value, 10));
+    updateDelayReadout();
+  });
+
+  // Initialise readout from the default slider position.
+  sliderIndexToSetting(parseInt(delayRange.value, 10));
+  updateDelayReadout();
+
   // Resize handling (orientation changes, window resize).
   window.addEventListener('resize', sizeBoard);
   window.addEventListener('orientationchange', function () {

@@ -185,6 +185,30 @@ notes before implementation; nothing below is built yet.
   the rules and for clearer visual feedback. The engine already emits per-step
   overflow events, so this is a rendering concern, not an engine change.
 
+### Dev / prod deployment (future plan)
+
+Right now there is a single deployment: `main` auto-publishes to GitHub Pages
+(the "prod" site people play). Local desktop testing (just opening
+`index.html`) covers the fast iteration loop, but it **cannot reproduce the
+mobile look and feel** — touch behaviour, real device viewports, portrait vs
+landscape on an actual phone/tablet. For UX work (menus, sliders, animation),
+a live URL reachable from a physical device is needed.
+
+The intended workflow, when this becomes worthwhile:
+
+- **Local (desktop) — fast loop.** Open `index.html` directly for logic and
+  layout checks during development. No deploy, instant feedback.
+- **Per-branch preview — mobile loop.** Add automatic **preview deployments**
+  (e.g. Cloudflare Pages or Netlify, both free for public repos) that publish a
+  unique URL for every branch / pull request. That gives a stable **prod** URL
+  from `main` plus a throwaway **dev/preview** URL per change, openable on a
+  phone or tablet — without disturbing the live game.
+
+GitHub Pages alone serves only one source per repo, so it does not do per-PR
+previews well; hence pairing it (prod) with a preview host (dev) rather than
+trying to force two Pages sites from one repo. Not built yet — captured here so
+the path is clear when UX features start affecting playability.
+
 Contributions and suggestions are welcome — see the license terms below.
 
 ## History of the game
