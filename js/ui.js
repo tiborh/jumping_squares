@@ -419,6 +419,12 @@
         stepping.active = true; // > button now drives it
       }
       render();
+    } else if (busy && !stepping.active && !settings.stepMode) {
+      // Timed -> timed change while an animated cascade is in progress: apply
+      // the new delay to the remaining generations. (The pending timer, if any,
+      // was cancelled by openSettings; the resume via animSchedule() will use
+      // this updated animDelayMs.)
+      animDelayMs = settings.delayMs;
     }
   });
 
