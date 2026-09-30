@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Dependency review
         # This project is dependency-free, and the Dependency Review action
@@ -30,7 +30,7 @@ jobs:
         # failing the PR — it remains a guardrail that activates automatically
         # once real dependencies are introduced.
         continue-on-error: true
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           # Fail the PR if a dependency has a known vulnerability of this
           # severity or higher.
