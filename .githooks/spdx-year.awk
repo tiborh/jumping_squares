@@ -20,13 +20,18 @@
   if (line ~ /SPDX-FileCopyrightText:[ \t]*[0-9]{4}/) {
     idx = index(line, "SPDX-FileCopyrightText:")
     head = substr(line, 1, idx + length("SPDX-FileCopyrightText:") - 1)
+    prefix = substr(line, 1, idx - 1)   # everything BEFORE the marker
     rest = substr(line, idx + length("SPDX-FileCopyrightText:"))
     lead = ""
     while (substr(rest, 1, 1) == " " || substr(rest, 1, 1) == "\t") {
       lead = lead substr(rest, 1, 1)
       rest = substr(rest, 2)
     }
-    if (match(rest, /^[0-9]{4}/)) {
+    # The marker must start the line after only a COMMENT LEADER — whitespace
+    # and comment punctuation (# * / < ! -). This rejects the marker embedded
+    # mid-line inside code or a quoted string.
+    head_ok = (prefix ~ /^[ \t]*([#*/<!-]+[ \t]*)*$/)
+    if (head_ok && match(rest, /^[0-9]{4}/)) {
       start = substr(rest, 1, 4)
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
         span_len = RLENGTH
@@ -34,11 +39,12 @@
         span_len = 4
       }
       holder = substr(rest, span_len + 1)
-      # Only rewrite a GENUINE header: the year span must be followed by
-      # whitespace and the copyright holder ("tiborh"). This prevents rewriting
-      # prose or code that merely mentions the marker with a nearby number
-      # (e.g. documentation or this very rule) — only real headers change.
-      if (holder ~ /^[ \t]+tiborh([ \t].*)?$/) {
+      # The year span must be followed by whitespace and EXACTLY the holder
+      # "tiborh" to end of line (allowing only trailing whitespace or a comment
+      # closer like " -->"). This, with the comment-leader check above, means
+      # only genuine header lines are rewritten — never prose, fixtures, or code
+      # that merely embeds the marker with a nearby number.
+      if (holder ~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?$/) {
         if (start == year) { newspan = start } else { newspan = start " - " year }
         newline = head lead newspan holder
         if (newline != line) { line = newline; changed = 1 }

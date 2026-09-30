@@ -56,8 +56,11 @@ for f in "$@"; do
   awk -v year="$YEAR" '
     /SPDX-FileCopyrightText:[ \t]*[0-9]{4}/ {
       idx = index($0, "SPDX-FileCopyrightText:")
+      head = substr($0, 1, idx - 1)
       rest = substr($0, idx + length("SPDX-FileCopyrightText:"))
       while (substr(rest,1,1) == " " || substr(rest,1,1) == "\t") rest = substr(rest,2)
+      # Only a genuine header: comment-leader-only prefix, and the holder tail.
+      if (head !~ /^[ \t]*([#*/<!-]+[ \t]*)*$/) next
       if (match(rest, /^[0-9]{4}[ \t]*-[ \t]*[0-9]{4}/)) {
         span_len = RLENGTH
         span = substr(rest, 1, span_len)
@@ -68,10 +71,8 @@ for f in "$@"; do
       } else {
         next
       }
-      # Only treat it as a real header if the holder ("tiborh") follows the year
-      # span — otherwise it is prose/code that merely mentions the marker.
       holder = substr(rest, span_len + 1)
-      if (holder !~ /^[ \t]+tiborh([ \t].*)?$/) next
+      if (holder !~ /^[ \t]+tiborh[ \t]*(-->[ \t]*)?$/) next
       if (newest != year) { bad = 1 }
     }
     END { exit (bad ? 1 : 0) }
