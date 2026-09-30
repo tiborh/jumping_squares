@@ -53,25 +53,28 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
           AFTER_SHA: ${{ github.sha }}
         run: |
-          # Check only the files changed by THIS push, not the whole tree.
-          # Checking the whole tree would turn `main` red every New Year for
-          # unchanged headers from the previous year (a post-merge job can't
-          # block the merge that introduced the staleness) — noise, not safety.
-          # The PR job already gates changes before merge; per-commit staleness
-          # is caught when a file is next touched (and by the pre-commit hook).
+          # Normal case: check only the files changed by THIS push, not the
+          # whole tree. Checking the whole tree on every push would turn `main`
+          # red each New Year for untouched previous-year headers (a post-merge
+          # job can't block the merge that introduced the staleness) — noise,
+          # not safety. The PR job gates changes before merge; per-commit
+          # staleness is caught when a file is next touched (and by the hook).
           #
-          # Guard the zero-SHA (new branch / first push / force-push edge cases):
-          # fall back to comparing against the first parent of the tip commit.
-          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] \
-             || ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
-            BEFORE_SHA=$(git rev-parse "$AFTER_SHA^" 2>/dev/null || echo "")
+          # Edge case: if the pre-push commit is unavailable (new branch, first
+          # push, or a force-push that rewrote history), we can't compute a
+          # reliable changed-set — so fall back to checking the WHOLE tree
+          # rather than risk omitting changed files. This can't produce the
+          # annual-rollover false failure because it only triggers on those
+          # unusual pushes, not routine advances of `main`.
+          if [ -n "$BEFORE_SHA" ] \
+             && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo "Changed files (since $BEFORE_SHA):"
+            git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+              tr '\0' '\n'
+            git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
+              xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
+          else
+            echo "Pre-push commit unavailable; checking the whole tree."
+            .githooks/check-copyright-year.sh
           fi
-          if [ -z "$BEFORE_SHA" ]; then
-            echo "No usable base commit; skipping push-diff check."
-            exit 0
-          fi
-          echo "Changed files:"
-          git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
-            tr '\0' '\n'
-          git diff --name-only --diff-filter=ACMR -z "$BEFORE_SHA" "$AFTER_SHA" |
-            xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
