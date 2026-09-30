@@ -75,7 +75,12 @@
 
     /* Small, low-contrast build tag pinned to the bottom-left corner. Visible
        for cache checks (esp. on mobile where the tab title is hidden), but
-       deliberately understated and out of the way of the board. */
+       deliberately understated and out of the way of the board.
+
+       It doubles as a discreet, discoverable "About" affordance: the tag
+       itself is clickable (pointer-events: auto), but it's tucked in the
+       corner and only hints at interactivity on hover — no obvious button
+       styling. The small footprint keeps it clear of the board's tap area. */
     #build-tag {
       position: fixed;
       left: 6px;
@@ -84,8 +89,25 @@
       opacity: 0.35;
       letter-spacing: 0.02em;
       white-space: nowrap;
-      pointer-events: none; /* never intercept taps meant for the board */
       z-index: 5;
+      cursor: pointer;
+      /* Reset the button-ish inheritance so it reads as plain text. */
+      background: none;
+      border: 0;
+      padding: 2px 4px;
+      margin: 0;
+      color: inherit;
+      font-family: inherit;
+      transition: opacity 120ms ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* Subtle reveal on hover/focus so a curious pointer discovers it, without
+       advertising itself the rest of the time. */
+    #build-tag:hover,
+    #build-tag:focus-visible {
+      opacity: 0.85;
+      text-decoration: underline;
+      outline: none;
     }
 
     button {
@@ -298,6 +320,75 @@
       font-size: clamp(10px, 2.6vw, 12px);
       opacity: 0.6;
     }
+
+    /* --- About overlay ------------------------------------------------------
+       Reuses the Settings overlay/card visual language. Reached only via the
+       discreet build tag in the bottom-left corner. */
+    #about-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 25;
+    }
+    #about-overlay.show { display: flex; }
+
+    #about-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 460px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #about-card .about-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #about-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 24px);
+    }
+    #about-close {
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+    }
+    #about-card p {
+      margin: 0;
+      font-size: clamp(13px, 3.4vw, 15px);
+      line-height: 1.45;
+      opacity: 0.9;
+    }
+    #about-card .about-version {
+      font-variant-numeric: tabular-nums;
+      opacity: 0.7;
+      font-size: clamp(12px, 3vw, 14px);
+    }
+    #about-card a {
+      color: #9fd0ff;
+    }
+    #about-card .about-links {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: clamp(13px, 3.4vw, 15px);
+    }
+    #about-card .about-license {
+      font-size: clamp(11px, 2.9vw, 13px);
+      opacity: 0.65;
+      line-height: 1.4;
+    }
   </style>
 </head>
 <body>
@@ -317,7 +408,9 @@
     </div>
   </div>
 
-  <span id="build-tag" title="Build version (helps confirm you're not on a cached build)"></span>
+  <button id="build-tag" type="button"
+          title="About Jumping Squares (build version)"
+          aria-label="About Jumping Squares"></button>
 
   <div id="winner-overlay">
     <div class="msg" id="winner-msg"></div>
@@ -352,7 +445,37 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=15"></script>
-  <script src="js/ui.js?v=15"></script>
+  <div id="about-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div id="about-card">
+      <div class="about-head">
+        <h2 id="about-title">Jumping Squares</h2>
+        <button id="about-close" title="Close" aria-label="Close about">✕</button>
+      </div>
+
+      <p>
+        A browser-based clone of the classic <strong>KJumpingCube</strong>
+        tactical board game. Claim squares, overflow into your neighbours, and
+        win by owning the whole board.
+      </p>
+
+      <div class="about-version" id="about-version">Build —</div>
+
+      <div class="about-links">
+        <a id="about-repo" href="https://github.com/tiborh/jumping_squares"
+           target="_blank" rel="noopener noreferrer">Source code on GitHub ↗</a>
+      </div>
+
+      <p class="about-license">
+        © 2025 tiborh. Free software under the
+        <a href="https://www.gnu.org/licenses/agpl-3.0.html"
+           target="_blank" rel="noopener noreferrer">GNU AGPL-3.0-or-later</a>.
+        An independent, from-scratch implementation inspired by the
+        KJumpingCube family of games (no KDE code or trademarks used).
+      </p>
+    </div>
+  </div>
+
+  <script src="js/game.js?v=16"></script>
+  <script src="js/ui.js?v=16"></script>
 </body>
 </html>
