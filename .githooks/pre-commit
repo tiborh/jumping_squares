@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2025 - 2026 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# pre-commit hook: keep SPDX copyright years current.
+#
+# (bash, not POSIX sh: uses `read -d ''` to consume NUL-delimited paths safely.
+# The sibling fix-/check-copyright-year.sh stay POSIX sh for CI/portability.)
+#
+# For every STAGED file carrying an SPDX copyright header, update its year span
+# to include the current (commit-time) year, preserving the original start
+# year. The rewrite acts on the *staged (index) content* and updates the index
+# blob directly (git hash-object + update-index), then refreshes the matching
+# working-tree file via the shared fixer.
+#
+# Operating on the index — not by re-adding the working tree — is deliberate:
+# it avoids staging unrelated unstaged hunks of a partially-staged file, and it
+# fixes the year actually about to be committed even if the working-tree header
+# was edited separately.
+#
+# The rewrite logic is the shared spdx-year.awk (single source, also used by
+# fix-copyright-year.sh). Byte-faithful: awk reads/writes real streams/files and
+# the original end-of-file state (trailing newline or not) is preserved. The
+# year is taken in UTC so dev machines and CI agree around New Year.
+#
+# Enable once per clone with:
+#     git config core.hooksPath .githooks
+# (see README "Development"). Bypass in an emergency with `git commit
+# --no-verify`; the CI "Copyright year" check is the enforceable safety net.
+
+set -eu
+
+YEAR=$(date -u +%Y)
+MARKER='SPDX-FileCopyrightText:'
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+AWK_FILE="$HOOK_DIR/spdx-year.awk"
+FIXER="$HOOK_DIR/fix-copyright-year.sh"
+
+# The rewrite depends on the shared awk. If it's missing, FAIL the commit
+# loudly rather than silently skipping (a broken hook must be noticed; CI is
+# the backstop, but a local failure is the clearer signal). Bypass consciously
+# with `git commit --no-verify` if truly needed.
+if [ ! -f "$AWK_FILE" ]; then
+  echo "pre-commit: missing $AWK_FILE — cannot verify/update copyright years." >&2
+  echo "  (fix the .githooks/ checkout, or bypass with 'git commit --no-verify')" >&2
+  exit 1
+fi
+
+# True if the given file ends with a newline byte.
+ends_with_newline() {
+  [ -s "$1" ] || return 1
+  [ "$(tail -c 1 -- "$1" | od -An -tx1 | tr -d ' \n')" = "0a" ]
+}
+
+# Read staged, present files as NUL records (spaces/newlines/globs safe).
+while IFS= read -r -d '' path; do
+  # Check + rewrite against the INDEX (staged) content, not the working tree.
+  git show ":$path" 2>/dev/null | grep -q "$MARKER" || continue
+  idx_old=$(git rev-parse ":$path" 2>/dev/null) || continue
+
+  # Materialise the staged blob, then rewrite it byte-faithfully via the shared
+  # awk into a temp. awk exit 10 = changed, 0 = already current, else = error.
+  tmp_old=$(mktemp); tmp_new=$(mktemp)
+  git cat-file blob "$idx_old" > "$tmp_old"
+  rc=0
+  awk -v year="$YEAR" -f "$AWK_FILE" -- "$tmp_old" > "$tmp_new" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    # Already current: nothing to do.
+    rm -f "$tmp_old" "$tmp_new"
+    continue
+  elif [ "$rc" -ne 10 ]; then
+    # A real awk error (not the 0/10 sentinels): do NOT silently allow the
+    # commit with an unverified header — report and fail so it's noticed.
+    rm -f "$tmp_old" "$tmp_new"
+    echo "pre-commit: awk failed on staged '$path' (rc=$rc); aborting commit." >&2
+    echo "  (investigate, or bypass consciously with 'git commit --no-verify')" >&2
+    exit 1
+  fi
+
+  # rc == 10: header rewritten.
+  # Preserve original EOF: if the staged blob had no trailing newline, strip the
+  # one awk's print added.
+  if ! ends_with_newline "$tmp_old" && ends_with_newline "$tmp_new"; then
+    awk 'NR>1{printf "%s", prev "\n"} {prev=$0} END{printf "%s", prev}' "$tmp_new" > "$tmp_new.trim"
+    mv "$tmp_new.trim" "$tmp_new"
+  fi
+
+  # Write the new blob and point the index entry at it, preserving mode.
+  mode=$(git ls-files --stage -- "$path" | awk '{print $1}')
+  blob=$(git hash-object -w -- "$tmp_new")
+  rm -f "$tmp_old" "$tmp_new"
+  git update-index --cacheinfo "$mode,$blob,$path"
+
+  # Refresh the working-tree file too (shared fixer; changes only the header
+  # line, so unrelated working edits are preserved; option-like names handled).
+  [ -x "$FIXER" ] && "$FIXER" "$path" >/dev/null 2>&1 || true
+
+  echo "copyright: updated staged year in $path (current $YEAR)"
+done < <(git diff --cached --name-only --diff-filter=ACMRT -z)
+
+exit 0

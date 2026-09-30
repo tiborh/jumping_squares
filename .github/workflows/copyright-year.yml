@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: 2025 - 2026 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Enforces that SPDX copyright headers include the current year. This is the
+# safety net behind the local pre-commit hook (.githooks/pre-commit), which can
+# be bypassed with --no-verify and does not cover web-UI edits.
+#
+# On pull requests it checks only the files changed in the PR (against the
+# merge base), so it won't fail a PR for pre-existing staleness elsewhere. On
+# pushes it checks the files changed by that push (falling back to the whole
+# tree only when the pre-push commit is unavailable, e.g. a force-push).
+
+name: Copyright year
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Use bash for all run steps: GitHub invokes it as `bash -eo pipefail`, so a
+# failure anywhere in a `git diff | xargs …` pipeline surfaces instead of being
+# masked by the exit status of the last stage.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check:
+    name: Check copyright year
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Need history so we can diff a PR against its base.
+          fetch-depth: 0
+
+      - name: Check changed files (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Files changed in this PR relative to the MERGE BASE (three-dot), so
+          # advancing `main` doesn't pull in unrelated base-only changes. Passed
+          # NUL-delimited so paths with spaces/newlines/globs stay intact and
+          # can't be silently skipped (which would let a stale header pass).
+          echo "Changed files:"
+          git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA...$HEAD_SHA" |
+            tr '\0' '\n'
+          git diff --name-only --diff-filter=ACMRT -z "$BASE_SHA...$HEAD_SHA" |
+            xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
+
+      - name: Check changed files (push)
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          # Normal case: check only the files changed by THIS push, not the
+          # whole tree. Checking the whole tree on every push would turn `main`
+          # red each New Year for untouched previous-year headers (a post-merge
+          # job can't block the merge that introduced the staleness) — noise,
+          # not safety. The PR job gates changes before merge; per-commit
+          # staleness is caught when a file is next touched (and by the hook).
+          #
+          # Edge case: if the pre-push commit is unavailable (new branch, first
+          # push, or a force-push that rewrote history), we can't compute a
+          # reliable changed-set — so fall back to checking the WHOLE tree
+          # rather than risk omitting changed files. This can't produce the
+          # annual-rollover false failure because it only triggers on those
+          # unusual pushes, not routine advances of `main`.
+          if [ -n "$BEFORE_SHA" ] \
+             && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            echo "Changed files (since $BEFORE_SHA):"
+            git diff --name-only --diff-filter=ACMRT -z "$BEFORE_SHA" "$AFTER_SHA" |
+              tr '\0' '\n'
+            git diff --name-only --diff-filter=ACMRT -z "$BEFORE_SHA" "$AFTER_SHA" |
+              xargs -0 --no-run-if-empty .githooks/check-copyright-year.sh
+          else
+            echo "Pre-push commit unavailable; checking the whole tree."
+            .githooks/check-copyright-year.sh
+          fi

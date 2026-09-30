@@ -1,5 +1,5 @@
 <!--
-  SPDX-FileCopyrightText: 2025 tiborh
+  SPDX-FileCopyrightText: 2025 - 2026 tiborh
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 # Security Policy
