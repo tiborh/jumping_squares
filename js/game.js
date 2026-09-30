@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '9';
+  var VERSION = '14';
 
   // Owner sentinel for an empty/neutral cell.
   var EMPTY = 0;
@@ -172,6 +172,30 @@
     return owners.length === 1 ? owners[0] : EMPTY;
   }
 
+  /**
+   * True when a single player owns EVERY cell (no neutral cells, no other
+   * owners). This is the physical terminal condition for a cascade: once one
+   * player holds the whole board, further overflows only shuffle points within
+   * that player's own territory forever and can never change ownership. It is
+   * independent of checkWinner's turn-gate (which governs *declaring* a winner)
+   * — a cascade must stop here even if, say, an opponent never took a turn,
+   * otherwise resolution never terminates.
+   * @returns {number} the sole owner id, or EMPTY if the board is not yet
+   *                   owned by exactly one player.
+   */
+  function soleOwner(state) {
+    var counts = ownershipCounts(state);
+    if (counts[EMPTY] > 0) return EMPTY;
+    var owner = EMPTY;
+    for (var p = 1; p <= state.players; p++) {
+      if (counts[p] > 0) {
+        if (owner !== EMPTY) return EMPTY; // more than one owner
+        owner = p;
+      }
+    }
+    return owner;
+  }
+
   // ---- mutation ------------------------------------------------------------
 
   /**
@@ -218,8 +242,11 @@
         });
       }
 
-      // Early termination: if the whole contested board is one colour, stop.
-      if (checkWinner(state) !== EMPTY) {
+      // Early termination: once one player physically owns the whole board,
+      // further overflows only shuffle points within their own territory and
+      // never terminate. Stop here (checkWinner's turn-gate still governs
+      // whether a WIN is *declared* afterwards).
+      if (soleOwner(state) !== EMPTY) {
         break;
       }
     }
@@ -406,6 +433,7 @@
     canPlay: canPlay,
     ownershipCounts: ownershipCounts,
     checkWinner: checkWinner,
+    soleOwner: soleOwner,
     applyMove: applyMove,
     cellsOverCapacity: cellsOverCapacity,
     hasOverflow: hasOverflow,

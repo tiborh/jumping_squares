@@ -68,13 +68,20 @@
     if (cellSize < 1) cellSize = 1;
     boardEl.style.width = (cellSize * state.cols) + 'px';
     boardEl.style.height = (cellSize * state.rows) + 'px';
+    // Expose the cell size so the overloaded numeral can scale with the board.
+    boardEl.style.setProperty('--cell-size', cellSize + 'px');
   }
 
   // --- rendering -----------------------------------------------------------
-  function pipMarkup(value) {
+  // Stable cells (value <= capacity) show dice-like pips. Overloaded cells
+  // (value > capacity) show a large Arabic numeral instead — a clear, ephemeral
+  // "this is unstable and about to split" signal that also sidesteps trying to
+  // arrange 5+ pips in a small square. This is position-dependent via capacity:
+  // corner overflows at 3+, edge at 4+, interior at 5+.
+  function pipMarkup(value, cap) {
     if (value <= 0) return '';
-    if (value > 6) {
-      // Defensive fallback for unexpectedly large stacks.
+    if (value > cap) {
+      // Overloaded: big number filling the square.
       return '<span class="count">' + value + '</span>';
     }
     var dots = '';
@@ -102,7 +109,12 @@
       if (shadow && shadow.hasOwnProperty(i)) {
         el.classList.add('shadow-next', 'shadow-p' + shadow[i]);
       }
-      el.innerHTML = pipMarkup(cell.value);
+      var cr = Math.floor(i / state.cols);
+      var cc = i % state.cols;
+      var cap = G.capacity(state, cr, cc);
+      el.classList.remove('overloaded');
+      if (cell.value > cap) el.classList.add('overloaded');
+      el.innerHTML = pipMarkup(cell.value, cap);
     }
 
     // Step button: visible while a manual cascade is in progress; enabled only
@@ -138,6 +150,9 @@
   // --- input ---------------------------------------------------------------
   var busy = false; // true while a cascade animation is playing (locks input)
   var playToken = 0; // bumped by newGame() to invalidate in-flight animations
+  var paused = false;          // true while the Settings dialog is open
+  var resumeAnimation = null;  // callback to resume a paused animated cascade
+  var animTimer = null;        // pending setTimeout id for the next generation
 
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
@@ -166,10 +181,20 @@
   // next generation is previewed as a shadow on the cells it will change.
   var stepping = { active: false };
 
+  // A cascade is "settled" when the board is stable OR one player physically
+  // owns every cell. The sole-owner check is essential: a fully one-colour
+  // board can remain perpetually over capacity, so hasOverflow alone would
+  // never become false (the infinite-loop bug). This is independent of the
+  // win-declaration turn-gate — resolution must stop even if the game isn't
+  // formally "won" yet (e.g. an opponent hasn't moved).
+  function cascadeSettled() {
+    return G.soleOwner(state) !== G.EMPTY || !G.hasOverflow(state);
+  }
+
   function startStepMode(r, c) {
     if (!G.placeDot(state, state.current, r, c)) return;
-    if (!G.hasOverflow(state)) {
-      // No propagation: behave like a normal placement.
+    if (cascadeSettled()) {
+      // No propagation (or instantly decided): behave like a normal placement.
       G.finalizeAfterCascade(state);
       render();
       return;
@@ -182,8 +207,8 @@
   function commitOneStep() {
     if (!stepping.active) return;
     G.stepOverflowsOnce(state);
-    if (state.winner !== G.EMPTY || !G.hasOverflow(state)) {
-      // Cascade finished on this step.
+    if (cascadeSettled()) {
+      // Cascade finished (stable) or the game is decided — stop here.
       G.finalizeAfterCascade(state);
       stepping.active = false;
       busy = false;
@@ -197,7 +222,7 @@
    * draw the shadow preview. Returns { idx: owner, ... } or null if none.
    */
   function nextStepShadow() {
-    if (!G.hasOverflow(state)) return null;
+    if (cascadeSettled()) return null; // decided or stable: no next step
     var clone = G.cloneState(state);
     G.stepOverflowsOnce(clone);
     var changed = {};
@@ -221,45 +246,56 @@
     if (!G.placeDot(state, state.current, r, c)) return;
     render(); // show the placement immediately
 
-    // No propagation: just finalise the turn (matches "only the click action").
-    if (!G.hasOverflow(state)) {
+    // No propagation (or instantly decided): just finalise the turn.
+    if (cascadeSettled()) {
       G.finalizeAfterCascade(state);
       render();
       return;
     }
 
     busy = true;
-    var myToken = playToken;
-    function stepOnce() {
-      // Abort if a new game started while this animation was pending.
-      if (myToken !== playToken) return;
-      // Stop if a winner emerged mid-cascade or the board stabilised.
-      if (state.winner === G.EMPTY && G.hasOverflow(state)) {
-        G.stepOverflowsOnce(state);
-        render();
-        // Re-check: another generation pending?
-        if (state.winner === G.EMPTY && G.hasOverflow(state)) {
-          scheduleNext();
-          return;
-        }
-      }
-      // Cascade complete.
-      G.finalizeAfterCascade(state);
+    animToken = playToken;
+    animDelayMs = delayMs;
+    animSchedule(); // kick off; module-scoped so open/close can pause/resume
+  }
+
+  // Module-scoped animation driver (so the Settings dialog can pause/resume it).
+  var animToken = 0;
+  var animDelayMs = 0;
+
+  function animStep() {
+    animTimer = null;
+    if (animToken !== playToken) return; // new game cancelled this animation
+    if (!cascadeSettled()) {
+      G.stepOverflowsOnce(state);
       render();
-      busy = false;
+      if (!cascadeSettled()) {
+        animSchedule();
+        return;
+      }
     }
-    function scheduleNext() {
-      if (myToken !== playToken) return;
-      if (delayMs > 0) setTimeout(stepOnce, delayMs);
-      else stepOnce(); // 0 ms: resolve immediately, no visible pause
+    // Cascade complete or one player owns the whole board.
+    G.finalizeAfterCascade(state);
+    render();
+    busy = false;
+  }
+
+  function animSchedule() {
+    if (animToken !== playToken) return;
+    if (paused) {
+      // Settings dialog open: park until closeSettings() resumes us.
+      resumeAnimation = animSchedule;
+      return;
     }
-    // Kick off the first generation after the initial delay.
-    scheduleNext();
+    if (animDelayMs > 0) animTimer = setTimeout(animStep, animDelayMs);
+    else animStep(); // 0 ms: resolve immediately, no visible pause
   }
 
   // --- new game ------------------------------------------------------------
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
+    if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
+    resumeAnimation = null; // drop any parked (paused) animation
     busy = false;  // unlock input
     stepping.active = false; // cancel any manual step-through in progress
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
@@ -311,10 +347,27 @@
   }
 
   function openSettings() {
+    // Pause any in-flight animated cascade so it doesn't resolve in the
+    // background while the dialog is open.
+    paused = true;
+    if (animTimer !== null) {
+      // A generation was waiting on the timer: cancel it and arrange to resume
+      // the same driver when the dialog closes.
+      clearTimeout(animTimer);
+      animTimer = null;
+      if (busy) resumeAnimation = animSchedule;
+    }
     settingsOverlay.classList.add('show');
   }
   function closeSettings() {
     settingsOverlay.classList.remove('show');
+    paused = false;
+    // Resume a paused animated cascade, if one was in progress.
+    if (resumeAnimation) {
+      var fn = resumeAnimation;
+      resumeAnimation = null;
+      fn();
+    }
   }
 
   settingsBtn.addEventListener('click', openSettings);
@@ -335,14 +388,36 @@
     sliderIndexToSetting(parseInt(this.value, 10));
     updateDelayReadout();
     // If the player leaves step mode while a manual cascade is mid-resolution,
-    // finish it instantly so the board can't get stuck waiting for > clicks.
+    // hand the in-progress cascade to the ANIMATED driver at the newly chosen
+    // speed — do NOT resolve it instantly (that caused a background "instant
+    // win"). Because the Settings dialog is open, `paused` is true, so the
+    // driver parks itself and only runs once the dialog is closed.
     if (wasStepping && !settings.stepMode) {
-      while (state.winner === G.EMPTY && G.hasOverflow(state)) {
-        G.stepOverflowsOnce(state);
+      stepping.active = false; // no longer manual stepping
+      if (cascadeSettled()) {
+        // Nothing left to resolve: just finalise.
+        G.finalizeAfterCascade(state);
+        busy = false;
+        render();
+      } else {
+        // Continue as an animated cascade at the new delay. busy stays true.
+        animToken = playToken;
+        animDelayMs = settings.delayMs;
+        animSchedule(); // parks while paused; resumes on closeSettings()
+        render();       // refresh (step button hides now that stepping ended)
       }
-      G.finalizeAfterCascade(state);
-      stepping.active = false;
-      busy = false;
+    } else if (!wasStepping && settings.stepMode && busy) {
+      // Switched INTO step mode while an animated cascade was in progress:
+      // convert it to manual stepping. Cancel the pending timer/parked resume
+      // and hand control to the > button.
+      if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
+      resumeAnimation = null;
+      if (cascadeSettled()) {
+        G.finalizeAfterCascade(state);
+        busy = false;
+      } else {
+        stepping.active = true; // > button now drives it
+      }
       render();
     }
   });

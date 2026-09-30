@@ -317,6 +317,55 @@ console.log('stepped generation is simultaneous / deterministic');
   eq(cell(s, 1, 1).value, 2, 'shared centre received one from each edge (=2)');
 })();
 
+console.log('regression: cascade terminates when one player owns the board');
+(function () {
+  // Reproduces the infinite-loop bugs (both the animated/stepped path AND the
+  // instant path). Fill the whole board to capacity (stable) owned by p1, then
+  // tip one cell over. The board is monochromatic and stays perpetually over
+  // capacity, so any loop keyed only on hasOverflow never ends. The physical
+  // terminal condition is soleOwner (one player holds every cell).
+
+  // Case A: p2 HAS moved (contested) -> also a formal win.
+  (function () {
+    var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+    s.turnsTaken[1] = 1; s.turnsTaken[2] = 1;
+    var r, c;
+    for (r = 0; r < 3; r++)
+      for (c = 0; c < 3; c++)
+        setCell(s, r, c, 1, G.capacity(s, r, c));
+    s.current = 1;
+    setCell(s, 1, 1, 1, G.capacity(s, 1, 1) + 1);
+    var steps = 0;
+    while (G.soleOwner(s) === G.EMPTY && G.hasOverflow(s)) {
+      G.stepOverflowsOnce(s);
+      if (++steps > 10000) break;
+    }
+    G.finalizeAfterCascade(s);
+    ok(steps <= 10000, 'A: stepped cascade terminates');
+    eq(G.soleOwner(s), 1, 'A: p1 solely owns the board');
+    eq(s.winner, 1, 'A: p1 declared winner (both players had moved)');
+  })();
+
+  // Case B: p2 NEVER moved. soleOwner is p1 (terminal for the CASCADE), but
+  // checkWinner stays EMPTY due to the turn-gate. The instant applyMove path
+  // must still TERMINATE (this was the hang). It should not declare a winner.
+  (function () {
+    var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+    s.turnsTaken[1] = 1; // only p1 has moved
+    var r, c;
+    for (r = 0; r < 3; r++)
+      for (c = 0; c < 3; c++)
+        setCell(s, r, c, 1, G.capacity(s, r, c));
+    s.current = 1;
+    // Instant path: place one more on centre. Must return (not hang).
+    var ok2 = G.applyMove(s, 1, 1, 1);
+    ok(ok2, 'B: instant applyMove returned (did not hang)');
+    eq(G.soleOwner(s), 1, 'B: p1 physically owns the whole board');
+    eq(s.winner, G.EMPTY,
+       'B: no win declared while p2 has not taken a turn (turn-gate holds)');
+  })();
+})();
+
 console.log('clone independence');
 (function () {
   var s = G.createGame({ rows: 3, cols: 3 });
