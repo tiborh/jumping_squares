@@ -84,6 +84,33 @@ chain-reaction cascades, win detection, state-snapshot independence,
 stepped-cascade equivalence (the stepped path matches the instant result), and
 version-tag consistency (see below).
 
+## Development setup: copyright-year hook
+
+Source files carry an [SPDX](https://spdx.dev/) copyright header
+(`SPDX-FileCopyrightText: <year> tiborh`). To keep the year current
+automatically, the repo ships a git hook that, on each commit, updates the
+year of any **staged** file whose header is out of date — rewriting a single
+year into a `START - CURRENT` range (preserving the original start year) and
+re-staging the file. Enable it once per clone:
+
+```
+git config core.hooksPath .githooks
+```
+
+The hook logic lives in `.githooks/`:
+
+- `pre-commit` — runs on commit; delegates the rewrite to the fixer.
+- `fix-copyright-year.sh <file …>` — rewrites years in place (single source of
+  the logic; also runnable by hand).
+- `check-copyright-year.sh [file …]` — verifies (without modifying) that
+  headers include the current year; exits non-zero if any are stale.
+
+You can bypass the hook in an emergency with `git commit --no-verify`. The
+**Copyright year** CI workflow is the enforceable safety net: it runs
+`check-copyright-year.sh` over the files changed in a pull request (and the
+whole tree on pushes to `main`), so a bypassed hook or a web-UI edit that
+leaves a stale year fails CI rather than slipping through.
+
 ## Versioning & cache-busting
 
 Browsers aggressively cache JavaScript, so a plain reload can keep running an

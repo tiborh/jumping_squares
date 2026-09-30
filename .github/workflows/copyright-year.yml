@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2025 - 2026 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Enforces that SPDX copyright headers include the current year. This is the
+# safety net behind the local pre-commit hook (.githooks/pre-commit), which can
+# be bypassed with --no-verify and does not cover web-UI edits.
+#
+# On pull requests it checks only the files changed in the PR (so it won't fail
+# a PR for pre-existing staleness elsewhere). On pushes to main it checks the
+# whole tree.
+
+name: Copyright year
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check copyright year
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # Need history so we can diff a PR against its base.
+          fetch-depth: 0
+
+      - name: Check changed files (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Files changed in this PR (added/copied/modified/renamed).
+          changed=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA")
+          if [ -z "$changed" ]; then
+            echo "No changed files to check."
+            exit 0
+          fi
+          echo "Changed files:"
+          echo "$changed"
+          # shellcheck disable=SC2086
+          .githooks/check-copyright-year.sh $changed
+
+      - name: Check whole tree (push)
+        if: github.event_name == 'push'
+        run: .githooks/check-copyright-year.sh

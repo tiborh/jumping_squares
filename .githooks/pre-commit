@@ -1,0 +1,49 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2025 - 2026 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# pre-commit hook: keep SPDX copyright years current.
+#
+# For every STAGED file carrying an SPDX copyright header, update its year span
+# to include the current (commit-time) year, preserving the original start
+# year, then re-stage the file so the corrected header is part of this commit.
+# The actual rewrite lives in .githooks/fix-copyright-year.sh (single source of
+# the logic; also runnable by hand).
+#
+# Enable once per clone with:
+#     git config core.hooksPath .githooks
+# (see README "Development"). Bypass in an emergency with `git commit
+# --no-verify`; the CI "Copyright year" check is the enforceable safety net.
+
+set -eu
+
+# Directory of this hook, so we can find the sibling fixer regardless of cwd.
+HOOK_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+FIXER="$HOOK_DIR/fix-copyright-year.sh"
+
+[ -x "$FIXER" ] || { echo "pre-commit: missing $FIXER" >&2; exit 0; }
+
+# Staged, still-present files (added/copied/modified/renamed), NUL-safe.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -z | tr '\0' '\n')
+[ -z "$staged" ] && exit 0
+
+changed=0
+# Feed files to the fixer one at a time; it prints paths it actually changed.
+# (One-at-a-time keeps odd filenames simple in this POSIX loop.)
+OLDIFS=$IFS
+IFS='
+'
+for f in $staged; do
+  [ -f "$f" ] || continue
+  out=$("$FIXER" "$f")
+  if [ -n "$out" ]; then
+    git add -- "$f"
+    echo "copyright: updated year in $f (current $(date +%Y))"
+    changed=1
+  fi
+done
+IFS=$OLDIFS
+
+[ "$changed" -eq 1 ] && echo "copyright: headers updated and re-staged for this commit."
+
+exit 0
