@@ -398,6 +398,33 @@ console.log('version wiring');
      ' (found: ' + matches.join(', ') + ')');
 })();
 
+console.log('changelog wiring');
+(function () {
+  var cl = G.CHANGELOG;
+  ok(Array.isArray(cl) && cl.length > 0, 'engine exports a non-empty CHANGELOG');
+
+  // Every entry is well-formed: a non-empty version string, a non-empty text,
+  // and (if present) a boolean experimental flag.
+  var wellFormed = cl.every(function (e) {
+    return e && typeof e.v === 'string' && e.v.length > 0 &&
+           typeof e.text === 'string' && e.text.length > 0 &&
+           (e.experimental === undefined || typeof e.experimental === 'boolean');
+  });
+  ok(wellFormed, 'every CHANGELOG entry has string v, string text, optional boolean experimental');
+
+  // Entries are authored newest-first (non-increasing numeric version), so the
+  // panel shows the most recent changes at the top.
+  var nums = cl.map(function (e) { return parseInt(e.v, 10); });
+  var ordered = nums.every(function (n, i) { return i === 0 || nums[i - 1] >= n; });
+  ok(ordered, 'CHANGELOG entries are ordered newest-first (found: ' + nums.join(', ') + ')');
+
+  // Drift guard: the newest entry must not claim a version beyond the current
+  // engine VERSION (catches an entry added without bumping VERSION, or a typo).
+  var current = parseInt(G.VERSION, 10);
+  ok(nums[0] <= current,
+     'newest CHANGELOG version (' + nums[0] + ') does not exceed VERSION (' + current + ')');
+})();
+
 // ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

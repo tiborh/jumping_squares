@@ -533,10 +533,75 @@
   aboutOverlay.addEventListener('click', function (e) {
     if (e.target === aboutOverlay) closeAbout();
   });
-  // Escape closes it (desktop convenience).
+  // Escape closes it (desktop convenience) — but only when the What's new
+  // sub-dialog (layered above About) isn't open; that one handles Escape first.
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && aboutOverlay.classList.contains('show')) {
+    if (e.key === 'Escape' && aboutOverlay.classList.contains('show') &&
+        !whatsnewOverlay.classList.contains('show')) {
       closeAbout();
+    }
+  });
+
+  // --- what's new (sub-dialog of About) ------------------------------------
+  // A short, curated list of recent player-facing changes, sourced from the
+  // engine's CHANGELOG. Reached by choice from About; never pushed at the user.
+  var whatsnewOverlay = document.getElementById('whatsnew-overlay');
+  var whatsnewCard = document.getElementById('whatsnew-card');
+  var whatsnewOpen = document.getElementById('whatsnew-open');
+  var whatsnewClose = document.getElementById('whatsnew-close');
+  var whatsnewList = document.getElementById('whatsnew-list');
+  var whatsnewFocus = makeDialogFocusManager(whatsnewOverlay, whatsnewCard, 'whatsnew-close');
+
+  // Render the curated entries once (newest first, as authored in the engine).
+  // Built with DOM APIs (not innerHTML) so entry text is inserted as plain text
+  // and can't be interpreted as markup.
+  function renderWhatsNew() {
+    var entries = (G.CHANGELOG || []);
+    whatsnewList.innerHTML = '';
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var li = document.createElement('li');
+
+      var meta = document.createElement('div');
+      meta.className = 'wn-meta';
+      var ver = document.createElement('span');
+      ver.textContent = 'v' + entry.v;
+      meta.appendChild(ver);
+      if (entry.experimental) {
+        var pill = document.createElement('span');
+        pill.className = 'wn-experimental';
+        pill.textContent = 'experimental';
+        meta.appendChild(pill);
+      }
+
+      var text = document.createElement('div');
+      text.textContent = entry.text;
+
+      li.appendChild(meta);
+      li.appendChild(text);
+      whatsnewList.appendChild(li);
+    }
+  }
+  renderWhatsNew();
+
+  function openWhatsNew() {
+    whatsnewOverlay.classList.add('show');
+    whatsnewFocus.onOpen();
+  }
+  function closeWhatsNew() {
+    whatsnewOverlay.classList.remove('show');
+    whatsnewFocus.onClose();
+  }
+
+  whatsnewOpen.addEventListener('click', openWhatsNew);
+  whatsnewClose.addEventListener('click', closeWhatsNew);
+  whatsnewOverlay.addEventListener('click', function (e) {
+    if (e.target === whatsnewOverlay) closeWhatsNew();
+  });
+  // Escape closes the What's new sub-dialog first (it's on top of About).
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && whatsnewOverlay.classList.contains('show')) {
+      closeWhatsNew();
     }
   });
 
