@@ -68,6 +68,37 @@
       box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
     }
 
+    /* The turn label is clickable to rename the current player on their turn.
+       Understated: a subtle dotted underline hints at editability on hover/
+       focus without shouting. */
+    #turn-label.editable {
+      cursor: text;
+      border-radius: 4px;
+    }
+    #turn-label.editable:hover,
+    #turn-label.editable:focus-visible {
+      text-decoration: underline dotted;
+      text-underline-offset: 3px;
+      outline: none;
+    }
+    #turn-label.editable:focus-visible {
+      outline: 2px solid rgba(255,255,255,0.35);
+      outline-offset: 2px;
+    }
+    /* Inline rename editor: inherits the label's font so it doesn't reflow. */
+    .turn-name-input {
+      font: inherit;
+      font-weight: 600;
+      color: #e8e8ea;
+      background: #12141a;
+      border: 1px solid #3a4150;
+      border-radius: 6px;
+      padding: 1px 6px;
+      width: 9ch;
+      max-width: 48vw;
+    }
+    .turn-name-input:focus { outline: 2px solid #3d7bd6; outline-offset: 1px; }
+
     #status {
       font-size: clamp(12px, 3vw, 16px);
       opacity: 0.85;
@@ -619,7 +650,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=21"></script>
-  <script src="js/ui.js?v=21"></script>
+  <script src="js/game.js?v=22"></script>
+  <script src="js/ui.js?v=22"></script>
 </body>
 </html>
