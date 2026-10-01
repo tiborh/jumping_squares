@@ -54,10 +54,15 @@
     var mem = { v: PREFS_VERSION, playerNames: {} }; // in-memory fallback/cache
 
     function storageAvailable() {
+      // Probe under our OWN namespace so we never touch another same-origin
+      // project's keys. Restore any pre-existing value (defensive — our probe
+      // key shouldn't collide with anything, but don't assume).
+      var probe = PREFS_KEY + ':__probe__';
       try {
-        var t = '__js_probe__';
-        window.localStorage.setItem(t, t);
-        window.localStorage.removeItem(t);
+        var prev = window.localStorage.getItem(probe); // null if absent
+        window.localStorage.setItem(probe, '1');
+        if (prev === null) window.localStorage.removeItem(probe);
+        else window.localStorage.setItem(probe, prev);
         return true;
       } catch (e) {
         return false;
@@ -293,7 +298,10 @@
     // Swap the label for the input.
     turnLabel.textContent = '';
     turnLabel.appendChild(input);
-    turnLabel.classList.remove('editable');
+    // Drop the button-like semantics while the input is mounted (renaming is
+    // now true, so this removes .editable + role/tabindex/title). Avoids
+    // exposing a button that contains a textbox to assistive tech.
+    updateTurnLabelAffordance();
     input.focus();
     input.select();
 
@@ -460,8 +468,8 @@
     }
     // Cascade complete or one player owns the whole board.
     G.finalizeAfterCascade(state);
-    render();
-    busy = false;
+    busy = false;      // clear BEFORE the final render so the rename affordance
+    render();          // (role/tabindex) is restored for keyboard users
   }
 
   function animSchedule() {
