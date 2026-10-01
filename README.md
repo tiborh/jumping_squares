@@ -42,13 +42,14 @@ Use **New Game** (top right) to restart. On a phone, the board auto-sizes to
 fill the viewport and re-fits on rotation.
 
 **Player names & score.** Click a player's **name** (the turn indicator at the
-top) **on their turn** to rename them: type a name, press **Enter** to save or
-**Esc** to cancel. A **win tally** for the current pair is shown next to the
-tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and prominently in the
-end-of-round dialog; it accumulates across rounds (New Game keeps the score).
-Both the names and the tally are **remembered in your browser** (see
-*Persistence* below). Committing a rename (Enter) **resets the tally to 0:0** —
-the deliberate way to start a fresh series for a new pairing.
+top) **on their turn** to rename them: type a name, then press **Enter** or
+**click away** to save, or **Esc** to cancel. A **win tally** for the current
+pair is shown next to the tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and
+prominently in the end-of-round dialog; it accumulates across rounds (New Game
+keeps the score). Both the names and the tally are **remembered in your
+browser** (see *Persistence* below). **Saving** a rename — whether by Enter or
+by clicking away — **resets the tally to 0:0** (the deliberate way to start a
+fresh series for a new pairing); **Esc** cancels and keeps the score.
 
 **Propagation speed (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
