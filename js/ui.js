@@ -37,6 +37,95 @@
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
 
+  // --- preferences (localStorage-backed) -----------------------------------
+  // A tiny, namespaced, best-effort preferences store. Namespaced because
+  // GitHub Pages serves every project of this account from the SAME origin
+  // (tiborh.github.io), so an un-prefixed key could collide with another app.
+  //
+  // Deliberately simple (per the agreed scope): plain localStorage, NO expiry
+  // logic — the user/browser manages lifetime and clearing. All access is
+  // feature-detected and wrapped so private mode or disabled storage simply
+  // falls back to in-memory defaults and never breaks the game. A `v` field
+  // lets future changes migrate or discard old data.
+  var PREFS_KEY = 'jumping_squares:prefs';
+  var PREFS_VERSION = 1;
+
+  var prefs = (function () {
+    var mem = { v: PREFS_VERSION, playerNames: {} }; // in-memory fallback/cache
+
+    function storageAvailable() {
+      try {
+        var t = '__js_probe__';
+        window.localStorage.setItem(t, t);
+        window.localStorage.removeItem(t);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    var canStore = storageAvailable();
+
+    function load() {
+      if (!canStore) return;
+      try {
+        var raw = window.localStorage.getItem(PREFS_KEY);
+        if (!raw) return;
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          // Only adopt a compatible version; otherwise start fresh (drop old).
+          if (parsed.v === PREFS_VERSION && parsed.playerNames &&
+              typeof parsed.playerNames === 'object') {
+            mem.playerNames = parsed.playerNames;
+          }
+        }
+      } catch (e) { /* corrupt/blocked: keep defaults */ }
+    }
+
+    function persist() {
+      if (!canStore) return;
+      try {
+        window.localStorage.setItem(PREFS_KEY, JSON.stringify(mem));
+      } catch (e) { /* quota/blocked: stay in-memory only */ }
+    }
+
+    load();
+
+    return {
+      getPlayerName: function (n) {
+        var v = mem.playerNames[n];
+        return (typeof v === 'string') ? v : '';
+      },
+      setPlayerName: function (n, name) {
+        if (name) mem.playerNames[n] = name;
+        else delete mem.playerNames[n];
+        persist();
+      },
+    };
+  })();
+
+  // Default display name when the player has no stored/custom name.
+  function defaultPlayerName(n) { return 'Player ' + n; }
+
+  // Sanitize a user-entered name: strip control chars/newlines, collapse
+  // internal whitespace, trim, and cap length. Returns '' for empty input
+  // (callers treat '' as "use the default"). Names are always rendered via
+  // textContent (never innerHTML), so this is about tidiness/limits, not markup
+  // safety — but keeping it text-only is a defence-in-depth habit.
+  var MAX_NAME_LEN = 24;
+  function sanitizeName(raw) {
+    if (typeof raw !== 'string') return '';
+    var s = raw.replace(/[\u0000-\u001F\u007F]+/g, ' '); // control chars -> space
+    s = s.replace(/\s+/g, ' ').trim();                   // collapse + trim
+    if (s.length > MAX_NAME_LEN) s = s.slice(0, MAX_NAME_LEN).trim();
+    return s;
+  }
+
+  // The name to display for player n: custom (stored) name if set, else default.
+  function playerName(n) {
+    var custom = sanitizeName(prefs.getPlayerName(n));
+    return custom || defaultPlayerName(n);
+  }
+
   // --- build the grid once -------------------------------------------------
   var cellEls = [];
   function buildGrid() {
@@ -142,20 +231,105 @@
     var color = getComputedStyle(document.documentElement)
       .getPropertyValue(playerColorVar[state.current]) || '#fff';
     turnDot.style.background = color.trim();
-    turnLabel.textContent = 'Player ' + state.current;
+    // While the inline rename editor is open, leave the label (input) alone.
+    if (!renaming) {
+      turnLabel.textContent = playerName(state.current);
+      updateTurnLabelAffordance();
+    }
 
     var counts = G.ownershipCounts(state);
     var parts = [];
-    for (var p = 1; p <= state.players; p++) parts.push('P' + p + ': ' + counts[p]);
+    for (var p = 1; p <= state.players; p++) {
+      parts.push(playerName(p) + ': ' + counts[p]);
+    }
     statusEl.textContent = parts.join('   ');
 
     if (state.winner !== G.EMPTY) {
-      winnerMsg.textContent = 'Player ' + state.winner + ' wins!';
+      winnerMsg.textContent = playerName(state.winner) + ' wins!';
       overlay.classList.add('show');
     } else {
       overlay.classList.remove('show');
     }
   }
+
+  // --- rename current player (click the turn label on your turn) -----------
+  // Renaming is allowed only during a live turn: not while a cascade is
+  // animating/stepping (busy) and not after a win. The name is cosmetic and
+  // persisted via prefs; renaming never consumes a turn or changes game state.
+  var renaming = false; // true while the inline editor is open
+
+  function canRenameNow() {
+    return !renaming && !busy && !stepping.active && state.winner === G.EMPTY;
+  }
+
+  // Reflect clickability on the label (pointer cursor + title) when live.
+  function updateTurnLabelAffordance() {
+    if (canRenameNow()) {
+      turnLabel.classList.add('editable');
+      turnLabel.title = 'Click to rename ' + playerName(state.current);
+      turnLabel.setAttribute('role', 'button');
+      turnLabel.setAttribute('tabindex', '0');
+    } else {
+      turnLabel.classList.remove('editable');
+      turnLabel.removeAttribute('title');
+      turnLabel.removeAttribute('role');
+      turnLabel.removeAttribute('tabindex');
+    }
+  }
+
+  function beginRename() {
+    if (!canRenameNow()) return;
+    renaming = true;
+    var n = state.current;
+    var current = playerName(n);
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'turn-name-input';
+    input.maxLength = MAX_NAME_LEN;
+    input.value = current;
+    input.setAttribute('aria-label', 'Rename player ' + n);
+
+    // Swap the label for the input.
+    turnLabel.textContent = '';
+    turnLabel.appendChild(input);
+    turnLabel.classList.remove('editable');
+    input.focus();
+    input.select();
+
+    var done = false;
+    function commit(save) {
+      if (done) return;
+      done = true;
+      renaming = false;
+      if (save) {
+        // Empty -> clear custom name (revert to default). Sanitised either way.
+        var clean = sanitizeName(input.value);
+        var def = defaultPlayerName(n);
+        prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
+      }
+      render(); // rebuilds the label text (and affordance) from current state
+    }
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+      // Don't let keys bubble to any global handlers while editing.
+      e.stopPropagation();
+    });
+    input.addEventListener('blur', function () { commit(true); });
+    // Clicks inside the input shouldn't retrigger the label handler.
+    input.addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+
+  turnLabel.addEventListener('click', beginRename);
+  turnLabel.addEventListener('keydown', function (e) {
+    // Keyboard activation of the label-as-button (Enter/Space) when not editing.
+    if (!renaming && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      beginRename();
+    }
+  });
 
   // --- input ---------------------------------------------------------------
   var busy = false; // true while a cascade animation is playing (locks input)

@@ -29,6 +29,30 @@ the nearest user-facing entry.
 
 ---
 
+## v22 — Editable, remembered player names
+
+Player-facing:
+
+- Click a player's **name** (the turn label at the top) **on their turn** to
+  rename them inline; Enter or clicking away saves, Escape cancels. Clearing the
+  name restores the default ("Player 1" / "Player 2"). The chosen names also
+  appear in the status counts and the winner message.
+- Names are **remembered in this browser** across reloads and restarts.
+
+Background:
+
+- First use of client-side persistence: a tiny, namespaced `localStorage`
+  preferences store (`jumping_squares:prefs`). Namespacing matters because
+  GitHub Pages serves every project of the account from the *same* origin, so an
+  un-prefixed key could collide. Kept deliberately simple by design — **no
+  expiry logic**; the browser/user manages lifetime and clearing — and fully
+  feature-detected: private mode or disabled storage just falls back to
+  in-memory defaults and never breaks the game. Names are sanitised (text-only,
+  whitespace-collapsed, length-capped at 24) and always rendered via
+  `textContent`, never `innerHTML`. A `v` field in the stored record allows
+  future migration. The module is structured so other settings (e.g. the
+  propagation speed) can be persisted the same way later.
+
 ## v21 — "What's new" panel
 
 Player-facing:
