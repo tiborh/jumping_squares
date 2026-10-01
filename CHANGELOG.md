@@ -29,6 +29,34 @@ the nearest user-facing entry.
 
 ---
 
+## v23 — Win tally (per name pair)
+
+Player-facing:
+
+- The game now keeps a **win tally** for the current pair of players: how many
+  rounds each has won. It shows inline next to the tile counts, e.g.
+  `Alice: 10, Bob: 9   (1 - 0)`, and prominently in the end-of-round dialog.
+- A win is counted the instant the engine decides the round (when the last
+  square is claimed) — in instant, timed, and manual **› Step** modes alike.
+- The tally **accumulates across rounds** (New Game / Play Again keeps the
+  score; it only resets the board).
+- **Renaming a player resets the tally to 0:0.** Pressing **Enter** (or clicking
+  away) to commit a rename clears the score — the deliberate, button-less way to
+  start a fresh series. Pressing **Esc** cancels and keeps the score. The score
+  is remembered in this browser and restored as long as the pair is retained.
+
+Background:
+
+- Builds directly on the v22 preferences store. `PREFS_VERSION` is bumped to 2
+  (adding `score: { pair, wins }`); v1 records (names only) migrate forward
+  rather than being dropped. Only one pair is tracked at this stage — the active
+  one — matching the agreed simple scope. A win is recorded exactly once per
+  round via a single guard on the moment `state.winner` is set (which happens on
+  the same `finalizeAfterCascade` path in every mode), and the guard is cleared
+  on New Game. No draw handling: this variant can't end in a draw (a round ends
+  only when one player owns the whole board); weighted/draw scoring is left for
+  later when richer rule-sets arrive.
+
 ## v22 — Editable, remembered player names
 
 Player-facing:
