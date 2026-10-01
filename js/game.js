@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '23';
+  var VERSION = '24';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,7 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
-    { v: '23', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
+    { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
     { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
     { v: '18', text: 'About/Settings dialogs handle keyboard focus; the corner build tag no longer overlaps the board.' },

@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v23 — Win tally (per name pair)
+## v24 — Win tally (per name pair)
 
 Player-facing:
 

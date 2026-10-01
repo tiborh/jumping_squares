@@ -91,13 +91,20 @@
         var parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') return;
 
-        // Names: present in both v1 and v2 — migrate forward unchanged.
+        // Names: a stable field present since v1 — migrate forward unchanged.
         if (parsed.playerNames && typeof parsed.playerNames === 'object') {
           mem.playerNames = parsed.playerNames;
         }
 
-        // Score: v2+ only. Older records simply have no score (starts 0:0).
-        if (parsed.v >= 2 && parsed.score && typeof parsed.score === 'object') {
+        // Score: understood only at THIS schema version. We deliberately read it
+        // only when parsed.v === PREFS_VERSION, not ">=": a record written by a
+        // newer build (parsed.v > PREFS_VERSION) may have a different score
+        // shape, so this older code must not reinterpret it under v2 assumptions
+        // — it keeps the stable names and starts the score fresh instead. Older
+        // records (v1) have no score and likewise start fresh.
+        var haveScore = false;
+        if (parsed.v === PREFS_VERSION && parsed.score &&
+            typeof parsed.score === 'object') {
           var p = parsed.score.pair, w = parsed.score.wins;
           if (p && typeof p === 'object') {
             mem.score.pair[1] = (typeof p[1] === 'string') ? p[1] : '';
@@ -107,6 +114,16 @@
             mem.score.wins[1] = toCount(w[1]);
             mem.score.wins[2] = toCount(w[2]);
           }
+          haveScore = true;
+        }
+
+        // When there was no score to adopt (v1 migration, or an unknown future
+        // schema), stamp the pair from the names we did load so the stored pair
+        // reflects reality rather than empty strings. Wins stay 0:0.
+        if (!haveScore) {
+          var nm = mem.playerNames || {};
+          mem.score.pair[1] = (typeof nm[1] === 'string' && nm[1]) ? nm[1] : '';
+          mem.score.pair[2] = (typeof nm[2] === 'string' && nm[2]) ? nm[2] : '';
         }
       } catch (e) { /* corrupt/blocked: keep defaults */ }
     }
