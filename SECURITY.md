@@ -11,8 +11,12 @@ Jumping Squares is a **static, client-side browser game**. It has:
 - **no backend / server** — it is plain HTML, CSS and JavaScript served as
   static files (GitHub Pages);
 - **no runtime dependencies** — nothing is fetched or bundled from npm or a CDN;
-- **no user accounts, authentication, or data collection** — it stores no
-  personal data and makes no network requests during play.
+- **no user accounts, authentication, or server-side data collection** — it
+  sends no data anywhere and makes no network requests during play. It does save
+  a small amount of **preference data (the player names you type and the win
+  tally) locally in your browser** via `localStorage`. A name can itself be
+  personal data, but it is **stored only on your device, never transmitted or
+  collected** by the project (see the README's *Persistence* section).
 
 As a result the practical attack surface is small. The areas that are still
 security-relevant, and that reports are most useful for, are:
@@ -74,6 +78,7 @@ best-effort rather than bound by a formal SLA. As a guideline:
 - Reports about the **game rules** (e.g. an unexpected cascade outcome) are
   welcome, but they are **gameplay bugs**, not security issues — please open a
   normal issue for those.
-- Because the game runs entirely in your browser with no server or stored data,
-  classic web-app categories such as authentication bypass, injection into a
-  database, or server-side RCE do not apply.
+- Because the game runs entirely in your browser with **no server-side data**
+  (the only stored data is local, cosmetic `localStorage` preferences — see
+  above), classic web-app categories such as authentication bypass, injection
+  into a database, or server-side RCE do not apply.

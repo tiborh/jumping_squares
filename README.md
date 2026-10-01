@@ -41,6 +41,16 @@ Rules:
 Use **New Game** (top right) to restart. On a phone, the board auto-sizes to
 fill the viewport and re-fits on rotation.
 
+**Player names & score.** Click a player's **name** (the turn indicator at the
+top) **on their turn** to rename them: type a name, then press **Enter** or
+**click away** to save, or **Esc** to cancel. A **win tally** for the current
+pair is shown next to the tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and
+prominently in the end-of-round dialog; it accumulates across rounds (New Game
+keeps the score). Both the names and the tally are **remembered in your
+browser** (see *Persistence* below). **Saving** a rename — whether by Enter or
+by clicking away — **resets the tally to 0:0** (the deliberate way to start a
+fresh series for a new pairing); **Esc** cancels and keeps the score.
+
 **Propagation speed (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
 
@@ -84,6 +94,34 @@ chain-reaction cascades, win detection, state-snapshot independence,
 stepped-cascade equivalence (the stepped path matches the instant result), and
 version-tag consistency (see below).
 
+## Persistence
+
+A small amount of **cosmetic preference data** is saved **locally in your
+browser** so it survives reloads and restarts:
+
+- **Player names** — the custom names you set by clicking the turn indicator.
+- **Win tally** — the running score for the current name pair.
+
+How it works and its boundaries:
+
+- Stored via the browser's **`localStorage`** under a single namespaced key,
+  `jumping_squares:prefs` (namespaced because GitHub Pages serves every project
+  of the account from the same origin). There is **no server** and nothing is
+  sent anywhere — it never leaves your browser.
+- **No expiry logic by design** — the browser (and you) manage its lifetime;
+  clearing site data removes it. It's **per browser / profile**, so a different
+  browser, device, or a private window starts fresh.
+- **Best-effort and non-essential** — access is feature-detected and wrapped,
+  so if storage is unavailable (e.g. private mode) the game falls back to
+  in-memory defaults and plays normally; nothing breaks.
+- The stored record carries a schema **version** so future changes can migrate
+  old data forward. Entered names are sanitised (text-only, length-capped) and
+  only ever rendered as text.
+
+Implementation note: this lives in a tiny preferences module in `js/ui.js`,
+written so other settings (e.g. the propagation speed) can be persisted the
+same way later.
+
 ## Development setup: copyright-year hook
 
 Source files carry an [SPDX](https://spdx.dev/) copyright header
@@ -117,6 +155,24 @@ a web-UI edit that leaves a stale year fails CI rather than slipping through.
 (It checks only *changed* files, not the whole tree, so a new year doesn't turn
 `main` red for untouched headers — each header is refreshed when its file is
 next edited.)
+
+## Working with the automated code review
+
+Pull requests get an automated **Copilot code review**. It's a useful extra set
+of eyes, but a couple of lessons from using it are worth recording:
+
+- **Keep the review effort on *Lite* for this repo.** On *Balanced* it will mine
+  the edge-case tail of small shell/text tooling almost without end (filename
+  quoting, line endings, EOF bytes, permissions, …), re-reviewing on every push.
+  *Lite* gives the same high-value findings with far less noise. (Set it in the
+  PR's **Reviewers → Copilot** control.)
+- **Disposition findings with evidence, then stop.** Treat each finding on its
+  merits: fix the real ones (several genuinely good catches have improved this
+  codebase), but when a finding is a demonstrable false positive or contradicts
+  an earlier one, record *why* — ideally with a concrete check (a byte-level
+  test, a repro) — and move on rather than looping. The review is **advisory**:
+  the merge gate is the required status checks plus the branch ruleset, not the
+  review verdict.
 
 ## Versioning & cache-busting
 
@@ -179,9 +235,13 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] Settable **propagation speed** (Settings): instant, 100–1000 ms animated
       cascades (default 500 ms), and a manual **› Step** mode with a `>` button
       and a shadow preview of the next step
+- [x] Editable **player names** (click the turn indicator on your turn),
+      remembered in the browser via a namespaced `localStorage` prefs module
+- [x] **Win tally** per name pair, shown in the status line and the
+      end-of-round dialog; accumulates across rounds; a rename resets it
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (72 assertions, no dependencies)
+- [x] Node test harness (76 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
@@ -197,7 +257,9 @@ Status of the project and planned work. Done items reflect the current build.
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
 - [x] Deploy as a GitHub Pages site
       (live at https://tiborh.github.io/jumping_squares/)
-- [ ] Score/history panel and simple match statistics
+- [x] Basic **win tally** per name pair (see Done above)
+- [ ] Richer **score/history panel** and match statistics (beyond the single
+      active pair — e.g. multiple pairings, per-game history, longer-term stats)
 
 ### Future game modes / rule sets (design notes)
 
