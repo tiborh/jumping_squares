@@ -436,19 +436,22 @@
    */
   function playMoveAnimated(r, c, delayMs) {
     if (!G.placeDot(state, state.current, r, c)) return;
-    render(); // show the placement immediately
 
-    // No propagation (or instantly decided): just finalise the turn.
+    // No propagation (or instantly decided): finalise and render the turn.
     if (cascadeSettled()) {
       G.finalizeAfterCascade(state);
       render();
       return;
     }
 
+    // A cascade will animate: lock input FIRST so the single render below
+    // already reflects the busy state (no one-frame "still editable" flash on
+    // the rename affordance), then show the placement and kick off the driver.
     busy = true;
+    render();
     animToken = playToken;
     animDelayMs = delayMs;
-    animSchedule(); // kick off; module-scoped so open/close can pause/resume
+    animSchedule(); // module-scoped so open/close can pause/resume
   }
 
   // Module-scoped animation driver (so the Settings dialog can pause/resume it).
