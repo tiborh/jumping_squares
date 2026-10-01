@@ -33,6 +33,7 @@
   var statusEl = document.getElementById('status');
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
+  var winnerScoreEl = document.getElementById('winner-score');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -48,10 +49,17 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 1;
+  var PREFS_VERSION = 2; // v2 adds `score`; v1 (names only) migrates forward
 
   var prefs = (function () {
-    var mem = { v: PREFS_VERSION, playerNames: {} }; // in-memory fallback/cache
+    // In-memory cache / fallback. `score` tracks the win tally for the active
+    // name pair: which seat (1/2) has won how many rounds. `pair` records the
+    // names those wins belong to (bookkeeping + future multi-pair support).
+    var mem = {
+      v: PREFS_VERSION,
+      playerNames: {},
+      score: { pair: { 1: '', 2: '' }, wins: { 1: 0, 2: 0 } },
+    };
 
     function storageAvailable() {
       // Probe under our OWN namespace so we never touch another same-origin
@@ -70,18 +78,52 @@
     }
     var canStore = storageAvailable();
 
+    function toCount(x) { // coerce stored value to a safe non-negative integer
+      var n = (typeof x === 'number') ? x : parseInt(x, 10);
+      return (isFinite(n) && n > 0) ? Math.floor(n) : 0;
+    }
+
     function load() {
       if (!canStore) return;
       try {
         var raw = window.localStorage.getItem(PREFS_KEY);
         if (!raw) return;
         var parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          // Only adopt a compatible version; otherwise start fresh (drop old).
-          if (parsed.v === PREFS_VERSION && parsed.playerNames &&
-              typeof parsed.playerNames === 'object') {
-            mem.playerNames = parsed.playerNames;
+        if (!parsed || typeof parsed !== 'object') return;
+
+        // Names: a stable field present since v1 — migrate forward unchanged.
+        if (parsed.playerNames && typeof parsed.playerNames === 'object') {
+          mem.playerNames = parsed.playerNames;
+        }
+
+        // Score: understood only at THIS schema version. We deliberately read it
+        // only when parsed.v === PREFS_VERSION, not ">=": a record written by a
+        // newer build (parsed.v > PREFS_VERSION) may have a different score
+        // shape, so this older code must not reinterpret it under v2 assumptions
+        // — it keeps the stable names and starts the score fresh instead. Older
+        // records (v1) have no score and likewise start fresh.
+        var haveScore = false;
+        if (parsed.v === PREFS_VERSION && parsed.score &&
+            typeof parsed.score === 'object') {
+          var p = parsed.score.pair, w = parsed.score.wins;
+          if (p && typeof p === 'object') {
+            mem.score.pair[1] = (typeof p[1] === 'string') ? p[1] : '';
+            mem.score.pair[2] = (typeof p[2] === 'string') ? p[2] : '';
           }
+          if (w && typeof w === 'object') {
+            mem.score.wins[1] = toCount(w[1]);
+            mem.score.wins[2] = toCount(w[2]);
+          }
+          haveScore = true;
+        }
+
+        // When there was no score to adopt (v1 migration, or an unknown future
+        // schema), stamp the pair from the names we did load so the stored pair
+        // reflects reality rather than empty strings. Wins stay 0:0.
+        if (!haveScore) {
+          var nm = mem.playerNames || {};
+          mem.score.pair[1] = (typeof nm[1] === 'string' && nm[1]) ? nm[1] : '';
+          mem.score.pair[2] = (typeof nm[2] === 'string' && nm[2]) ? nm[2] : '';
         }
       } catch (e) { /* corrupt/blocked: keep defaults */ }
     }
@@ -103,6 +145,21 @@
       setPlayerName: function (n, name) {
         if (name) mem.playerNames[n] = name;
         else delete mem.playerNames[n];
+        persist();
+      },
+      // --- score ---
+      getWins: function (n) { return mem.score.wins[n] || 0; },
+      // Record one win for seat n. Persisted immediately so a win survives even
+      // if the tab is closed right after the game ends.
+      addWin: function (n) {
+        mem.score.wins[n] = (mem.score.wins[n] || 0) + 1;
+        persist();
+      },
+      // Reset the tally to 0:0 and stamp the pair it now belongs to. Called on
+      // any rename COMMIT (the documented, button-less way to reset the score).
+      resetScore: function (name1, name2) {
+        mem.score.pair = { 1: name1 || '', 2: name2 || '' };
+        mem.score.wins = { 1: 0, 2: 0 };
         persist();
       },
     };
@@ -129,6 +186,11 @@
   function playerName(n) {
     var custom = sanitizeName(prefs.getPlayerName(n));
     return custom || defaultPlayerName(n);
+  }
+
+  // Running win tally for the active pair, as "(winsA - winsB)".
+  function scoreLabel() {
+    return '(' + prefs.getWins(1) + ' - ' + prefs.getWins(2) + ')';
   }
 
   // --- build the grid once -------------------------------------------------
@@ -242,15 +304,29 @@
       updateTurnLabelAffordance();
     }
 
+    // Record the win exactly once, the moment the engine declares a winner.
+    // This sits here because state.winner is set via finalizeAfterCascade in
+    // every mode (instant, timed, and manual step), so a single guard covers
+    // all paths. newGame() clears winRecorded for the next round.
+    if (state.winner !== G.EMPTY && !winRecorded) {
+      winRecorded = true;
+      prefs.addWin(state.winner);
+    }
+
     var counts = G.ownershipCounts(state);
     var parts = [];
     for (var p = 1; p <= state.players; p++) {
       parts.push(playerName(p) + ': ' + counts[p]);
     }
-    statusEl.textContent = parts.join('   ');
+    // Append the running tally, e.g. "Alice: 10, Bob: 9   (1 - 0)".
+    statusEl.textContent = parts.join(', ') + '   ' + scoreLabel();
 
     if (state.winner !== G.EMPTY) {
       winnerMsg.textContent = playerName(state.winner) + ' wins!';
+      // Prominent running tally in the end-of-round dialog.
+      winnerScoreEl.textContent =
+        playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
+        prefs.getWins(2) + '  ' + playerName(2);
       overlay.classList.add('show');
     } else {
       overlay.classList.remove('show');
@@ -315,6 +391,11 @@
         var clean = sanitizeName(input.value);
         var def = defaultPlayerName(n);
         prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
+        // Any rename COMMIT resets the win tally to 0:0 for the (new) pair —
+        // the documented, button-less way to reset the score. This fires on
+        // Enter/blur regardless of whether the value actually changed; Esc
+        // (cancel) takes the other branch and leaves the score intact.
+        prefs.resetScore(playerName(1), playerName(2));
       }
       render(); // rebuilds the label text (and affordance) from current state
     }
@@ -345,6 +426,7 @@
   var paused = false;          // true while the Settings dialog is open
   var resumeAnimation = null;  // callback to resume a paused animated cascade
   var animTimer = null;        // pending setTimeout id for the next generation
+  var winRecorded = false;     // true once this game's win has been tallied
 
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
@@ -493,6 +575,7 @@
     resumeAnimation = null; // drop any parked (paused) animation
     busy = false;  // unlock input
     stepping.active = false; // cancel any manual step-through in progress
+    winRecorded = false;     // the next game's win hasn't been tallied yet
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
