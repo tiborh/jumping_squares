@@ -308,6 +308,19 @@
           return discard('unrecognised format', raw);
         }
 
+        // Validate the envelope's formatVersion BEFORE migrating. It must be a
+        // positive integer no newer than this build understands. A missing /
+        // malformed version, or one from a FUTURE build, must not slip past
+        // migrate() (which only knows how to convert versions up to the
+        // current one) into loadState under today's assumptions. Older versions
+        // (< current) are allowed through so migrate() can convert them when
+        // such versions eventually exist.
+        var fv = wrapper.formatVersion;
+        if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+            fv < 1 || fv > SAVE_FORMAT_VERSION) {
+          return discard('unsupported formatVersion', raw);
+        }
+
         wrapper = migrate(wrapper); // N3 seam (identity for now)
 
         var clean = G.loadState(wrapper.state);
@@ -1024,10 +1037,14 @@
     autoSaveToggle.addEventListener('change', function () {
       prefs.setAutoSave(this.checked);
       // Turning auto-save ON should immediately capture the current board (so a
-      // reload right after enabling restores this game, not nothing). Turning
-      // it OFF leaves any existing save intact (it will still restore; the note
-      // explains that).
-      if (this.checked) autoSaveIfOn();
+      // reload right after enabling restores this game, not nothing) — BUT only
+      // when no turn is in progress. If a cascade is mid-resolution (animated/
+      // paused `busy`, or manual `stepping.active`), the current state contains
+      // overloaded cells; persisting it would restore an unstable board as if
+      // settled (the cascade never resumes after reload). In that case we skip
+      // the immediate save and let the eventual finalizeTurn() persist the
+      // settled end-state instead. Turning OFF leaves any existing save intact.
+      if (this.checked && !busy && !stepping.active) autoSaveIfOn();
       syncPersistenceUI();
     });
   }

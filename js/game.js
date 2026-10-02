@@ -468,9 +468,18 @@
     if (!obj || typeof obj !== 'object') return null;
 
     var rows = obj.rows, cols = obj.cols, players = obj.players;
-    if (!isPlainInt(rows) || rows < 2) return null;
-    if (!isPlainInt(cols) || cols < 2) return null;
-    if (!isPlainInt(players) || players < 2) return null;
+    // Lower AND upper bounds. The upper caps matter for safety, not just
+    // sanity: without them a crafted value like players=4294967295 passes the
+    // integer check and then throws RangeError at `new Array(players + 1)`
+    // below — an exception the caller (boardStore.load) does not catch, so one
+    // malformed stored value would abort boot instead of being discarded. The
+    // caps are far above any real game (the UI is 5x5/2) yet well under array
+    // limits, so legitimate saves are unaffected.
+    var MAX_DIM = 1000;      // per-axis cell count ceiling
+    var MAX_PLAYERS = 100;   // player-count ceiling
+    if (!isPlainInt(rows) || rows < 2 || rows > MAX_DIM) return null;
+    if (!isPlainInt(cols) || cols < 2 || cols > MAX_DIM) return null;
+    if (!isPlainInt(players) || players < 2 || players > MAX_PLAYERS) return null;
 
     if (!Array.isArray(obj.cells)) return null;
     if (obj.cells.length !== rows * cols) return null;
@@ -494,6 +503,18 @@
       if (owner === EMPTY && value !== 0) return null;
       if (owner !== EMPTY && value < 1) return null;
       cells[i] = { owner: owner, value: value };
+    }
+
+    // Winner invariant. The engine only ever DECLARES a winner when that player
+    // physically owns every cell (checkWinner requires no empty cells and a
+    // single owner). A range check on `winner` alone would accept an edited
+    // save like winner=1 over a contested/empty board; on restore render()
+    // would then treat the game as finished and block play. Reject any nonzero
+    // winner that does not actually own the whole board.
+    if (winner !== EMPTY) {
+      for (var wi = 0; wi < cells.length; wi++) {
+        if (cells[wi].owner !== winner) return null;
+      }
     }
 
     // turnsTaken: accept a well-formed array of length players+1; otherwise

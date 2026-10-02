@@ -431,6 +431,35 @@ console.log('loadState: rejects malformed / out-of-range input');
   b = base(); b.cells[0] = { owner: 0, value: 2 }; ok(G.loadState(b) === null, 'empty cell with value rejected');
   b = base(); b.cells[0] = { owner: 1, value: 0 }; ok(G.loadState(b) === null, 'owned cell with value 0 rejected');
   b = base(); b.cells[0] = null;                 ok(G.loadState(b) === null, 'null cell entry rejected');
+
+  // Upper bounds: a huge players/rows/cols must be REJECTED (null), not throw a
+  // RangeError at array allocation (which the caller would not catch).
+  b = base(); b.players = 4294967295;
+  var threwPlayers = false, resPlayers;
+  try { resPlayers = G.loadState(b); } catch (e) { threwPlayers = true; }
+  ok(!threwPlayers, 'huge players does not throw (bounded before allocation)');
+  ok(resPlayers === null, 'huge players rejected');
+  b = base(); b.rows = 100000; b.cells = []; // cell count would mismatch anyway
+  var threwRows = false;
+  try { G.loadState(b); } catch (e) { threwRows = true; }
+  ok(!threwRows, 'huge rows does not throw');
+  ok(G.loadState((function () { var x = base(); x.cols = 2000000; return x; })()) === null,
+     'huge cols rejected');
+
+  // Winner invariant: a nonzero winner that does NOT own the whole board is
+  // rejected (a range check alone would wrongly accept it).
+  b = base(); b.winner = 1; // base has empty cells, so p1 does not own all
+  ok(G.loadState(b) === null, 'winner set but board not fully owned -> rejected');
+  // A legitimately finished board (winner owns every cell) is accepted.
+  var finOk = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 2,
+    turnsTaken: [0, 1, 1],
+    cells: [
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(finOk) !== null, 'winner owning the whole board -> accepted');
 })();
 
 console.log('loadState: reconstructs turnsTaken when missing/malformed');
