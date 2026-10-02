@@ -42,6 +42,21 @@ coverage/
 .env
 .env.*
 *.local
+# Private keys, certificates, and credential stores (defensive)
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*.pkcs12
+credentials.json
+secrets.json
+*.secret
 
 # --- Binary files ------------------------------------------------------------
 # The repo is text-only for now. Ignore common binary/media types by default so
