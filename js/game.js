@@ -505,23 +505,15 @@
       cells[i] = { owner: owner, value: value };
     }
 
-    // Winner invariant. The engine only ever DECLARES a winner when that player
-    // physically owns every cell (checkWinner requires no empty cells and a
-    // single owner). A range check on `winner` alone would accept an edited
-    // save like winner=1 over a contested/empty board; on restore render()
-    // would then treat the game as finished and block play. Reject any nonzero
-    // winner that does not actually own the whole board.
-    if (winner !== EMPTY) {
-      for (var wi = 0; wi < cells.length; wi++) {
-        if (cells[wi].owner !== winner) return null;
-      }
-    }
-
     // turnsTaken: accept a well-formed array of length players+1; otherwise
     // reconstruct a conservative stand-in (every player that currently owns a
     // cell, or the winner, is treated as having moved at least once). This keeps
     // the turn-gate meaningful after a load without demanding the field be
     // present/well-formed in the input.
+    //
+    // NOTE: this is built BEFORE the winner is validated, because the winner
+    // check below depends on turnsTaken (the engine's win rule includes a
+    // turn-gate: every player must have taken a turn).
     var turnsTaken;
     if (Array.isArray(obj.turnsTaken) && obj.turnsTaken.length === players + 1) {
       turnsTaken = new Array(players + 1).fill(0);
@@ -543,7 +535,19 @@
       if (winner !== EMPTY) turnsTaken[winner] = 1;
     }
 
-    return {
+    // Assemble the candidate and validate its WINNER against the engine's own
+    // rule rather than re-implementing it here. checkWinner enforces BOTH the
+    // physical condition (one player owns every cell, no neutral cells) AND the
+    // turn-gate (every player has taken at least one turn). Requiring the stored
+    // `winner` to equal checkWinner(candidate) rejects any inconsistent save:
+    //   - winner set over a contested/empty board (physical condition fails);
+    //   - winner set with all cells owned but a player never moved
+    //     (turn-gate fails — e.g. turnsTaken [0,0,0]);
+    //   - winner cleared (0) on a board the engine would have decided.
+    // This also means a finished save whose turnsTaken was not faithfully
+    // stored (so reconstruction can't prove every player moved) is rejected
+    // rather than restored as a bogus "finished" game.
+    var candidate = {
       rows: rows,
       cols: cols,
       players: players,
@@ -553,6 +557,9 @@
       winner: winner,
       cells: cells,
     };
+    if (checkWinner(candidate) !== winner) return null;
+
+    return candidate;
   }
 
   /** Deep-ish clone for snapshots (undo, AI lookahead). */

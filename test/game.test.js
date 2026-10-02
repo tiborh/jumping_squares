@@ -478,19 +478,47 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
   ok(loaded.turnsTaken[1] >= 1 && loaded.turnsTaken[2] >= 1,
      'both owners marked as having moved');
 
-  // A loaded finished state: winner is marked as moved even if it owned nothing
-  // odd-shaped (defensive); here winner owns everything so it is trivially set.
-  var fin = {
+  // A FINISHED save whose turnsTaken is malformed is now REJECTED: after
+  // reconstruction, player 2 (who owns nothing) has 0 turns, so the engine's
+  // turn-gate (checkWinner) would NOT declare winner 1. loadState requires the
+  // stored winner to equal checkWinner(candidate), so an unfaithful finished
+  // state cannot be restored as bogusly "finished".
+  var finBad = {
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
-    turnsTaken: 'bogus', // malformed -> reconstructed
+    turnsTaken: 'bogus', // malformed -> reconstructed -> p2 has 0 turns
     cells: [
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
-  var lf = G.loadState(fin);
-  ok(lf !== null, 'loads a finished state with malformed turnsTaken');
-  ok(lf.turnsTaken[1] >= 1, 'winner marked as having moved');
+  ok(G.loadState(finBad) === null,
+     'finished state with malformed turnsTaken is rejected (turn-gate not provable)');
+
+  // A finished save with a FAITHFUL turnsTaken (every player moved) is accepted.
+  var finGood = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 5, 4], // both players took turns
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  var lg = G.loadState(finGood);
+  ok(lg !== null, 'finished state with faithful turnsTaken is accepted');
+  eq(lg.winner, 1, 'accepted finished state keeps winner 1');
+
+  // Turn-gate directly: all cells p1, winner 1, but turnsTaken [0,0,0] -> reject
+  // (player 2 never moved, so the engine would not have declared a winner).
+  var noGate = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 4, winner: 1,
+    turnsTaken: [0, 0, 0],
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(noGate) === null,
+     'winner set but turn-gate unmet (turnsTaken all zero) is rejected');
 })();
 
 console.log('version wiring');

@@ -1202,6 +1202,27 @@
   (function restoreSavedGame() {
     var restored = boardStore.load();
     if (!restored) return;
+    // Defence at the UI boundary: loadState is intentionally generous (it is an
+    // engine-level, size-agnostic validator, ready for a future board-size
+    // picker). This UI, however, is fixed at ROWS x COLS / PLAYERS and renders
+    // one DOM node per cell with per-player colour classes. A same-origin save
+    // that is valid for the engine but larger (e.g. 200x200) or has more
+    // players than this build can render would, if adopted, trigger a huge
+    // boot-time DOM allocation (freezing the tab) and unsupported colour/control
+    // states. So only adopt a save that matches what this UI can actually show;
+    // discard anything else (it is removed by boardStore on a later cycle only
+    // if auto-save overwrites it — here we simply ignore it and boot fresh).
+    if (restored.rows !== ROWS || restored.cols !== COLS ||
+        restored.players !== PLAYERS) {
+      try {
+        console.warn('Jumping Squares: ignoring saved game with incompatible ' +
+          'dimensions (' + restored.rows + 'x' + restored.cols + '/' +
+          restored.players + 'p); this build renders ' + ROWS + 'x' + COLS +
+          '/' + PLAYERS + 'p.');
+      } catch (e) {}
+      boardStore.remove(); // it cannot be shown here; clear it to avoid re-warning
+      return;
+    }
     state = restored;
     if (state.winner !== G.EMPTY) {
       // A FINISHED game was restored: show the board + standalone New button but
