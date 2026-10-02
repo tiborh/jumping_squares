@@ -735,7 +735,7 @@
     <button id="endgame-new" type="button">New Game</button>
   </div>
 
-  <div id="winner-overlay">
+  <div id="winner-overlay" role="dialog" aria-modal="true" aria-labelledby="winner-msg">
     <div class="msg" id="winner-msg"></div>
     <div id="winner-score"></div>
     <button id="play-again">Play Again</button>
@@ -773,7 +773,7 @@
           <!-- Slide switch: a checkbox styled as an on/off toggle. The label is
                associated via for=; the visual track/knob is drawn with CSS. -->
           <span class="switch">
-            <input type="checkbox" id="autosave-toggle" checked
+            <input type="checkbox" id="autosave-toggle" checked role="switch"
                    aria-describedby="autosave-hint" />
             <span class="switch-track" aria-hidden="true">
               <span class="switch-knob"></span>
@@ -788,7 +788,7 @@
         </div>
         <!-- Attention note: shown only when auto-save is OFF but a saved game
              still exists (so a silent restore next time isn't surprising). -->
-        <div class="persistence-note" id="persistence-note" hidden>
+        <div class="persistence-note" id="persistence-note" role="status" aria-live="polite" hidden>
           There is saved game data that will be restored next time.
         </div>
         <!-- Enabled only when there is removable saved data that isn't being

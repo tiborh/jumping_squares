@@ -523,6 +523,17 @@
         if (!isPlainInt(tv) || tv < 0) { okTurns = false; break; }
         turnsTaken[t] = tv;
       }
+      if (okTurns) {
+        // Invariant: any player who owns cells MUST have taken at least one
+        // turn (cells start neutral and only become owned when a player moves).
+        // If obj.turnsTaken reports 0 turns for an active cell owner, it is
+        // inconsistent and falls back to conservative reconstruction.
+        var cellCounts = new Array(players + 1).fill(0);
+        for (var cIdx = 0; cIdx < cells.length; cIdx++) cellCounts[cells[cIdx].owner]++;
+        for (var pIdx = 1; pIdx <= players; pIdx++) {
+          if (cellCounts[pIdx] > 0 && turnsTaken[pIdx] < 1) { okTurns = false; break; }
+        }
+      }
       if (!okTurns) turnsTaken = null;
     }
     if (!turnsTaken) {
@@ -569,6 +580,21 @@
     // the checkWinner equality above; a legitimate ongoing game always has
     // neutral cells or more than one owner, so soleOwner is EMPTY here.)
     if (winner === EMPTY && soleOwner(candidate) !== EMPTY) return null;
+
+    // Ongoing game contract: the current player must have at least one legal
+    // move. A player can move if at least one cell is neutral (EMPTY) or owned
+    // by that player. If there are no neutral cells and the current player owns
+    // no cells, they cannot play and the restored game would be permanently stuck.
+    if (winner === EMPTY) {
+      var hasMove = false;
+      for (var m = 0; m < cells.length; m++) {
+        if (cells[m].owner === EMPTY || cells[m].owner === candidate.current) {
+          hasMove = true;
+          break;
+        }
+      }
+      if (!hasMove) return null;
+    }
 
     // Settled-state contract. Persistence intentionally stores only SETTLED
     // boards (the end-state of a move); mid-cascade snapshots are out of scope

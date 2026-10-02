@@ -512,6 +512,20 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
      'setup: board solely owned by p1 but no winner (turn-gate unmet)');
   ok(G.loadState(stuck) === null,
      'physically-terminal, no-winner board rejected (would be permanently stuck)');
+
+  // Ongoing game where current player has no legal moves (e.g. 3-player game:
+  // p1 and p2 own all cells, 0 neutral cells, current is p3). p3 cannot move,
+  // so restoring would leave the game permanently stuck.
+  var noLegalMove = {
+    rows: 2, cols: 2, players: 3, current: 3, moveCount: 4, winner: 0,
+    turnsTaken: [0, 2, 2, 0],
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(noLegalMove) === null,
+     'ongoing state with no legal move for current player is rejected');
 })();
 
 console.log('loadState: reconstructs turnsTaken when missing/malformed');
@@ -529,6 +543,20 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
   eq(loaded.turnsTaken.length, 3, 'turnsTaken has length players+1');
   ok(loaded.turnsTaken[1] >= 1 && loaded.turnsTaken[2] >= 1,
      'both owners marked as having moved');
+
+  // TurnsTaken provides 0 for a player that owns cells -> contradictory, falls
+  // back to conservative reconstruction so the turn-gate remains valid.
+  var unfaithfulTurns = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 3, winner: 0,
+    turnsTaken: [0, 0, 2], // p1 owns cells but turnsTaken[1] is 0!
+    cells: [
+      { owner: 1, value: 1 }, { owner: 2, value: 1 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  var lut = G.loadState(unfaithfulTurns);
+  ok(lut !== null, 'inconsistent turnsTaken repaired (loads successfully)');
+  ok(lut.turnsTaken[1] >= 1, 'player owning cells reconstructed with at least 1 turn');
 
   // A FINISHED save whose turnsTaken is malformed is now REJECTED: after
   // reconstruction, player 2 (who owns nothing) has 0 turns, so the engine's

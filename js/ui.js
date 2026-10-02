@@ -241,13 +241,66 @@
     return {
       canStore: canStore,
 
-      /** True iff a (parseable, present) save exists under our key. */
-      has: function () {
+      /**
+       * True iff a valid, restorable save exists under our key.
+       * If present data is corrupt or unparseable, it is discarded (sanitised-
+       * logged and removed) so bad data does not linger, and false is returned.
+       *
+       * @param {function(rows,cols,players):boolean} [accept] optional predicate
+       *   checked against the raw saved dimensions; return false to reject a save
+       *   this UI cannot render.
+       */
+      has: function (accept) {
         if (!canStore) return false;
+        var raw;
         try {
-          return window.localStorage.getItem(SAVE_KEY) !== null;
+          raw = window.localStorage.getItem(SAVE_KEY);
         } catch (e) {
           return false;
+        }
+        if (raw === null) return false;
+
+        var discard = function (reason) {
+          try {
+            console.warn('Jumping Squares: discarding unusable saved game (' +
+              reason + '): ' + sanitizeForLog(raw));
+          } catch (e2) { /* ignore logging failures */ }
+          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
+          return false;
+        };
+
+        try {
+          var wrapper = JSON.parse(raw);
+          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
+              wrapper.format !== SAVE_FORMAT) {
+            return discard('unrecognised format');
+          }
+
+          var fv = wrapper.formatVersion;
+          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+              fv < 1 || fv > SAVE_FORMAT_VERSION) {
+            return discard('unsupported formatVersion');
+          }
+
+          wrapper = migrate(wrapper);
+
+          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
+            return discard('malformed state');
+          }
+
+          if (typeof accept === 'function') {
+            var ws = wrapper.state;
+            if (!accept(ws.rows, ws.cols, ws.players)) {
+              return discard('dimensions not accepted');
+            }
+          }
+
+          if (G.loadState(wrapper.state) === null) {
+            return discard('failed validation');
+          }
+          return true;
+        } catch (e) {
+          return discard('malformed save');
         }
       },
 
@@ -292,64 +345,66 @@
         }
         if (raw === null) return null; // nothing saved: not an error
 
-        var discard = function (reason, offending) {
+        var discard = function (reason) {
           // Log the (sanitised) offending content so a real corruption can be
           // investigated, then remove it so it can't wedge every future boot.
           try {
             console.warn('Jumping Squares: discarding unusable saved game (' +
-              reason + '): ' + sanitizeForLog(offending));
+              reason + '): ' + sanitizeForLog(raw));
           } catch (e2) { /* ignore logging failures */ }
           try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
           return null;
         };
 
-        var wrapper;
         try {
-          wrapper = JSON.parse(raw);
-        } catch (e) {
-          return discard('invalid JSON', raw);
-        }
-        if (!wrapper || typeof wrapper !== 'object' ||
-            wrapper.format !== SAVE_FORMAT) {
-          return discard('unrecognised format', raw);
-        }
-
-        // Validate the envelope's formatVersion BEFORE migrating. It must be a
-        // positive integer no newer than this build understands. A missing /
-        // malformed version, or one from a FUTURE build, must not slip past
-        // migrate() (which only knows how to convert versions up to the
-        // current one) into loadState under today's assumptions. Older versions
-        // (< current) are allowed through so migrate() can convert them when
-        // such versions eventually exist.
-        var fv = wrapper.formatVersion;
-        if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
-            fv < 1 || fv > SAVE_FORMAT_VERSION) {
-          return discard('unsupported formatVersion', raw);
-        }
-
-        wrapper = migrate(wrapper); // N3 seam (identity for now)
-
-        // Cheap dimension gate BEFORE rehydration. loadState() is strict but it
-        // also ITERATES/ALLOCATES one object per cell, so a validator-allowed
-        // but huge save (e.g. 1000x1000 = 1,000,000 cells) would cost a large
-        // parse+allocation pass before any later UI check could reject it. If
-        // the caller supplied an `accept(rows, cols, players)` predicate, peek
-        // at the raw wrapper.state's declared dimensions (shallow reads, no
-        // iteration) and bail out early when they are not acceptable — so an
-        // oversized/incompatible save is discarded without ever rehydrating it.
-        if (typeof accept === 'function') {
-          var ws = wrapper.state;
-          if (!ws || typeof ws !== 'object' ||
-              !accept(ws.rows, ws.cols, ws.players)) {
-            return discard('dimensions not accepted', raw);
+          var wrapper = JSON.parse(raw);
+          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
+              wrapper.format !== SAVE_FORMAT) {
+            return discard('unrecognised format');
           }
-        }
 
-        var clean = G.loadState(wrapper.state);
-        if (clean === null) {
-          return discard('failed validation', raw);
+          // Validate the envelope's formatVersion BEFORE migrating. It must be a
+          // positive integer no newer than this build understands. A missing /
+          // malformed version, or one from a FUTURE build, must not slip past
+          // migrate() (which only knows how to convert versions up to the
+          // current one) into loadState under today's assumptions. Older versions
+          // (< current) are allowed through so migrate() can convert them when
+          // such versions eventually exist.
+          var fv = wrapper.formatVersion;
+          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+              fv < 1 || fv > SAVE_FORMAT_VERSION) {
+            return discard('unsupported formatVersion');
+          }
+
+          wrapper = migrate(wrapper); // N3 seam (identity for now)
+
+          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
+            return discard('malformed state');
+          }
+
+          // Cheap dimension gate BEFORE rehydration. loadState() is strict but it
+          // also ITERATES/ALLOCATES one object per cell, so a validator-allowed
+          // but huge save (e.g. 1000x1000 = 1,000,000 cells) would cost a large
+          // parse+allocation pass before any later UI check could reject it. If
+          // the caller supplied an `accept(rows, cols, players)` predicate, peek
+          // at the raw wrapper.state's declared dimensions (shallow reads, no
+          // iteration) and bail out early when they are not acceptable — so an
+          // oversized/incompatible save is discarded without ever rehydrating it.
+          if (typeof accept === 'function') {
+            var ws = wrapper.state;
+            if (!accept(ws.rows, ws.cols, ws.players)) {
+              return discard('dimensions not accepted');
+            }
+          }
+
+          var clean = G.loadState(wrapper.state);
+          if (clean === null) {
+            return discard('failed validation');
+          }
+          return clean;
+        } catch (e) {
+          return discard('malformed save');
         }
-        return clean;
       },
 
       /** Remove any saved game (used by "remove saved data" / reset). */
@@ -1045,8 +1100,13 @@
   var removeSaveBtn = document.getElementById('remove-save');
   var persistenceNote = document.getElementById('persistence-note');
 
+  // Dimension gate: this UI only adopts/recognises saves matching its fixed size.
+  function fitsDimensions(r, c, p) {
+    return r === ROWS && c === COLS && p === PLAYERS;
+  }
+
   // Reflect the current persistence state in the panel. Two derived states:
-  //   - note shown  : auto-save OFF *and* a saved game exists (the only case a
+  //   - note shown  : auto-save OFF *and* a valid saved game exists (the only case a
   //                   silent restore-next-time could surprise the user);
   //   - remove enabled: exactly the same condition — there is removable data
   //                   that isn't being continuously rewritten by an active
@@ -1054,7 +1114,7 @@
   //                   next move rewrites it), so the button is disabled.
   function syncPersistenceUI() {
     var on = prefs.getAutoSave();
-    var hasSave = boardStore.has();
+    var hasSave = boardStore.has(fitsDimensions);
     if (autoSaveToggle) autoSaveToggle.checked = on;
     var orphanSave = (!on && hasSave);
     if (persistenceNote) persistenceNote.hidden = !orphanSave;
@@ -1232,8 +1292,7 @@
     // BEFORE rehydration (no large allocation for, e.g., a 1000x1000 board).
     // This UI is fixed at ROWS x COLS / PLAYERS; the engine validator stays
     // generous for a future board-size picker.
-    var fits = function (r, c, p) { return r === ROWS && c === COLS && p === PLAYERS; };
-    var restored = boardStore.load(fits);
+    var restored = boardStore.load(fitsDimensions);
     if (!restored) return;
     // Defence-in-depth: the pre-load predicate above already rejects mismatched
     // dimensions before rehydration, but re-check the rehydrated state too in
