@@ -16,12 +16,14 @@ The turn aborts before the file is written or the command runs.
 It looks intermittent but is **deterministic**: it fires whenever the
 outbound request payload carries a large (~5 KB) block of content.
 
-## Root cause (confirmed by a Kiro maintainer)
+## Cause (maintainer assessment; under investigation)
 
 Tracked as Kiro issue [#11750](https://github.com/kirodotdev/Kiro/issues/11750).
-A maintainer confirmed: tools send file content / command text as a **direct
-tool input to the backend with no client-side size limit**, and the backend
-rejects large payloads by size and/or specific content patterns.
+A maintainer confirmed the mechanism: tools send file content / command text
+as a direct tool input to the backend with **no client-side size limit**. They
+assessed that the backend *might* reject large payloads by size and/or specific
+content patterns, and the issue is still **under investigation** (so the exact
+trigger below is a hypothesis, not established fact).
 
 - **Not tool-specific.** Reproduced with *both* the write tool *and* a shell
   heredoc (`cat <<'EOF' > file`). The trigger is the payload content,
