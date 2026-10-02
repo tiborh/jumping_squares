@@ -3,6 +3,7 @@
 [![CI](https://github.com/tiborh/jumping_squares/actions/workflows/ci.yml/badge.svg)](https://github.com/tiborh/jumping_squares/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/tiborh/jumping_squares/actions/workflows/codeql.yml/badge.svg)](https://github.com/tiborh/jumping_squares/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/tiborh/jumping_squares/badge)](https://securityscorecards.dev/viewer/?uri=github.com/tiborh/jumping_squares)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/15171/baseline)](https://www.bestpractices.dev/projects/15171)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
 
 **▶ Play it now: https://tiborh.github.io/jumping_squares/**
