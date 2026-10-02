@@ -495,6 +495,23 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
      'setup: board is over capacity AND solely owned by p1');
   ok(G.loadState(soleOverflow) !== null,
      'sole-owner perpetual-overflow terminal is accepted');
+
+  // A board physically owned by one player but with winner EMPTY (turn-gate not
+  // met) is UNREACHABLE in real play and would be permanently stuck if restored
+  // (the other player has no legal move and no winner is declared). Reject it.
+  // All cells p1, current 2, winner 0, p2 never moved.
+  var stuck = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 4, winner: 0,
+    turnsTaken: [0, 4, 0], // p2 never took a turn
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.soleOwner(stuck) === 1 && G.checkWinner(stuck) === G.EMPTY,
+     'setup: board solely owned by p1 but no winner (turn-gate unmet)');
+  ok(G.loadState(stuck) === null,
+     'physically-terminal, no-winner board rejected (would be permanently stuck)');
 })();
 
 console.log('loadState: reconstructs turnsTaken when missing/malformed');

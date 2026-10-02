@@ -559,6 +559,17 @@
     };
     if (checkWinner(candidate) !== winner) return null;
 
+    // Reject a physically-terminal board that is NOT a declared win. If one
+    // player owns every cell (soleOwner != EMPTY) but winner is EMPTY — only
+    // possible when the turn-gate was not met, e.g. an opponent never moved —
+    // the position is unreachable in real play and, if restored, is permanently
+    // stuck: the opponent has no legal move (no empty and no own cells) and no
+    // winner is declared. The engine would never persist such an ongoing state,
+    // so treat it as invalid. (A genuine terminal with winner set is handled by
+    // the checkWinner equality above; a legitimate ongoing game always has
+    // neutral cells or more than one owner, so soleOwner is EMPTY here.)
+    if (winner === EMPTY && soleOwner(candidate) !== EMPTY) return null;
+
     // Settled-state contract. Persistence intentionally stores only SETTLED
     // boards (the end-state of a move); mid-cascade snapshots are out of scope
     // by design. So reject any candidate that still has a cell over capacity —
