@@ -462,6 +462,41 @@ console.log('loadState: rejects malformed / out-of-range input');
   ok(G.loadState(finOk) !== null, 'winner owning the whole board -> accepted');
 })();
 
+console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-owner terminal');
+(function () {
+  // A contested board with an OVER-CAPACITY cell is not a settled end-state;
+  // persistence only ever stores settled boards, so loadState must reject it
+  // (otherwise it would be adopted as a playable board whose cascade never
+  // resumes). Corner (0,0) cap 2 at value 3 is over capacity.
+  var unsettled = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 3, winner: 0,
+    turnsTaken: [0, 1, 1],
+    cells: [
+      { owner: 1, value: 3 }, { owner: 2, value: 1 },  // (0,0) over cap -> unstable
+      { owner: 0, value: 0 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.hasOverflow(unsettled), 'setup: the crafted board really is over capacity');
+  ok(G.loadState(unsettled) === null,
+     'over-capacity contested board rejected (settled-state contract)');
+
+  // The ONE legitimate perpetual-overflow case: a single player owns the whole
+  // board (soleOwner != EMPTY). Such a board can stay over capacity forever and
+  // is a valid terminal; it must still load. Fill a 2x2 with p1, one over cap.
+  var soleOverflow = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 3, 2],
+    cells: [
+      { owner: 1, value: 3 }, { owner: 1, value: 1 },  // (0,0) cap 2, value 3
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.hasOverflow(soleOverflow) && G.soleOwner(soleOverflow) === 1,
+     'setup: board is over capacity AND solely owned by p1');
+  ok(G.loadState(soleOverflow) !== null,
+     'sole-owner perpetual-overflow terminal is accepted');
+})();
+
 console.log('loadState: reconstructs turnsTaken when missing/malformed');
 (function () {
   // No turnsTaken present: every player that owns a cell is treated as moved.

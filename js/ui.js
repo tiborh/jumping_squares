@@ -36,6 +36,7 @@
   var winnerScoreEl = document.getElementById('winner-score');
   var endgameBar = document.getElementById('endgame-bar');
   var endgameNew = document.getElementById('endgame-new');
+  var topbarNewGame = document.getElementById('new-game');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -275,8 +276,13 @@
        * is unusable. A present-but-corrupt save is DISCARDED (removed) and its
        * sanitised content is logged to the console for later analysis, then null
        * is returned so the caller boots fresh.
+       *
+       * @param {function(rows,cols,players):boolean} [accept] optional predicate
+       *   checked against the raw saved dimensions BEFORE rehydration; return
+       *   false to discard a save this caller cannot use (avoids allocating a
+       *   huge, validator-allowed-but-unrenderable board).
        */
-      load: function () {
+      load: function (accept) {
         if (!canStore) return null;
         var raw;
         try {
@@ -322,6 +328,22 @@
         }
 
         wrapper = migrate(wrapper); // N3 seam (identity for now)
+
+        // Cheap dimension gate BEFORE rehydration. loadState() is strict but it
+        // also ITERATES/ALLOCATES one object per cell, so a validator-allowed
+        // but huge save (e.g. 1000x1000 = 1,000,000 cells) would cost a large
+        // parse+allocation pass before any later UI check could reject it. If
+        // the caller supplied an `accept(rows, cols, players)` predicate, peek
+        // at the raw wrapper.state's declared dimensions (shallow reads, no
+        // iteration) and bail out early when they are not acceptable — so an
+        // oversized/incompatible save is discarded without ever rehydrating it.
+        if (typeof accept === 'function') {
+          var ws = wrapper.state;
+          if (!ws || typeof ws !== 'object' ||
+              !accept(ws.rows, ws.cols, ws.players)) {
+            return discard('dimensions not accepted', raw);
+          }
+        }
 
         var clean = G.loadState(wrapper.state);
         if (clean === null) {
@@ -504,6 +526,11 @@
       // Layer 2: the standalone New button is always shown when the game is
       // over (both live wins and restored finished games).
       endgameBar.classList.add('show');
+      // The top-bar New Game is redundant once the game is over (the endgame
+      // bar provides it), and leaving it visible would mean the standalone
+      // button is not truly the "sole" call-to-action. Hide it while the
+      // endgame bar is shown; it returns on New Game / Play Again.
+      if (topbarNewGame) topbarNewGame.hidden = true;
       // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
       // finished game is merely restored from storage (suppressWinnerModal).
       if (suppressWinnerModal) {
@@ -526,6 +553,7 @@
       endgameBar.classList.remove('show');
       endgameBar.classList.remove('sole-cta');
       overlay.classList.remove('show');
+      if (topbarNewGame) topbarNewGame.hidden = false;
     }
   }
 
@@ -808,7 +836,7 @@
     autoSaveIfOn();
   }
 
-  document.getElementById('new-game').addEventListener('click', newGame);
+  topbarNewGame.addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
   endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
@@ -1200,27 +1228,19 @@
   // Corrupt saves are discarded inside boardStore.load() (logged + removed), so
   // a null return simply means "boot the fresh game created above".
   (function restoreSavedGame() {
-    var restored = boardStore.load();
+    // Pass a predicate so an engine-valid but UI-incompatible save is rejected
+    // BEFORE rehydration (no large allocation for, e.g., a 1000x1000 board).
+    // This UI is fixed at ROWS x COLS / PLAYERS; the engine validator stays
+    // generous for a future board-size picker.
+    var fits = function (r, c, p) { return r === ROWS && c === COLS && p === PLAYERS; };
+    var restored = boardStore.load(fits);
     if (!restored) return;
-    // Defence at the UI boundary: loadState is intentionally generous (it is an
-    // engine-level, size-agnostic validator, ready for a future board-size
-    // picker). This UI, however, is fixed at ROWS x COLS / PLAYERS and renders
-    // one DOM node per cell with per-player colour classes. A same-origin save
-    // that is valid for the engine but larger (e.g. 200x200) or has more
-    // players than this build can render would, if adopted, trigger a huge
-    // boot-time DOM allocation (freezing the tab) and unsupported colour/control
-    // states. So only adopt a save that matches what this UI can actually show;
-    // discard anything else (it is removed by boardStore on a later cycle only
-    // if auto-save overwrites it — here we simply ignore it and boot fresh).
+    // Defence-in-depth: the pre-load predicate above already rejects mismatched
+    // dimensions before rehydration, but re-check the rehydrated state too in
+    // case the two ever diverge. Normally unreachable.
     if (restored.rows !== ROWS || restored.cols !== COLS ||
         restored.players !== PLAYERS) {
-      try {
-        console.warn('Jumping Squares: ignoring saved game with incompatible ' +
-          'dimensions (' + restored.rows + 'x' + restored.cols + '/' +
-          restored.players + 'p); this build renders ' + ROWS + 'x' + COLS +
-          '/' + PLAYERS + 'p.');
-      } catch (e) {}
-      boardStore.remove(); // it cannot be shown here; clear it to avoid re-warning
+      boardStore.remove();
       return;
     }
     state = restored;

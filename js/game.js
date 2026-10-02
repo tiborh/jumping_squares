@@ -559,6 +559,17 @@
     };
     if (checkWinner(candidate) !== winner) return null;
 
+    // Settled-state contract. Persistence intentionally stores only SETTLED
+    // boards (the end-state of a move); mid-cascade snapshots are out of scope
+    // by design. So reject any candidate that still has a cell over capacity —
+    // UNLESS one player physically owns the whole board, which is the single
+    // legitimate case where a board can stay perpetually over capacity (further
+    // overflows only shuffle points within one owner's territory). Without this
+    // check, a crafted save with an overloaded cell on a contested board would
+    // be adopted and rendered as a settled, playable position whose pending
+    // cascade never resumes.
+    if (hasOverflow(candidate) && soleOwner(candidate) === EMPTY) return null;
+
     return candidate;
   }
 
