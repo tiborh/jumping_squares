@@ -377,6 +377,93 @@ console.log('clone independence');
      'snapshot cell state preserved');
 })();
 
+console.log('loadState: validates and rehydrates untrusted state');
+(function () {
+  // Round-trip: a cloned snapshot of a real game must load back identically.
+  var s = G.createGame({ rows: 5, cols: 5 });
+  G.applyMove(s, 1, 2, 2);
+  G.applyMove(s, 2, 0, 0);
+  var snap = G.cloneState(s);
+  // Simulate a storage round-trip through JSON (what persistence actually does).
+  var fromJson = JSON.parse(JSON.stringify(snap));
+  var loaded = G.loadState(fromJson);
+  ok(loaded !== null, 'valid state loads (non-null)');
+  eq(loaded, snap, 'loaded state equals the original snapshot');
+
+  // Independence: mutating the loaded state must not touch the input object.
+  loaded.cells[0].value = 99;
+  ok(fromJson.cells[0].value !== 99, 'loadState returns an independent copy');
+})();
+
+console.log('loadState: rejects malformed / out-of-range input');
+(function () {
+  ok(G.loadState(null) === null, 'null -> null');
+  ok(G.loadState(undefined) === null, 'undefined -> null');
+  ok(G.loadState(42) === null, 'non-object -> null');
+  ok(G.loadState('{}') === null, 'string -> null');
+  ok(G.loadState([]) === null, 'array (no rows/cols) -> null');
+
+  function base() {
+    // A minimal valid 2x2 state with one owned corner.
+    return {
+      rows: 2, cols: 2, players: 2, current: 2, moveCount: 1, winner: 0,
+      turnsTaken: [0, 1, 0],
+      cells: [
+        { owner: 1, value: 1 }, { owner: 0, value: 0 },
+        { owner: 0, value: 0 }, { owner: 0, value: 0 },
+      ],
+    };
+  }
+  ok(G.loadState(base()) !== null, 'sanity: base() is valid');
+
+  var b;
+  b = base(); b.rows = 1;                       ok(G.loadState(b) === null, 'rows < 2 rejected');
+  b = base(); b.cols = 1.5;                      ok(G.loadState(b) === null, 'non-integer cols rejected');
+  b = base(); b.players = 1;                     ok(G.loadState(b) === null, 'players < 2 rejected');
+  b = base(); b.cells = b.cells.slice(0, 3);     ok(G.loadState(b) === null, 'wrong cell count rejected');
+  b = base(); b.current = 0;                     ok(G.loadState(b) === null, 'current < 1 rejected');
+  b = base(); b.current = 3;                     ok(G.loadState(b) === null, 'current > players rejected');
+  b = base(); b.winner = 3;                      ok(G.loadState(b) === null, 'winner > players rejected');
+  b = base(); b.winner = -1;                     ok(G.loadState(b) === null, 'negative winner rejected');
+  b = base(); b.moveCount = -1;                  ok(G.loadState(b) === null, 'negative moveCount rejected');
+  b = base(); b.cells[0].owner = 3;              ok(G.loadState(b) === null, 'cell owner > players rejected');
+  b = base(); b.cells[0].value = -1;             ok(G.loadState(b) === null, 'negative cell value rejected');
+  b = base(); b.cells[0] = { owner: 0, value: 2 }; ok(G.loadState(b) === null, 'empty cell with value rejected');
+  b = base(); b.cells[0] = { owner: 1, value: 0 }; ok(G.loadState(b) === null, 'owned cell with value 0 rejected');
+  b = base(); b.cells[0] = null;                 ok(G.loadState(b) === null, 'null cell entry rejected');
+})();
+
+console.log('loadState: reconstructs turnsTaken when missing/malformed');
+(function () {
+  // No turnsTaken present: every player that owns a cell is treated as moved.
+  var obj = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 2, winner: 0,
+    cells: [
+      { owner: 1, value: 1 }, { owner: 2, value: 1 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  var loaded = G.loadState(obj);
+  ok(loaded !== null, 'loads without a turnsTaken field');
+  eq(loaded.turnsTaken.length, 3, 'turnsTaken has length players+1');
+  ok(loaded.turnsTaken[1] >= 1 && loaded.turnsTaken[2] >= 1,
+     'both owners marked as having moved');
+
+  // A loaded finished state: winner is marked as moved even if it owned nothing
+  // odd-shaped (defensive); here winner owns everything so it is trivially set.
+  var fin = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: 'bogus', // malformed -> reconstructed
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  var lf = G.loadState(fin);
+  ok(lf !== null, 'loads a finished state with malformed turnsTaken');
+  ok(lf.turnsTaken[1] >= 1, 'winner marked as having moved');
+})();
+
 console.log('version wiring');
 (function () {
   var fs = require('fs');

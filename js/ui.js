@@ -34,6 +34,8 @@
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
   var winnerScoreEl = document.getElementById('winner-score');
+  var endgameBar = document.getElementById('endgame-bar');
+  var endgameNew = document.getElementById('endgame-new');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -59,6 +61,12 @@
       v: PREFS_VERSION,
       playerNames: {},
       score: { pair: { 1: '', 2: '' }, wins: { 1: 0, 2: 0 } },
+      // Auto-save the board between sessions. ON by default (the whole point is
+      // guarding against accidental reloads / tab closure). Persisted here in
+      // the PREFS record — independent of the board save itself — so turning it
+      // off is remembered even when there is no saved board. See the Persistence
+      // section in Settings.
+      autoSave: true,
     };
 
     function storageAvailable() {
@@ -94,6 +102,14 @@
         // Names: a stable field present since v1 — migrate forward unchanged.
         if (parsed.playerNames && typeof parsed.playerNames === 'object') {
           mem.playerNames = parsed.playerNames;
+        }
+
+        // autoSave: a boolean preference. Present from the build that introduced
+        // persistence; absent in older (v1/v2 names+score) records, which keep
+        // the default (true). Only adopt an explicit boolean, so garbage falls
+        // back to the default rather than being coerced.
+        if (typeof parsed.autoSave === 'boolean') {
+          mem.autoSave = parsed.autoSave;
         }
 
         // Score: understood only at THIS schema version. We deliberately read it
@@ -161,6 +177,150 @@
         mem.score.pair = { 1: name1 || '', 2: name2 || '' };
         mem.score.wins = { 1: 0, 2: 0 };
         persist();
+      },
+      // --- auto-save preference ---
+      getAutoSave: function () { return mem.autoSave !== false; },
+      setAutoSave: function (on) {
+        mem.autoSave = !!on;
+        persist();
+      },
+    };
+  })();
+
+  // --- board persistence (localStorage-backed, separate key) ---------------
+  // The saved GAME BOARD lives under its OWN key, distinct from the cosmetic
+  // prefs above. Rationale (agreed design): the board is larger and rewritten
+  // on every move, while prefs change rarely — separating them avoids
+  // rewriting the whole prefs blob per move and lets "remove saved data" clear
+  // the board independently of names/score.
+  //
+  // On-disk shape is a small self-describing wrapper so a saved game is
+  // recognisable and future-proof:
+  //   { format:'jumping_squares/save', formatVersion:1, engineVersion:'25',
+  //     savedAt:'<ISO>', state:{ ...engine cloneState... } }
+  // engineVersion is recorded so a later format change can migrate old saves
+  // (validate AFTER converting). All reads go through the engine's loadState()
+  // validator, so corrupt/edited/hostile data can never become a live state.
+  var SAVE_KEY = 'jumping_squares:save';
+  var SAVE_FORMAT = 'jumping_squares/save';
+  var SAVE_FORMAT_VERSION = 1;
+
+  var boardStore = (function () {
+    function storageAvailable() {
+      var probe = SAVE_KEY + ':__probe__';
+      try {
+        var prev = window.localStorage.getItem(probe);
+        window.localStorage.setItem(probe, '1');
+        if (prev === null) window.localStorage.removeItem(probe);
+        else window.localStorage.setItem(probe, prev);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    var canStore = storageAvailable();
+
+    // Make an untrusted string safe to print to the console: cap length and
+    // strip control chars (incl. CR/LF/ESC) so a crafted saved value can't
+    // forge extra console lines or inject terminal escape sequences.
+    function sanitizeForLog(s) {
+      if (typeof s !== 'string') s = String(s);
+      if (s.length > 500) s = s.slice(0, 500) + '…(truncated)';
+      return s.replace(/[\u0000-\u001F\u007F]+/g, ' ');
+    }
+
+    // (Seam for N3) Convert an older on-disk record forward to the current
+    // formatVersion. No older versions exist yet, so this is identity; when the
+    // schema changes, branch on wrapper.formatVersion here and the result is
+    // then re-validated by loadState below (validate-after-convert).
+    function migrate(wrapper) {
+      return wrapper;
+    }
+
+    return {
+      canStore: canStore,
+
+      /** True iff a (parseable, present) save exists under our key. */
+      has: function () {
+        if (!canStore) return false;
+        try {
+          return window.localStorage.getItem(SAVE_KEY) !== null;
+        } catch (e) {
+          return false;
+        }
+      },
+
+      /**
+       * Persist a game state (an engine cloneState object) under the save key.
+       * Best-effort: storage errors (quota/blocked) are swallowed so gameplay
+       * never breaks.
+       */
+      save: function (stateObj) {
+        if (!canStore) return;
+        try {
+          var wrapper = {
+            format: SAVE_FORMAT,
+            formatVersion: SAVE_FORMAT_VERSION,
+            engineVersion: G.VERSION,
+            savedAt: new Date().toISOString(),
+            state: stateObj,
+          };
+          window.localStorage.setItem(SAVE_KEY, JSON.stringify(wrapper));
+        } catch (e) { /* quota/blocked: stay in-memory only */ }
+      },
+
+      /**
+       * Load and VALIDATE a saved game. Returns a clean engine state (via
+       * G.loadState) on success, or null if there is nothing to load / the data
+       * is unusable. A present-but-corrupt save is DISCARDED (removed) and its
+       * sanitised content is logged to the console for later analysis, then null
+       * is returned so the caller boots fresh.
+       */
+      load: function () {
+        if (!canStore) return null;
+        var raw;
+        try {
+          raw = window.localStorage.getItem(SAVE_KEY);
+        } catch (e) {
+          return null;
+        }
+        if (raw === null) return null; // nothing saved: not an error
+
+        var discard = function (reason, offending) {
+          // Log the (sanitised) offending content so a real corruption can be
+          // investigated, then remove it so it can't wedge every future boot.
+          try {
+            console.warn('Jumping Squares: discarding unusable saved game (' +
+              reason + '): ' + sanitizeForLog(offending));
+          } catch (e2) { /* ignore logging failures */ }
+          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
+          return null;
+        };
+
+        var wrapper;
+        try {
+          wrapper = JSON.parse(raw);
+        } catch (e) {
+          return discard('invalid JSON', raw);
+        }
+        if (!wrapper || typeof wrapper !== 'object' ||
+            wrapper.format !== SAVE_FORMAT) {
+          return discard('unrecognised format', raw);
+        }
+
+        wrapper = migrate(wrapper); // N3 seam (identity for now)
+
+        var clean = G.loadState(wrapper.state);
+        if (clean === null) {
+          return discard('failed validation', raw);
+        }
+        return clean;
+      },
+
+      /** Remove any saved game (used by "remove saved data" / reset). */
+      remove: function () {
+        if (!canStore) return;
+        try { window.localStorage.removeItem(SAVE_KEY); } catch (e) {}
       },
     };
   })();
@@ -294,13 +454,19 @@
       }
     }
 
-    // Turn indicator.
+    // Turn indicator. When the game is finished, the top-left shows the WINNER
+    // (name + colour) instead of "whose turn" — this is the only textual cue
+    // that identifies the winner on a restored finished board (which shows no
+    // modal). During play it shows the current player as usual.
+    var indicatorSeat = (state.winner !== G.EMPTY) ? state.winner : state.current;
     var color = getComputedStyle(document.documentElement)
-      .getPropertyValue(playerColorVar[state.current]) || '#fff';
+      .getPropertyValue(playerColorVar[indicatorSeat]) || '#fff';
     turnDot.style.background = color.trim();
     // While the inline rename editor is open, leave the label (input) alone.
     if (!renaming) {
-      turnLabel.textContent = playerName(state.current);
+      turnLabel.textContent = (state.winner !== G.EMPTY)
+        ? (playerName(state.winner) + ' wins')
+        : playerName(state.current);
       updateTurnLabelAffordance();
     }
 
@@ -322,13 +488,30 @@
     statusEl.textContent = parts.join(', ') + '   ' + scoreLabel();
 
     if (state.winner !== G.EMPTY) {
-      winnerMsg.textContent = playerName(state.winner) + ' wins!';
-      // Prominent running tally in the end-of-round dialog.
-      winnerScoreEl.textContent =
-        playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
-        prefs.getWins(2) + '  ' + playerName(2);
-      overlay.classList.add('show');
+      // Layer 2: the standalone New button is always shown when the game is
+      // over (both live wins and restored finished games).
+      endgameBar.classList.add('show');
+      // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
+      // finished game is merely restored from storage (suppressWinnerModal).
+      if (suppressWinnerModal) {
+        overlay.classList.remove('show');
+        // The standalone New Game is now the ONLY call-to-action on screen, so
+        // promote it to the prominent blue style (via .sole-cta).
+        endgameBar.classList.add('sole-cta');
+      } else {
+        // A live win: the modal's "Play Again" is the prominent primary action,
+        // so the standalone New Game behind it stays the quiet (grey) secondary.
+        endgameBar.classList.remove('sole-cta');
+        winnerMsg.textContent = playerName(state.winner) + ' wins!';
+        // Prominent running tally in the end-of-round dialog.
+        winnerScoreEl.textContent =
+          playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
+          prefs.getWins(2) + '  ' + playerName(2);
+        overlay.classList.add('show');
+      }
     } else {
+      endgameBar.classList.remove('show');
+      endgameBar.classList.remove('sole-cta');
       overlay.classList.remove('show');
     }
   }
@@ -427,6 +610,32 @@
   var resumeAnimation = null;  // callback to resume a paused animated cascade
   var animTimer = null;        // pending setTimeout id for the next generation
   var winRecorded = false;     // true once this game's win has been tallied
+  // When a FINISHED game is restored from storage on boot, we show the board +
+  // the standalone New button, but NOT the "X wins!" modal (per the layered
+  // end-game design). This flag suppresses the modal for exactly that case; it
+  // is cleared the moment a live move/new game happens so a genuine win still
+  // shows the dialog.
+  var suppressWinnerModal = false;
+
+  // Persist the current board when auto-save is on. Called at every point a
+  // turn is FINALISED (a move fully resolved, incl. a win) and whenever a fresh
+  // board is created (New Game / Play Again) so the save always reflects the
+  // latest settled position. No-op when auto-save is off (the toggle only stops
+  // WRITING; any existing save is left intact and still restores next boot).
+  function autoSaveIfOn() {
+    if (prefs.getAutoSave()) {
+      boardStore.save(G.cloneState(state));
+    }
+  }
+
+  // Finalise a turn (set winner or advance player) AND persist the now-settled
+  // board. Used in place of a bare G.finalizeAfterCascade(state) at every site
+  // where a move resolves (instant / timed / manual step, and the mid-cascade
+  // mode switches), so auto-save fires exactly once per completed turn.
+  function finalizeTurn() {
+    G.finalizeAfterCascade(state);
+    autoSaveIfOn();
+  }
 
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
@@ -469,7 +678,7 @@
     if (!G.placeDot(state, state.current, r, c)) return;
     if (cascadeSettled()) {
       // No propagation (or instantly decided): behave like a normal placement.
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       render();
       return;
     }
@@ -483,7 +692,7 @@
     G.stepOverflowsOnce(state);
     if (cascadeSettled()) {
       // Cascade finished (stable) or the game is decided — stop here.
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       stepping.active = false;
       busy = false;
     }
@@ -521,7 +730,7 @@
 
     // No propagation (or instantly decided): finalise and render the turn.
     if (cascadeSettled()) {
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       render();
       return;
     }
@@ -552,7 +761,7 @@
       }
     }
     // Cascade complete or one player owns the whole board.
-    G.finalizeAfterCascade(state);
+    finalizeTurn();
     busy = false;      // clear BEFORE the final render so the rename affordance
     render();          // (role/tabindex) is restored for keyboard users
   }
@@ -576,14 +785,19 @@
     busy = false;  // unlock input
     stepping.active = false; // cancel any manual step-through in progress
     winRecorded = false;     // the next game's win hasn't been tallied yet
+    suppressWinnerModal = false; // a live win in the new game shows its dialog
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
     render();
+    // Overwrite any saved game with this fresh board (when auto-save is on), so
+    // the previous (possibly finished) game is not resurrected on next reload.
+    autoSaveIfOn();
   }
 
   document.getElementById('new-game').addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
+  endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
 
   // --- settings ------------------------------------------------------------
@@ -708,6 +922,7 @@
       if (busy) resumeAnimation = animSchedule;
     }
     settingsOverlay.classList.add('show');
+    syncPersistenceUI(); // save-state may have changed since last opened
     settingsFocus.onOpen();
   }
   function closeSettings() {
@@ -748,7 +963,7 @@
       stepping.active = false; // no longer manual stepping
       if (cascadeSettled()) {
         // Nothing left to resolve: just finalise.
-        G.finalizeAfterCascade(state);
+        finalizeTurn();
         busy = false;
         render();
       } else {
@@ -765,7 +980,7 @@
       if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
       resumeAnimation = null;
       if (cascadeSettled()) {
-        G.finalizeAfterCascade(state);
+        finalizeTurn();
         busy = false;
       } else {
         stepping.active = true; // > button now drives it
@@ -783,6 +998,50 @@
   // Initialise readout from the default slider position.
   sliderIndexToSetting(parseInt(delayRange.value, 10));
   updateDelayReadout();
+
+  // --- persistence controls (Settings > Persistence) -----------------------
+  var autoSaveToggle = document.getElementById('autosave-toggle');
+  var removeSaveBtn = document.getElementById('remove-save');
+  var persistenceNote = document.getElementById('persistence-note');
+
+  // Reflect the current persistence state in the panel. Two derived states:
+  //   - note shown  : auto-save OFF *and* a saved game exists (the only case a
+  //                   silent restore-next-time could surprise the user);
+  //   - remove enabled: exactly the same condition — there is removable data
+  //                   that isn't being continuously rewritten by an active
+  //                   auto-save. With auto-save ON, removing is pointless (the
+  //                   next move rewrites it), so the button is disabled.
+  function syncPersistenceUI() {
+    var on = prefs.getAutoSave();
+    var hasSave = boardStore.has();
+    if (autoSaveToggle) autoSaveToggle.checked = on;
+    var orphanSave = (!on && hasSave);
+    if (persistenceNote) persistenceNote.hidden = !orphanSave;
+    if (removeSaveBtn) removeSaveBtn.disabled = !orphanSave;
+  }
+
+  if (autoSaveToggle) {
+    autoSaveToggle.addEventListener('change', function () {
+      prefs.setAutoSave(this.checked);
+      // Turning auto-save ON should immediately capture the current board (so a
+      // reload right after enabling restores this game, not nothing). Turning
+      // it OFF leaves any existing save intact (it will still restore; the note
+      // explains that).
+      if (this.checked) autoSaveIfOn();
+      syncPersistenceUI();
+    });
+  }
+
+  if (removeSaveBtn) {
+    removeSaveBtn.addEventListener('click', function () {
+      boardStore.remove();
+      syncPersistenceUI();
+    });
+  }
+
+  // Keep the panel honest every time Settings opens (the save state can change
+  // between openings as the game is played).
+  syncPersistenceUI();
 
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game
@@ -915,6 +1174,27 @@
   }
   var aboutVersionEl = document.getElementById('about-version');
   if (aboutVersionEl) aboutVersionEl.textContent = 'Build ' + BUILD;
+
+  // Seamless restore: if a valid saved game exists, adopt it as the live state
+  // BEFORE the grid is built, so the player resumes exactly where they left off
+  // after a reload / reopened tab. This happens regardless of the auto-save
+  // toggle — "off" only stops WRITING new saves; an existing, valid save is
+  // still honoured (and the Persistence panel shows a note explaining it).
+  // Corrupt saves are discarded inside boardStore.load() (logged + removed), so
+  // a null return simply means "boot the fresh game created above".
+  (function restoreSavedGame() {
+    var restored = boardStore.load();
+    if (!restored) return;
+    state = restored;
+    if (state.winner !== G.EMPTY) {
+      // A FINISHED game was restored: show the board + standalone New button but
+      // NOT the "X wins!" modal (per the layered end-game design). Also mark the
+      // win as already recorded so render()'s one-shot tally guard does not
+      // double-count a win that was tallied when the game actually ended.
+      suppressWinnerModal = true;
+      winRecorded = true;
+    }
+  })();
 
   buildGrid();
   sizeBoard();

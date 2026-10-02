@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '24';
+  var VERSION = '25';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,6 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
+    { v: '25', text: 'Auto-save: your game is kept in this browser and restored after a reload or reopened tab. Turn it off (and clear saved data) under Settings \u2192 Persistence.' },
     { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
     { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
@@ -430,6 +431,109 @@
     }
   }
 
+  // ---- validation / rehydration ------------------------------------------
+  //
+  // loadState() turns an UNTRUSTED plain object (from localStorage, an imported
+  // file, or a future format-migration step) into a known-good game state, or
+  // returns null if it cannot. It is deliberately strict and side-effect-free:
+  // it never mutates its input and never throws for bad data — callers treat a
+  // null return as "discard this, start fresh". This single primitive is the
+  // one gate used by (1) restore-on-boot, (2) file import (later phase), and
+  // (3) schema migration (validate AFTER converting), so correctness here is
+  // load-bearing for all persistence.
+
+  function isPlainInt(n) {
+    return typeof n === 'number' && isFinite(n) && Math.floor(n) === n;
+  }
+
+  /**
+   * Validate and normalise an arbitrary object into a clean game state.
+   *
+   * Checks performed:
+   *   - rows/cols are integers >= 2; players is an integer >= 2.
+   *   - cells is an array of exactly rows*cols entries, each { owner, value }
+   *     with owner an integer in 0..players and value a non-negative integer.
+   *   - current is an integer in 1..players.
+   *   - winner is an integer in 0..players (0 = ongoing).
+   *   - moveCount is a non-negative integer.
+   *   - turnsTaken is an array of length players+1 of non-negative integers
+   *     (index 0 unused), reconstructed defensively if missing/malformed.
+   *   - An owned cell (owner != EMPTY) must have value >= 1, and an empty cell
+   *     (owner == EMPTY) must have value 0 — the engine's own invariant.
+   *
+   * @param {*} obj - untrusted candidate state
+   * @returns {Object|null} a fresh, independent clean state, or null if invalid
+   */
+  function loadState(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+
+    var rows = obj.rows, cols = obj.cols, players = obj.players;
+    if (!isPlainInt(rows) || rows < 2) return null;
+    if (!isPlainInt(cols) || cols < 2) return null;
+    if (!isPlainInt(players) || players < 2) return null;
+
+    if (!Array.isArray(obj.cells)) return null;
+    if (obj.cells.length !== rows * cols) return null;
+
+    if (!isPlainInt(obj.current) || obj.current < 1 || obj.current > players) {
+      return null;
+    }
+    var winner = obj.winner;
+    if (!isPlainInt(winner) || winner < 0 || winner > players) return null;
+    if (!isPlainInt(obj.moveCount) || obj.moveCount < 0) return null;
+
+    // Rebuild cells, enforcing per-cell invariants.
+    var cells = new Array(obj.cells.length);
+    for (var i = 0; i < obj.cells.length; i++) {
+      var src = obj.cells[i];
+      if (!src || typeof src !== 'object') return null;
+      var owner = src.owner, value = src.value;
+      if (!isPlainInt(owner) || owner < 0 || owner > players) return null;
+      if (!isPlainInt(value) || value < 0) return null;
+      // Invariant coupling owner and value: empty <=> value 0.
+      if (owner === EMPTY && value !== 0) return null;
+      if (owner !== EMPTY && value < 1) return null;
+      cells[i] = { owner: owner, value: value };
+    }
+
+    // turnsTaken: accept a well-formed array of length players+1; otherwise
+    // reconstruct a conservative stand-in (every player that currently owns a
+    // cell, or the winner, is treated as having moved at least once). This keeps
+    // the turn-gate meaningful after a load without demanding the field be
+    // present/well-formed in the input.
+    var turnsTaken;
+    if (Array.isArray(obj.turnsTaken) && obj.turnsTaken.length === players + 1) {
+      turnsTaken = new Array(players + 1).fill(0);
+      var okTurns = true;
+      for (var t = 0; t < obj.turnsTaken.length; t++) {
+        var tv = obj.turnsTaken[t];
+        if (!isPlainInt(tv) || tv < 0) { okTurns = false; break; }
+        turnsTaken[t] = tv;
+      }
+      if (!okTurns) turnsTaken = null;
+    }
+    if (!turnsTaken) {
+      turnsTaken = new Array(players + 1).fill(0);
+      var counts = new Array(players + 1).fill(0);
+      for (var k = 0; k < cells.length; k++) counts[cells[k].owner]++;
+      for (var p = 1; p <= players; p++) {
+        if (counts[p] > 0) turnsTaken[p] = 1;
+      }
+      if (winner !== EMPTY) turnsTaken[winner] = 1;
+    }
+
+    return {
+      rows: rows,
+      cols: cols,
+      players: players,
+      current: obj.current,
+      moveCount: obj.moveCount,
+      turnsTaken: turnsTaken,
+      winner: winner,
+      cells: cells,
+    };
+  }
+
   /** Deep-ish clone for snapshots (undo, AI lookahead). */
   function cloneState(state) {
     return {
@@ -465,6 +569,7 @@
     stepOverflowsOnce: stepOverflowsOnce,
     placeDot: placeDot,
     finalizeAfterCascade: finalizeAfterCascade,
+    loadState: loadState,
     cloneState: cloneState,
   };
 });
