@@ -52,7 +52,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 2; // v2 adds `score`; v1 (names only) migrates forward
+  var PREFS_VERSION = 3; // v3 adds `autoSave`; v2 adds `score`; v1 (names only) migrates forward
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -105,23 +105,21 @@
           mem.playerNames = parsed.playerNames;
         }
 
-        // autoSave: a boolean preference. Present from the build that introduced
-        // persistence; absent in older (v1/v2 names+score) records, which keep
-        // the default (true). Only adopt an explicit boolean, so garbage falls
-        // back to the default rather than being coerced.
+        // autoSave: introduced in schema v3; absent in older (v1/v2) records,
+        // which keep the default (true). Only adopt an explicit boolean, so
+        // garbage falls back to the default rather than being coerced.
         if (typeof parsed.autoSave === 'boolean') {
           mem.autoSave = parsed.autoSave;
         }
 
-        // Score: understood only at THIS schema version. We deliberately read it
-        // only when parsed.v === PREFS_VERSION, not ">=": a record written by a
-        // newer build (parsed.v > PREFS_VERSION) may have a different score
-        // shape, so this older code must not reinterpret it under v2 assumptions
-        // — it keeps the stable names and starts the score fresh instead. Older
-        // records (v1) have no score and likewise start fresh.
+        // Score: introduced in schema v2 and retained in v3. We read it when
+        // parsed.v is 2 or 3 (up to PREFS_VERSION). A record written by a newer
+        // build (parsed.v > PREFS_VERSION) may have a different score shape,
+        // so we start the score fresh while keeping stable names and preferences.
+        // Older records (v1) have no score and likewise start fresh.
         var haveScore = false;
-        if (parsed.v === PREFS_VERSION && parsed.score &&
-            typeof parsed.score === 'object') {
+        if (typeof parsed.v === 'number' && parsed.v >= 2 && parsed.v <= PREFS_VERSION &&
+            parsed.score && typeof parsed.score === 'object') {
           var p = parsed.score.pair, w = parsed.score.wins;
           if (p && typeof p === 'object') {
             mem.score.pair[1] = (typeof p[1] === 'string') ? p[1] : '';
@@ -563,10 +561,10 @@
         // moved into this dialog, with no transient "focused element inside an
         // inert subtree" window.
         if (target && target.focus) target.focus();
-        overlayEl.addEventListener('keydown', onKeydown);
+        document.addEventListener('keydown', onKeydown);
       },
       onClose: function () {
-        overlayEl.removeEventListener('keydown', onKeydown);
+        document.removeEventListener('keydown', onKeydown);
         if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
           lastFocused.focus();
         } else if (cellEls && cellEls[0] && cellEls[0].focus) {
@@ -681,6 +679,10 @@
           prefs.getWins(2) + '  ' + playerName(2);
         if (!overlay.classList.contains('show')) {
           overlay.classList.add('show');
+          if (endgameNew) {
+            endgameNew.tabIndex = -1;
+            endgameNew.setAttribute('aria-hidden', 'true');
+          }
           winnerFocus.onOpen();
         }
       }
@@ -689,6 +691,10 @@
       endgameBar.classList.remove('sole-cta');
       if (overlay.classList.contains('show')) {
         overlay.classList.remove('show');
+        if (endgameNew) {
+          endgameNew.tabIndex = 0;
+          endgameNew.removeAttribute('aria-hidden');
+        }
         winnerFocus.onClose();
       }
       if (topbarNewGame) topbarNewGame.hidden = false;
@@ -976,6 +982,10 @@
                       (endgameBar && endgameBar.contains(document.activeElement));
     if (wasWinnerOpen) {
       overlay.classList.remove('show');
+      if (endgameNew) {
+        endgameNew.tabIndex = 0;
+        endgameNew.removeAttribute('aria-hidden');
+      }
     }
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
