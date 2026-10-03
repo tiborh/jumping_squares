@@ -508,6 +508,7 @@
 
     // Rebuild cells, enforcing per-cell invariants.
     var cells = new Array(obj.cells.length);
+    var pointTotal = 0;
     for (var i = 0; i < obj.cells.length; i++) {
       var src = obj.cells[i];
       if (!src || typeof src !== 'object') return null;
@@ -517,8 +518,10 @@
       // Invariant coupling owner and value: empty <=> value 0.
       if (owner === EMPTY && value !== 0) return null;
       if (owner !== EMPTY && value < 1) return null;
+      pointTotal += value;
       cells[i] = { owner: owner, value: value };
     }
+    if (pointTotal !== obj.moveCount) return null;
 
     // turnsTaken: accept a well-formed array of length players+1; otherwise
     // reconstruct a conservative stand-in (every player that currently owns a
