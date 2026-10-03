@@ -536,14 +536,27 @@
       }
       if (!okTurns) turnsTaken = null;
     }
+
+    // A finished save MUST have a faithful, verified turnsTaken array: without
+    // it, the turn-gate cannot be proven (the loser owns no cells, so any
+    // reconstruction is ambiguous/fabricated). Reject malformed finished saves.
+    if (winner !== EMPTY && !turnsTaken) return null;
+
     if (!turnsTaken) {
+      // For an ongoing game, reconstruct turnsTaken deterministically from
+      // moveCount and player turn order (M moves alternate strictly among
+      // players 1..players), ensuring active cell owners have at least 1 turn.
       turnsTaken = new Array(players + 1).fill(0);
-      var counts = new Array(players + 1).fill(0);
-      for (var k = 0; k < cells.length; k++) counts[cells[k].owner]++;
+      var baseTurns = Math.floor(obj.moveCount / players);
+      var remTurns = obj.moveCount % players;
       for (var p = 1; p <= players; p++) {
-        if (counts[p] > 0) turnsTaken[p] = 1;
+        turnsTaken[p] = baseTurns + (p <= remTurns ? 1 : 0);
       }
-      if (winner !== EMPTY) turnsTaken[winner] = 1;
+      for (var k = 0; k < cells.length; k++) {
+        if (cells[k].owner > 0 && turnsTaken[cells[k].owner] < 1) {
+          turnsTaken[cells[k].owner] = 1;
+        }
+      }
     }
 
     // Assemble the candidate and validate its WINNER against the engine's own

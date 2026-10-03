@@ -972,6 +972,8 @@
     winRecorded = false;     // the next game's win hasn't been tallied yet
     suppressWinnerModal = false; // a live win in the new game shows its dialog
     var wasWinnerOpen = overlay && overlay.classList.contains('show');
+    var fromEndgame = document.activeElement === endgameNew ||
+                      (endgameBar && endgameBar.contains(document.activeElement));
     if (wasWinnerOpen) {
       overlay.classList.remove('show');
     }
@@ -984,6 +986,15 @@
     autoSaveIfOn();
     if (wasWinnerOpen && winnerFocus) {
       winnerFocus.onClose();
+    } else if (fromEndgame) {
+      // The standalone endgame button is now hidden by render(); move focus to
+      // the newly visible top-bar New Game button (or the first board cell)
+      // so keyboard focus is not stranded on a hidden element.
+      if (topbarNewGame && !topbarNewGame.hidden && topbarNewGame.focus) {
+        topbarNewGame.focus();
+      } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+        cellEls[0].focus();
+      }
     }
   }
 
