@@ -505,6 +505,80 @@
     return '<div class="pips">' + dots + '</div>';
   }
 
+  // --- accessible dialog focus management ----------------------------------
+  // Shared by Winner, Settings, and About dialogs. When a modal opens we
+  // (1) remember what had focus, (2) move focus into the dialog, and (3) trap
+  // Tab within it so keyboard/screen-reader users can't wander behind the
+  // overlay. On close we restore focus to the element that opened the dialog
+  // (or a sensible fallback if that element was unmounted).
+  function focusables(container) {
+    var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+              'select:not([disabled]), textarea:not([disabled]), ' +
+              '[tabindex]:not([tabindex="-1"])';
+    return Array.prototype.filter.call(
+      container.querySelectorAll(sel),
+      function (el) {
+        // Skip hidden/zero-size nodes (e.g. a hidden step button).
+        return el.offsetWidth > 0 || el.offsetHeight > 0 ||
+               el === document.activeElement;
+      }
+    );
+  }
+
+  // Build an open/close pair that manages focus for a given overlay + card.
+  // `preferredFocusId` is focused first on open (falls back to first focusable).
+  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
+    var lastFocused = null;
+
+    function onKeydown(e) {
+      if (e.key !== 'Tab') return;
+      var items = focusables(cardEl);
+      if (items.length === 0) { e.preventDefault(); return; }
+      var first = items[0];
+      var last = items[items.length - 1];
+      var active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !cardEl.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !cardEl.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    return {
+      onOpen: function () {
+        lastFocused = document.activeElement;
+        var pref = preferredFocusId && document.getElementById(preferredFocusId);
+        var items = focusables(cardEl);
+        var target = pref || items[0] || cardEl;
+        // Focus synchronously. The overlay's `.show` class is added by the
+        // caller before onOpen(), so the card is already displayed and
+        // focusable. Doing this synchronously matters for nested dialogs: the
+        // caller can then make the layer behind inert *after* focus has already
+        // moved into this dialog, with no transient "focused element inside an
+        // inert subtree" window.
+        if (target && target.focus) target.focus();
+        overlayEl.addEventListener('keydown', onKeydown);
+      },
+      onClose: function () {
+        overlayEl.removeEventListener('keydown', onKeydown);
+        if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
+          lastFocused.focus();
+        } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+          cellEls[0].focus();
+        }
+        lastFocused = null;
+      },
+    };
+  }
+
+  var winnerFocus = makeDialogFocusManager(overlay, overlay, 'play-again');
+
   function render() {
     // Compute the shadow preview for the next generation (step mode only).
     var shadow = stepping.active ? nextStepShadow() : null;
@@ -589,7 +663,10 @@
       // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
       // finished game is merely restored from storage (suppressWinnerModal).
       if (suppressWinnerModal) {
-        overlay.classList.remove('show');
+        if (overlay.classList.contains('show')) {
+          overlay.classList.remove('show');
+          winnerFocus.onClose();
+        }
         // The standalone New Game is now the ONLY call-to-action on screen, so
         // promote it to the prominent blue style (via .sole-cta).
         endgameBar.classList.add('sole-cta');
@@ -602,12 +679,18 @@
         winnerScoreEl.textContent =
           playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
           prefs.getWins(2) + '  ' + playerName(2);
-        overlay.classList.add('show');
+        if (!overlay.classList.contains('show')) {
+          overlay.classList.add('show');
+          winnerFocus.onOpen();
+        }
       }
     } else {
       endgameBar.classList.remove('show');
       endgameBar.classList.remove('sole-cta');
-      overlay.classList.remove('show');
+      if (overlay.classList.contains('show')) {
+        overlay.classList.remove('show');
+        winnerFocus.onClose();
+      }
       if (topbarNewGame) topbarNewGame.hidden = false;
     }
   }
@@ -882,6 +965,10 @@
     stepping.active = false; // cancel any manual step-through in progress
     winRecorded = false;     // the next game's win hasn't been tallied yet
     suppressWinnerModal = false; // a live win in the new game shows its dialog
+    if (overlay.classList.contains('show')) {
+      overlay.classList.remove('show');
+      winnerFocus.onClose();
+    }
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
@@ -935,73 +1022,6 @@
 
   function updateDelayReadout() {
     delayValue.textContent = delayLabel();
-  }
-
-  // --- accessible dialog focus management ----------------------------------
-  // Shared by the Settings and About dialogs. When a modal opens we (1) remember
-  // what had focus, (2) move focus into the dialog, and (3) trap Tab within it
-  // so keyboard/screen-reader users can't wander behind the overlay. On close
-  // we restore focus to the element that opened the dialog.
-  function focusables(container) {
-    var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
-              'select:not([disabled]), textarea:not([disabled]), ' +
-              '[tabindex]:not([tabindex="-1"])';
-    return Array.prototype.filter.call(
-      container.querySelectorAll(sel),
-      function (el) {
-        // Skip hidden/zero-size nodes (e.g. a hidden step button).
-        return el.offsetWidth > 0 || el.offsetHeight > 0 ||
-               el === document.activeElement;
-      }
-    );
-  }
-
-  // Build an open/close pair that manages focus for a given overlay + card.
-  // `preferredFocusId` is focused first on open (falls back to first focusable).
-  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
-    var lastFocused = null;
-
-    function onKeydown(e) {
-      if (e.key !== 'Tab') return;
-      var items = focusables(cardEl);
-      if (items.length === 0) { e.preventDefault(); return; }
-      var first = items[0];
-      var last = items[items.length - 1];
-      var active = document.activeElement;
-      if (e.shiftKey) {
-        if (active === first || !cardEl.contains(active)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (active === last || !cardEl.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-
-    return {
-      onOpen: function () {
-        lastFocused = document.activeElement;
-        var pref = preferredFocusId && document.getElementById(preferredFocusId);
-        var items = focusables(cardEl);
-        var target = pref || items[0] || cardEl;
-        // Focus synchronously. The overlay's `.show` class is added by the
-        // caller before onOpen(), so the card is already displayed and
-        // focusable. Doing this synchronously matters for nested dialogs: the
-        // caller can then make the layer behind inert *after* focus has already
-        // moved into this dialog, with no transient "focused element inside an
-        // inert subtree" window.
-        if (target && target.focus) target.focus();
-        overlayEl.addEventListener('keydown', onKeydown);
-      },
-      onClose: function () {
-        overlayEl.removeEventListener('keydown', onKeydown);
-        if (lastFocused && lastFocused.focus) lastFocused.focus();
-        lastFocused = null;
-      },
-    };
   }
 
   settingsFocus = makeDialogFocusManager(settingsOverlay, settingsCard, 'settings-close');
