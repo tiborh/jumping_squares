@@ -491,6 +491,12 @@
     if (!isPlainInt(winner) || winner < 0 || winner > players) return null;
     if (!isPlainInt(obj.moveCount) || obj.moveCount < 0) return null;
 
+    // For an ongoing state, current player must strictly match completed move count:
+    // in normal play, moves alternate strictly starting from player 1.
+    if (winner === EMPTY && obj.current !== (obj.moveCount % players) + 1) {
+      return null;
+    }
+
     // Rebuild cells, enforcing per-cell invariants.
     var cells = new Array(obj.cells.length);
     for (var i = 0; i < obj.cells.length; i++) {
@@ -550,16 +556,22 @@
     if (!turnsTaken) {
       // For an ongoing game, reconstruct turnsTaken deterministically from
       // moveCount and player turn order (M moves alternate strictly among
-      // players 1..players), ensuring active cell owners have at least 1 turn.
+      // players 1..players).
       turnsTaken = new Array(players + 1).fill(0);
       var baseTurns = Math.floor(obj.moveCount / players);
       var remTurns = obj.moveCount % players;
       for (var p = 1; p <= players; p++) {
         turnsTaken[p] = baseTurns + (p <= remTurns ? 1 : 0);
       }
-      for (var k = 0; k < cells.length; k++) {
-        if (cells[k].owner > 0 && turnsTaken[cells[k].owner] < 1) {
-          turnsTaken[cells[k].owner] = 1;
+      // Invariant: any player who owns cells MUST have taken at least one turn.
+      // If moveCount was too low for an active cell owner (e.g. moveCount: 0
+      // with owned cells), the state is physically impossible: reject it rather
+      // than bumping turns and violating the sum(turnsTaken) === moveCount invariant.
+      var ownerCounts = new Array(players + 1).fill(0);
+      for (var k = 0; k < cells.length; k++) ownerCounts[cells[k].owner]++;
+      for (var pIdx2 = 1; pIdx2 <= players; pIdx2++) {
+        if (ownerCounts[pIdx2] > 0 && turnsTaken[pIdx2] < 1) {
+          return null;
         }
       }
     }

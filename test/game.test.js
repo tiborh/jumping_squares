@@ -501,8 +501,8 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // (the other player has no legal move and no winner is declared). Reject it.
   // All cells p1, current 2, winner 0, p2 never moved.
   var stuck = {
-    rows: 2, cols: 2, players: 2, current: 2, moveCount: 4, winner: 0,
-    turnsTaken: [0, 4, 0], // p2 never took a turn
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 3, winner: 0,
+    turnsTaken: [0, 3, 0], // p2 never took a turn
     cells: [
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
@@ -517,8 +517,8 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // p1 and p2 own all cells, 0 neutral cells, current is p3). p3 cannot move,
   // so restoring would leave the game permanently stuck.
   var noLegalMove = {
-    rows: 2, cols: 2, players: 3, current: 3, moveCount: 4, winner: 0,
-    turnsTaken: [0, 2, 2, 0],
+    rows: 2, cols: 2, players: 3, current: 3, moveCount: 2, winner: 0,
+    turnsTaken: [0, 1, 1, 0],
     cells: [
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
@@ -526,6 +526,28 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   };
   ok(G.loadState(noLegalMove) === null,
      'ongoing state with no legal move for current player is rejected');
+
+  // Ongoing state where current does not match completed moveCount is rejected:
+  var badCurrent = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 0, winner: 0,
+    cells: [
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  ok(G.loadState(badCurrent) === null,
+     'ongoing save with current mismatched from moveCount is rejected');
+
+  // Ongoing save with moveCount: 0 but owned cells is rejected (reconstructed turns would exceed moveCount):
+  var move0Owned = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 0, winner: 0,
+    cells: [
+      { owner: 1, value: 1 }, { owner: 0, value: 0 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  ok(G.loadState(move0Owned) === null,
+     'ongoing save with moveCount: 0 but owned cells is rejected');
 })();
 
 console.log('loadState: reconstructs turnsTaken when missing/malformed');
