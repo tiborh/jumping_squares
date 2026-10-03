@@ -811,8 +811,14 @@
   // board. Used in place of a bare G.finalizeAfterCascade(state) at every site
   // where a move resolves (instant / timed / manual step, and the mid-cascade
   // mode switches), so auto-save fires exactly once per completed turn.
+  // When a turn produces a winner, the win tally is recorded immediately so
+  // both the terminal board and the updated score are persisted together.
   function finalizeTurn() {
     G.finalizeAfterCascade(state);
+    if (state.winner !== G.EMPTY && !winRecorded) {
+      winRecorded = true;
+      prefs.addWin(state.winner);
+    }
     autoSaveIfOn();
   }
 
@@ -965,9 +971,9 @@
     stepping.active = false; // cancel any manual step-through in progress
     winRecorded = false;     // the next game's win hasn't been tallied yet
     suppressWinnerModal = false; // a live win in the new game shows its dialog
-    if (overlay.classList.contains('show')) {
+    var wasWinnerOpen = overlay && overlay.classList.contains('show');
+    if (wasWinnerOpen) {
       overlay.classList.remove('show');
-      winnerFocus.onClose();
     }
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
@@ -976,6 +982,9 @@
     // Overwrite any saved game with this fresh board (when auto-save is on), so
     // the previous (possibly finished) game is not resurrected on next reload.
     autoSaveIfOn();
+    if (wasWinnerOpen && winnerFocus) {
+      winnerFocus.onClose();
+    }
   }
 
   topbarNewGame.addEventListener('click', newGame);
