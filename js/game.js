@@ -523,11 +523,10 @@
     }
     if (pointTotal !== obj.moveCount) return null;
 
-    // turnsTaken: accept a well-formed array of length players+1; otherwise
-    // reconstruct a conservative stand-in (every player that currently owns a
-    // cell, or the winner, is treated as having moved at least once). This keeps
-    // the turn-gate meaningful after a load without demanding the field be
-    // present/well-formed in the input.
+    // turnsTaken: accept a well-formed array of length players+1. For malformed
+    // or missing values, finished states are rejected because their turn-gate
+    // cannot be proven; ongoing states reconstruct deterministic turn counts
+    // from moveCount and the strict player order below.
     //
     // NOTE: this is built BEFORE the winner is validated, because the winner
     // check below depends on turnsTaken (the engine's win rule includes a
