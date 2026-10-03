@@ -477,6 +477,7 @@
     // limits, so legitimate saves are unaffected.
     var MAX_DIM = 1000;      // per-axis cell count ceiling
     var MAX_PLAYERS = 100;   // player-count ceiling
+    var MAX_VALUE = 1000;    // per-cell dot count ceiling
     if (!isPlainInt(rows) || rows < 2 || rows > MAX_DIM) return null;
     if (!isPlainInt(cols) || cols < 2 || cols > MAX_DIM) return null;
     if (!isPlainInt(players) || players < 2 || players > MAX_PLAYERS) return null;
@@ -491,10 +492,18 @@
     if (!isPlainInt(winner) || winner < 0 || winner > players) return null;
     if (!isPlainInt(obj.moveCount) || obj.moveCount < 0) return null;
 
-    // For an ongoing state, current player must strictly match completed move count:
-    // in normal play, moves alternate strictly starting from player 1.
-    if (winner === EMPTY && obj.current !== (obj.moveCount % players) + 1) {
-      return null;
+    // Turn order invariant:
+    // - For an ongoing state (winner == 0), current must match completed moveCount
+    //   (moves alternate strictly starting from player 1).
+    // - For a terminal state (winner != 0), the winning move was made by the winner,
+    //   so moveCount must be >= 1, current must equal winner, and winner must match
+    //   the player who made the last move.
+    if (winner === EMPTY) {
+      if (obj.current !== (obj.moveCount % players) + 1) return null;
+    } else {
+      if (obj.moveCount < 1) return null;
+      if (obj.current !== winner) return null;
+      if (winner !== ((obj.moveCount - 1) % players) + 1) return null;
     }
 
     // Rebuild cells, enforcing per-cell invariants.
@@ -504,7 +513,7 @@
       if (!src || typeof src !== 'object') return null;
       var owner = src.owner, value = src.value;
       if (!isPlainInt(owner) || owner < 0 || owner > players) return null;
-      if (!isPlainInt(value) || value < 0) return null;
+      if (!isPlainInt(value) || value < 0 || value > MAX_VALUE) return null;
       // Invariant coupling owner and value: empty <=> value 0.
       if (owner === EMPTY && value !== 0) return null;
       if (owner !== EMPTY && value < 1) return null;

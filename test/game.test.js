@@ -431,6 +431,7 @@ console.log('loadState: rejects malformed / out-of-range input');
   b = base(); b.cells[0] = { owner: 0, value: 2 }; ok(G.loadState(b) === null, 'empty cell with value rejected');
   b = base(); b.cells[0] = { owner: 1, value: 0 }; ok(G.loadState(b) === null, 'owned cell with value 0 rejected');
   b = base(); b.cells[0] = null;                 ok(G.loadState(b) === null, 'null cell entry rejected');
+  b = base(); b.cells[0].value = 1000000000;     ok(G.loadState(b) === null, 'huge cell value rejected');
 
   // Upper bounds: a huge players/rows/cols must be REJECTED (null), not throw a
   // RangeError at array allocation (which the caller would not catch).
@@ -452,14 +453,38 @@ console.log('loadState: rejects malformed / out-of-range input');
   ok(G.loadState(b) === null, 'winner set but board not fully owned -> rejected');
   // A legitimately finished board (winner owns every cell) is accepted.
   var finOk = {
-    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 2,
-    turnsTaken: [0, 4, 5],
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 10, winner: 2,
+    turnsTaken: [0, 5, 5],
     cells: [
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
     ],
   };
   ok(G.loadState(finOk) !== null, 'winner owning the whole board -> accepted');
+
+  // Terminal state where current != winner is rejected:
+  var finWrongCurrent = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 1,
+    turnsTaken: [0, 5, 4],
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finWrongCurrent) === null,
+     'terminal save with current mismatched from winner is rejected');
+
+  // Terminal state where winner != last mover is rejected:
+  var finWrongMover = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 2,
+    turnsTaken: [0, 4, 5],
+    cells: [
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(finWrongMover) === null,
+     'terminal save where winner did not make the last move is rejected');
 })();
 
 console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-owner terminal');
