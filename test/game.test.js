@@ -377,6 +377,291 @@ console.log('clone independence');
      'snapshot cell state preserved');
 })();
 
+console.log('loadState: validates and rehydrates untrusted state');
+(function () {
+  // Round-trip: a cloned snapshot of a real game must load back identically.
+  var s = G.createGame({ rows: 5, cols: 5 });
+  G.applyMove(s, 1, 2, 2);
+  G.applyMove(s, 2, 0, 0);
+  var snap = G.cloneState(s);
+  // Simulate a storage round-trip through JSON (what persistence actually does).
+  var fromJson = JSON.parse(JSON.stringify(snap));
+  var loaded = G.loadState(fromJson);
+  ok(loaded !== null, 'valid state loads (non-null)');
+  eq(loaded, snap, 'loaded state equals the original snapshot');
+
+  // Independence: mutating the loaded state must not touch the input object.
+  loaded.cells[0].value = 99;
+  ok(fromJson.cells[0].value !== 99, 'loadState returns an independent copy');
+})();
+
+console.log('loadState: rejects malformed / out-of-range input');
+(function () {
+  ok(G.loadState(null) === null, 'null -> null');
+  ok(G.loadState(undefined) === null, 'undefined -> null');
+  ok(G.loadState(42) === null, 'non-object -> null');
+  ok(G.loadState('{}') === null, 'string -> null');
+  ok(G.loadState([]) === null, 'array (no rows/cols) -> null');
+
+  function base() {
+    // A minimal valid 2x2 state with one owned corner.
+    return {
+      rows: 2, cols: 2, players: 2, current: 2, moveCount: 1, winner: 0,
+      turnsTaken: [0, 1, 0],
+      cells: [
+        { owner: 1, value: 1 }, { owner: 0, value: 0 },
+        { owner: 0, value: 0 }, { owner: 0, value: 0 },
+      ],
+    };
+  }
+  ok(G.loadState(base()) !== null, 'sanity: base() is valid');
+
+  var b;
+  b = base(); b.moveCount = 2; b.current = 1; b.turnsTaken = [0, 2, 0];
+  ok(G.loadState(b) === null, 'point total must match moveCount');
+  b = base(); b.rows = 1;                       ok(G.loadState(b) === null, 'rows < 2 rejected');
+  b = base(); b.cols = 1.5;                      ok(G.loadState(b) === null, 'non-integer cols rejected');
+  b = base(); b.players = 1;                     ok(G.loadState(b) === null, 'players < 2 rejected');
+  b = base(); b.cells = b.cells.slice(0, 3);     ok(G.loadState(b) === null, 'wrong cell count rejected');
+  b = base(); b.current = 0;                     ok(G.loadState(b) === null, 'current < 1 rejected');
+  b = base(); b.current = 3;                     ok(G.loadState(b) === null, 'current > players rejected');
+  b = base(); b.winner = 3;                      ok(G.loadState(b) === null, 'winner > players rejected');
+  b = base(); b.winner = -1;                     ok(G.loadState(b) === null, 'negative winner rejected');
+  b = base(); b.moveCount = -1;                  ok(G.loadState(b) === null, 'negative moveCount rejected');
+  b = base(); b.cells[0].owner = 3;              ok(G.loadState(b) === null, 'cell owner > players rejected');
+  b = base(); b.cells[0].value = -1;             ok(G.loadState(b) === null, 'negative cell value rejected');
+  b = base(); b.cells[0] = { owner: 0, value: 2 }; ok(G.loadState(b) === null, 'empty cell with value rejected');
+  b = base(); b.cells[0] = { owner: 1, value: 0 }; ok(G.loadState(b) === null, 'owned cell with value 0 rejected');
+  b = base(); b.cells[0] = null;                 ok(G.loadState(b) === null, 'null cell entry rejected');
+  b = base(); b.cells[0].value = 1000000000;     ok(G.loadState(b) === null, 'huge cell value rejected');
+
+  // Upper bounds: a huge players/rows/cols must be REJECTED (null), not throw a
+  // RangeError at array allocation (which the caller would not catch).
+  b = base(); b.players = 4294967295;
+  var threwPlayers = false, resPlayers;
+  try { resPlayers = G.loadState(b); } catch (e) { threwPlayers = true; }
+  ok(!threwPlayers, 'huge players does not throw (bounded before allocation)');
+  ok(resPlayers === null, 'huge players rejected');
+  b = base(); b.rows = 100000; b.cells = []; // cell count would mismatch anyway
+  var threwRows = false;
+  try { G.loadState(b); } catch (e) { threwRows = true; }
+  ok(!threwRows, 'huge rows does not throw');
+  ok(G.loadState((function () { var x = base(); x.cols = 2000000; return x; })()) === null,
+     'huge cols rejected');
+
+  // Winner invariant: a nonzero winner that does NOT own the whole board is
+  // rejected (a range check alone would wrongly accept it).
+  b = base(); b.winner = 1; // base has empty cells, so p1 does not own all
+  ok(G.loadState(b) === null, 'winner set but board not fully owned -> rejected');
+  // A legitimately finished board (winner owns every cell) is accepted.
+  var finOk = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 4, winner: 2,
+    turnsTaken: [0, 2, 2],
+    cells: [
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(finOk) !== null, 'winner owning the whole board -> accepted');
+
+  // Terminal state where current != winner is rejected:
+  var finWrongCurrent = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 1,
+    turnsTaken: [0, 5, 4],
+    cells: [
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finWrongCurrent) === null,
+     'terminal save with current mismatched from winner is rejected');
+
+  // Terminal state where winner != last mover is rejected:
+  var finWrongMover = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 2,
+    turnsTaken: [0, 4, 5],
+    cells: [
+      { owner: 2, value: 6 }, { owner: 2, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(finWrongMover) === null,
+     'terminal save where winner did not make the last move is rejected');
+})();
+
+console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-owner terminal');
+(function () {
+  // A contested board with an OVER-CAPACITY cell is not a settled end-state;
+  // persistence only ever stores settled boards, so loadState must reject it
+  // (otherwise it would be adopted as a playable board whose cascade never
+  // resumes). Corner (0,0) cap 2 at value 3 is over capacity.
+  var unsettled = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 5, winner: 0,
+    turnsTaken: [0, 3, 2],
+    cells: [
+      { owner: 1, value: 3 }, { owner: 2, value: 1 },  // (0,0) over cap -> unstable
+      { owner: 0, value: 0 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.hasOverflow(unsettled), 'setup: the crafted board really is over capacity');
+  ok(G.loadState(unsettled) === null,
+     'over-capacity contested board rejected (settled-state contract)');
+
+  // The ONE legitimate perpetual-overflow case: a single player owns the whole
+  // board (soleOwner != EMPTY). Such a board can stay over capacity forever and
+  // is a valid terminal; it must still load. Fill a 2x2 with p1, one over cap.
+  var soleOverflow = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 5, 4],
+    cells: [
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },  // (0,0) cap 2, over capacity
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.hasOverflow(soleOverflow) && G.soleOwner(soleOverflow) === 1,
+     'setup: board is over capacity AND solely owned by p1');
+  ok(G.loadState(soleOverflow) !== null,
+     'sole-owner perpetual-overflow terminal is accepted');
+
+  // A board physically owned by one player but with winner EMPTY (turn-gate not
+  // met) is UNREACHABLE in real play and would be permanently stuck if restored
+  // (the other player has no legal move and no winner is declared). Reject it.
+  // All cells p1, current 1, winner 0, p2 never moved.
+  var stuck = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 4, winner: 0,
+    turnsTaken: [0, 4, 0], // p2 never took a turn
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.soleOwner(stuck) === 1 && G.checkWinner(stuck) === G.EMPTY,
+     'setup: board solely owned by p1 but no winner (turn-gate unmet)');
+  ok(G.loadState(stuck) === null,
+     'physically-terminal, no-winner board rejected (would be permanently stuck)');
+
+  // Ongoing game where current player has no legal moves (e.g. 3-player game:
+  // p1 and p2 own all cells, 0 neutral cells, current is p3). p3 cannot move,
+  // so restoring would leave the game permanently stuck.
+  var noLegalMove = {
+    rows: 2, cols: 2, players: 3, current: 3, moveCount: 5, winner: 0,
+    turnsTaken: [0, 2, 2, 1],
+    cells: [
+      { owner: 1, value: 2 }, { owner: 1, value: 1 },
+      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+    ],
+  };
+  ok(G.loadState(noLegalMove) === null,
+     'ongoing state with no legal move for current player is rejected');
+
+  // Ongoing state where current does not match completed moveCount is rejected:
+  var badCurrent = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 0, winner: 0,
+    cells: [
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  ok(G.loadState(badCurrent) === null,
+     'ongoing save with current mismatched from moveCount is rejected');
+
+  // Ongoing save with moveCount: 0 but owned cells is rejected (reconstructed turns would exceed moveCount):
+  var move0Owned = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 0, winner: 0,
+    cells: [
+      { owner: 1, value: 1 }, { owner: 0, value: 0 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  ok(G.loadState(move0Owned) === null,
+     'ongoing save with moveCount: 0 but owned cells is rejected');
+})();
+
+console.log('loadState: reconstructs turnsTaken when missing/malformed');
+(function () {
+  // No turnsTaken present: every player that owns a cell is treated as moved.
+  var obj = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 2, winner: 0,
+    cells: [
+      { owner: 1, value: 1 }, { owner: 2, value: 1 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  var loaded = G.loadState(obj);
+  ok(loaded !== null, 'loads without a turnsTaken field');
+  eq(loaded.turnsTaken.length, 3, 'turnsTaken has length players+1');
+  ok(loaded.turnsTaken[1] >= 1 && loaded.turnsTaken[2] >= 1,
+     'both owners marked as having moved');
+
+  // TurnsTaken provides 0 for a player that owns cells -> contradictory, falls
+  // back to conservative reconstruction so the turn-gate remains valid.
+  var unfaithfulTurns = {
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 3, winner: 0,
+    turnsTaken: [0, 0, 2], // p1 owns cells but turnsTaken[1] is 0!
+    cells: [
+      { owner: 1, value: 1 }, { owner: 2, value: 2 },
+      { owner: 0, value: 0 }, { owner: 0, value: 0 },
+    ],
+  };
+  var lut = G.loadState(unfaithfulTurns);
+  ok(lut !== null, 'inconsistent turnsTaken repaired (loads successfully)');
+  ok(lut.turnsTaken[1] >= 1, 'player owning cells reconstructed with at least 1 turn');
+
+  // A finished save whose turnsTaken is malformed is now REJECTED: after
+  // reconstruction, player 2 (who owns nothing) has 0 turns, so the engine's
+  // turn-gate (checkWinner) would NOT declare winner 1. loadState requires the
+  // stored winner to equal checkWinner(candidate), so an unfaithful finished
+  // state cannot be restored as bogusly "finished".
+  var finBad = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: 'bogus', // malformed -> reconstructed -> p2 has 0 turns
+    cells: [
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finBad) === null,
+     'finished state with malformed turnsTaken is rejected (turn-gate not provable)');
+
+  // A finished save whose turnsTaken sum mismatches moveCount is rejected:
+  var finMismatch = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 1, 1], // sum is 2 != moveCount 9
+    cells: [
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finMismatch) === null,
+     'finished save with turnsTaken sum mismatching moveCount is rejected');
+
+  // A finished save with a FAITHFUL turnsTaken (every player moved) is accepted.
+  var finGood = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 5, 4], // both players took turns
+    cells: [
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  var lg = G.loadState(finGood);
+  ok(lg !== null, 'finished state with faithful turnsTaken is accepted');
+  eq(lg.winner, 1, 'accepted finished state keeps winner 1');
+
+  // Turn-gate directly: all cells p1, winner 1, but turnsTaken [0,0,0] -> reject
+  // (player 2 never moved, so the engine would not have declared a winner).
+  var noGate = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 4, winner: 1,
+    turnsTaken: [0, 0, 0],
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(noGate) === null,
+     'winner set but turn-gate unmet (turnsTaken all zero) is rejected');
+})();
+
 console.log('version wiring');
 (function () {
   var fs = require('fs');

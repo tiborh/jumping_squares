@@ -34,6 +34,9 @@
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
   var winnerScoreEl = document.getElementById('winner-score');
+  var endgameBar = document.getElementById('endgame-bar');
+  var endgameNew = document.getElementById('endgame-new');
+  var topbarNewGame = document.getElementById('new-game');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -49,7 +52,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 2; // v2 adds `score`; v1 (names only) migrates forward
+  var PREFS_VERSION = 3; // v3 adds `autoSave`; v2 adds `score`; v1 (names only) migrates forward
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -59,6 +62,12 @@
       v: PREFS_VERSION,
       playerNames: {},
       score: { pair: { 1: '', 2: '' }, wins: { 1: 0, 2: 0 } },
+      // Auto-save the board between sessions. ON by default (the whole point is
+      // guarding against accidental reloads / tab closure). Persisted here in
+      // the PREFS record — independent of the board save itself — so turning it
+      // off is remembered even when there is no saved board. See the Persistence
+      // section in Settings.
+      autoSave: true,
     };
 
     function storageAvailable() {
@@ -96,15 +105,21 @@
           mem.playerNames = parsed.playerNames;
         }
 
-        // Score: understood only at THIS schema version. We deliberately read it
-        // only when parsed.v === PREFS_VERSION, not ">=": a record written by a
-        // newer build (parsed.v > PREFS_VERSION) may have a different score
-        // shape, so this older code must not reinterpret it under v2 assumptions
-        // — it keeps the stable names and starts the score fresh instead. Older
-        // records (v1) have no score and likewise start fresh.
+        // autoSave: introduced in schema v3; absent in older (v1/v2) records,
+        // which keep the default (true). Only adopt an explicit boolean, so
+        // garbage falls back to the default rather than being coerced.
+        if (typeof parsed.autoSave === 'boolean') {
+          mem.autoSave = parsed.autoSave;
+        }
+
+        // Score: introduced in schema v2 and retained in v3. We read it when
+        // parsed.v is 2 or 3 (up to PREFS_VERSION). A record written by a newer
+        // build (parsed.v > PREFS_VERSION) may have a different score shape,
+        // so we start the score fresh while keeping stable names and preferences.
+        // Older records (v1) have no score and likewise start fresh.
         var haveScore = false;
-        if (parsed.v === PREFS_VERSION && parsed.score &&
-            typeof parsed.score === 'object') {
+        if (typeof parsed.v === 'number' && parsed.v >= 2 && parsed.v <= PREFS_VERSION &&
+            parsed.score && typeof parsed.score === 'object') {
           var p = parsed.score.pair, w = parsed.score.wins;
           if (p && typeof p === 'object') {
             mem.score.pair[1] = (typeof p[1] === 'string') ? p[1] : '';
@@ -161,6 +176,239 @@
         mem.score.pair = { 1: name1 || '', 2: name2 || '' };
         mem.score.wins = { 1: 0, 2: 0 };
         persist();
+      },
+      // --- auto-save preference ---
+      getAutoSave: function () { return mem.autoSave !== false; },
+      setAutoSave: function (on) {
+        mem.autoSave = !!on;
+        persist();
+      },
+    };
+  })();
+
+  // --- board persistence (localStorage-backed, separate key) ---------------
+  // The saved GAME BOARD lives under its OWN key, distinct from the cosmetic
+  // prefs above. Rationale (agreed design): the board is larger and rewritten
+  // on every move, while prefs change rarely — separating them avoids
+  // rewriting the whole prefs blob per move and lets "remove saved data" clear
+  // the board independently of names/score.
+  //
+  // On-disk shape is a small self-describing wrapper so a saved game is
+  // recognisable and future-proof:
+  //   { format:'jumping_squares/save', formatVersion:1, engineVersion:'25',
+  //     savedAt:'<ISO>', state:{ ...engine cloneState... } }
+  // engineVersion is recorded so a later format change can migrate old saves
+  // (validate AFTER converting). All reads go through the engine's loadState()
+  // validator, so corrupt/edited/hostile data can never become a live state.
+  var SAVE_KEY = 'jumping_squares:save';
+  var SAVE_FORMAT = 'jumping_squares/save';
+  var SAVE_FORMAT_VERSION = 1;
+
+  var boardStore = (function () {
+    function storageAvailable() {
+      var probe = SAVE_KEY + ':__probe__';
+      try {
+        var prev = window.localStorage.getItem(probe);
+        window.localStorage.setItem(probe, '1');
+        if (prev === null) window.localStorage.removeItem(probe);
+        else window.localStorage.setItem(probe, prev);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+    var canStore = storageAvailable();
+
+    // Make an untrusted string safe to print to the console: cap length and
+    // strip control chars (incl. CR/LF/ESC) so a crafted saved value can't
+    // forge extra console lines or inject terminal escape sequences.
+    function sanitizeForLog(s) {
+      if (typeof s !== 'string') s = String(s);
+      if (s.length > 500) s = s.slice(0, 500) + '…(truncated)';
+      return s.replace(/[\u0000-\u001F\u007F]+/g, ' ');
+    }
+
+    // (Seam for N3) Convert an older on-disk record forward to the current
+    // formatVersion. No older versions exist yet, so this is identity; when the
+    // schema changes, branch on wrapper.formatVersion here and the result is
+    // then re-validated by loadState below (validate-after-convert).
+    function migrate(wrapper) {
+      return wrapper;
+    }
+
+    return {
+      canStore: canStore,
+
+      /**
+       * True iff a valid, restorable save exists under our key.
+       * If present data is corrupt or unparseable, it is discarded (sanitised-
+       * logged and removed) so bad data does not linger, and false is returned.
+       *
+       * @param {function(rows,cols,players):boolean} [accept] optional predicate
+       *   checked against the raw saved dimensions; return false to reject a save
+       *   this UI cannot render.
+       */
+      has: function (accept) {
+        if (!canStore) return false;
+        var raw;
+        try {
+          raw = window.localStorage.getItem(SAVE_KEY);
+        } catch (e) {
+          return false;
+        }
+        if (raw === null) return false;
+
+        var discard = function (reason) {
+          try {
+            console.warn('Jumping Squares: discarding unusable saved game (' +
+              reason + '): ' + sanitizeForLog(raw));
+          } catch (e2) { /* ignore logging failures */ }
+          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
+          return false;
+        };
+
+        try {
+          var wrapper = JSON.parse(raw);
+          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
+              wrapper.format !== SAVE_FORMAT) {
+            return discard('unrecognised format');
+          }
+
+          var fv = wrapper.formatVersion;
+          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+              fv < 1 || fv > SAVE_FORMAT_VERSION) {
+            return discard('unsupported formatVersion');
+          }
+
+          wrapper = migrate(wrapper);
+
+          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
+            return discard('malformed state');
+          }
+
+          if (typeof accept === 'function') {
+            var ws = wrapper.state;
+            if (!accept(ws.rows, ws.cols, ws.players)) {
+              return discard('dimensions not accepted');
+            }
+          }
+
+          if (G.loadState(wrapper.state) === null) {
+            return discard('failed validation');
+          }
+          return true;
+        } catch (e) {
+          return discard('malformed save');
+        }
+      },
+
+      /**
+       * Persist a game state (an engine cloneState object) under the save key.
+       * Best-effort: storage errors (quota/blocked) are swallowed so gameplay
+       * never breaks.
+       */
+      save: function (stateObj) {
+        if (!canStore) return;
+        try {
+          var wrapper = {
+            format: SAVE_FORMAT,
+            formatVersion: SAVE_FORMAT_VERSION,
+            engineVersion: G.VERSION,
+            savedAt: new Date().toISOString(),
+            state: stateObj,
+          };
+          window.localStorage.setItem(SAVE_KEY, JSON.stringify(wrapper));
+        } catch (e) { /* quota/blocked: stay in-memory only */ }
+      },
+
+      /**
+       * Load and VALIDATE a saved game. Returns a clean engine state (via
+       * G.loadState) on success, or null if there is nothing to load / the data
+       * is unusable. A present-but-corrupt save is DISCARDED (removed) and its
+       * sanitised content is logged to the console for later analysis, then null
+       * is returned so the caller boots fresh.
+       *
+       * @param {function(rows,cols,players):boolean} [accept] optional predicate
+       *   checked against the raw saved dimensions BEFORE rehydration; return
+       *   false to discard a save this caller cannot use (avoids allocating a
+       *   huge, validator-allowed-but-unrenderable board).
+       */
+      load: function (accept) {
+        if (!canStore) return null;
+        var raw;
+        try {
+          raw = window.localStorage.getItem(SAVE_KEY);
+        } catch (e) {
+          return null;
+        }
+        if (raw === null) return null; // nothing saved: not an error
+
+        var discard = function (reason) {
+          // Log the (sanitised) offending content so a real corruption can be
+          // investigated, then remove it so it can't wedge every future boot.
+          try {
+            console.warn('Jumping Squares: discarding unusable saved game (' +
+              reason + '): ' + sanitizeForLog(raw));
+          } catch (e2) { /* ignore logging failures */ }
+          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
+          return null;
+        };
+
+        try {
+          var wrapper = JSON.parse(raw);
+          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
+              wrapper.format !== SAVE_FORMAT) {
+            return discard('unrecognised format');
+          }
+
+          // Validate the envelope's formatVersion BEFORE migrating. It must be a
+          // positive integer no newer than this build understands. A missing /
+          // malformed version, or one from a FUTURE build, must not slip past
+          // migrate() (which only knows how to convert versions up to the
+          // current one) into loadState under today's assumptions. Older versions
+          // (< current) are allowed through so migrate() can convert them when
+          // such versions eventually exist.
+          var fv = wrapper.formatVersion;
+          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+              fv < 1 || fv > SAVE_FORMAT_VERSION) {
+            return discard('unsupported formatVersion');
+          }
+
+          wrapper = migrate(wrapper); // N3 seam (identity for now)
+
+          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
+            return discard('malformed state');
+          }
+
+          // Cheap dimension gate BEFORE rehydration. loadState() is strict but it
+          // also ITERATES/ALLOCATES one object per cell, so a validator-allowed
+          // but huge save (e.g. 1000x1000 = 1,000,000 cells) would cost a large
+          // parse+allocation pass before any later UI check could reject it. If
+          // the caller supplied an `accept(rows, cols, players)` predicate, peek
+          // at the raw wrapper.state's declared dimensions (shallow reads, no
+          // iteration) and bail out early when they are not acceptable — so an
+          // oversized/incompatible save is discarded without ever rehydrating it.
+          if (typeof accept === 'function') {
+            var ws = wrapper.state;
+            if (!accept(ws.rows, ws.cols, ws.players)) {
+              return discard('dimensions not accepted');
+            }
+          }
+
+          var clean = G.loadState(wrapper.state);
+          if (clean === null) {
+            return discard('failed validation');
+          }
+          return clean;
+        } catch (e) {
+          return discard('malformed save');
+        }
+      },
+
+      /** Remove any saved game (used by "remove saved data" / reset). */
+      remove: function () {
+        if (!canStore) return;
+        try { window.localStorage.removeItem(SAVE_KEY); } catch (e) {}
       },
     };
   })();
@@ -255,6 +503,82 @@
     return '<div class="pips">' + dots + '</div>';
   }
 
+  // --- accessible dialog focus management ----------------------------------
+  // Shared by Winner, Settings, About, and What's New dialogs. Maintains a
+  // stack of open dialogs so nested dialogs (e.g. What's new inside About)
+  // trap focus strictly within the topmost active dialog without conflicting.
+  var activeDialogs = [];
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab' || activeDialogs.length === 0) return;
+    var current = activeDialogs[activeDialogs.length - 1];
+    current.onTab(e);
+  });
+
+  function focusables(container) {
+    var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+              'select:not([disabled]), textarea:not([disabled]), ' +
+              '[tabindex]:not([tabindex="-1"])';
+    return Array.prototype.filter.call(
+      container.querySelectorAll(sel),
+      function (el) {
+        // Skip hidden/zero-size nodes (e.g. a hidden step button).
+        return el.offsetWidth > 0 || el.offsetHeight > 0 ||
+               el === document.activeElement;
+      }
+    );
+  }
+
+  // Build an open/close pair that manages focus for a given overlay + card.
+  // `preferredFocusId` is focused first on open (falls back to first focusable).
+  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
+    var lastFocused = null;
+
+    function onTab(e) {
+      var items = focusables(cardEl);
+      if (items.length === 0) { e.preventDefault(); return; }
+      var first = items[0];
+      var last = items[items.length - 1];
+      var active = document.activeElement;
+      if (e.shiftKey) {
+        if (active === first || !cardEl.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last || !cardEl.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    var manager = {
+      onTab: onTab,
+      onOpen: function () {
+        lastFocused = document.activeElement;
+        var pref = preferredFocusId && document.getElementById(preferredFocusId);
+        var items = focusables(cardEl);
+        var target = pref || items[0] || cardEl;
+        if (target && target.focus) target.focus();
+        activeDialogs.push(manager);
+      },
+      onClose: function () {
+        var idx = activeDialogs.indexOf(manager);
+        if (idx !== -1) activeDialogs.splice(idx, 1);
+        if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
+          lastFocused.focus();
+        } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+          cellEls[0].focus();
+        }
+        lastFocused = null;
+      },
+    };
+    return manager;
+  }
+
+  var winnerFocus = makeDialogFocusManager(overlay, overlay, 'play-again');
+
   function render() {
     // Compute the shadow preview for the next generation (step mode only).
     var shadow = stepping.active ? nextStepShadow() : null;
@@ -294,13 +618,19 @@
       }
     }
 
-    // Turn indicator.
+    // Turn indicator. When the game is finished, the top-left shows the WINNER
+    // (name + colour) instead of "whose turn" — this is the only textual cue
+    // that identifies the winner on a restored finished board (which shows no
+    // modal). During play it shows the current player as usual.
+    var indicatorSeat = (state.winner !== G.EMPTY) ? state.winner : state.current;
     var color = getComputedStyle(document.documentElement)
-      .getPropertyValue(playerColorVar[state.current]) || '#fff';
+      .getPropertyValue(playerColorVar[indicatorSeat]) || '#fff';
     turnDot.style.background = color.trim();
     // While the inline rename editor is open, leave the label (input) alone.
     if (!renaming) {
-      turnLabel.textContent = playerName(state.current);
+      turnLabel.textContent = (state.winner !== G.EMPTY)
+        ? (playerName(state.winner) + ' wins')
+        : playerName(state.current);
       updateTurnLabelAffordance();
     }
 
@@ -322,14 +652,54 @@
     statusEl.textContent = parts.join(', ') + '   ' + scoreLabel();
 
     if (state.winner !== G.EMPTY) {
-      winnerMsg.textContent = playerName(state.winner) + ' wins!';
-      // Prominent running tally in the end-of-round dialog.
-      winnerScoreEl.textContent =
-        playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
-        prefs.getWins(2) + '  ' + playerName(2);
-      overlay.classList.add('show');
+      // Layer 2: the standalone New button is always shown when the game is
+      // over (both live wins and restored finished games).
+      endgameBar.classList.add('show');
+      // The top-bar New Game is redundant once the game is over (the endgame
+      // bar provides it), and leaving it visible would mean the standalone
+      // button is not truly the "sole" call-to-action. Hide it while the
+      // endgame bar is shown; it returns on New Game / Play Again.
+      if (topbarNewGame) topbarNewGame.hidden = true;
+      // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
+      // finished game is merely restored from storage (suppressWinnerModal).
+      if (suppressWinnerModal) {
+        if (overlay.classList.contains('show')) {
+          overlay.classList.remove('show');
+          winnerFocus.onClose();
+        }
+        // The standalone New Game is now the ONLY call-to-action on screen, so
+        // promote it to the prominent blue style (via .sole-cta).
+        endgameBar.classList.add('sole-cta');
+      } else {
+        // A live win: the modal's "Play Again" is the prominent primary action,
+        // so the standalone New Game behind it stays the quiet (grey) secondary.
+        endgameBar.classList.remove('sole-cta');
+        winnerMsg.textContent = playerName(state.winner) + ' wins!';
+        // Prominent running tally in the end-of-round dialog.
+        winnerScoreEl.textContent =
+          playerName(1) + '  ' + prefs.getWins(1) + ' - ' +
+          prefs.getWins(2) + '  ' + playerName(2);
+        if (!overlay.classList.contains('show')) {
+          overlay.classList.add('show');
+          if (endgameNew) {
+            endgameNew.tabIndex = -1;
+            endgameNew.setAttribute('aria-hidden', 'true');
+          }
+          winnerFocus.onOpen();
+        }
+      }
     } else {
-      overlay.classList.remove('show');
+      endgameBar.classList.remove('show');
+      endgameBar.classList.remove('sole-cta');
+      if (overlay.classList.contains('show')) {
+        overlay.classList.remove('show');
+        if (endgameNew) {
+          endgameNew.tabIndex = 0;
+          endgameNew.removeAttribute('aria-hidden');
+        }
+        winnerFocus.onClose();
+      }
+      if (topbarNewGame) topbarNewGame.hidden = false;
     }
   }
 
@@ -427,6 +797,38 @@
   var resumeAnimation = null;  // callback to resume a paused animated cascade
   var animTimer = null;        // pending setTimeout id for the next generation
   var winRecorded = false;     // true once this game's win has been tallied
+  // When a FINISHED game is restored from storage on boot, we show the board +
+  // the standalone New button, but NOT the "X wins!" modal (per the layered
+  // end-game design). This flag suppresses the modal for exactly that case; it
+  // is cleared the moment a live move/new game happens so a genuine win still
+  // shows the dialog.
+  var suppressWinnerModal = false;
+
+  // Persist the current board when auto-save is on. Called at every point a
+  // turn is FINALISED (a move fully resolved, incl. a win) and whenever a fresh
+  // board is created (New Game / Play Again) so the save always reflects the
+  // latest settled position. No-op when auto-save is off (the toggle only stops
+  // WRITING; any existing save is left intact and still restores next boot).
+  function autoSaveIfOn() {
+    if (prefs.getAutoSave()) {
+      boardStore.save(G.cloneState(state));
+    }
+  }
+
+  // Finalise a turn (set winner or advance player) AND persist the now-settled
+  // board. Used in place of a bare G.finalizeAfterCascade(state) at every site
+  // where a move resolves (instant / timed / manual step, and the mid-cascade
+  // mode switches), so auto-save fires exactly once per completed turn.
+  // When a turn produces a winner, the win tally is recorded immediately so
+  // both the terminal board and the updated score are persisted together.
+  function finalizeTurn() {
+    G.finalizeAfterCascade(state);
+    if (state.winner !== G.EMPTY && !winRecorded) {
+      winRecorded = true;
+      prefs.addWin(state.winner);
+    }
+    autoSaveIfOn();
+  }
 
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
@@ -469,7 +871,7 @@
     if (!G.placeDot(state, state.current, r, c)) return;
     if (cascadeSettled()) {
       // No propagation (or instantly decided): behave like a normal placement.
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       render();
       return;
     }
@@ -483,7 +885,7 @@
     G.stepOverflowsOnce(state);
     if (cascadeSettled()) {
       // Cascade finished (stable) or the game is decided — stop here.
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       stepping.active = false;
       busy = false;
     }
@@ -521,7 +923,7 @@
 
     // No propagation (or instantly decided): finalise and render the turn.
     if (cascadeSettled()) {
-      G.finalizeAfterCascade(state);
+      finalizeTurn();
       render();
       return;
     }
@@ -552,7 +954,7 @@
       }
     }
     // Cascade complete or one player owns the whole board.
-    G.finalizeAfterCascade(state);
+    finalizeTurn();
     busy = false;      // clear BEFORE the final render so the rename affordance
     render();          // (role/tabindex) is restored for keyboard users
   }
@@ -576,14 +978,41 @@
     busy = false;  // unlock input
     stepping.active = false; // cancel any manual step-through in progress
     winRecorded = false;     // the next game's win hasn't been tallied yet
+    suppressWinnerModal = false; // a live win in the new game shows its dialog
+    var wasWinnerOpen = overlay && overlay.classList.contains('show');
+    var fromEndgame = document.activeElement === endgameNew ||
+                      (endgameBar && endgameBar.contains(document.activeElement));
+    if (wasWinnerOpen) {
+      overlay.classList.remove('show');
+      if (endgameNew) {
+        endgameNew.tabIndex = 0;
+        endgameNew.removeAttribute('aria-hidden');
+      }
+    }
     state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
     buildGrid();
     sizeBoard();
     render();
+    // Overwrite any saved game with this fresh board (when auto-save is on), so
+    // the previous (possibly finished) game is not resurrected on next reload.
+    autoSaveIfOn();
+    if (wasWinnerOpen && winnerFocus) {
+      winnerFocus.onClose();
+    } else if (fromEndgame) {
+      // The standalone endgame button is now hidden by render(); move focus to
+      // the newly visible top-bar New Game button (or the first board cell)
+      // so keyboard focus is not stranded on a hidden element.
+      if (topbarNewGame && !topbarNewGame.hidden && topbarNewGame.focus) {
+        topbarNewGame.focus();
+      } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+        cellEls[0].focus();
+      }
+    }
   }
 
-  document.getElementById('new-game').addEventListener('click', newGame);
+  topbarNewGame.addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
+  endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
 
   // --- settings ------------------------------------------------------------
@@ -627,73 +1056,6 @@
     delayValue.textContent = delayLabel();
   }
 
-  // --- accessible dialog focus management ----------------------------------
-  // Shared by the Settings and About dialogs. When a modal opens we (1) remember
-  // what had focus, (2) move focus into the dialog, and (3) trap Tab within it
-  // so keyboard/screen-reader users can't wander behind the overlay. On close
-  // we restore focus to the element that opened the dialog.
-  function focusables(container) {
-    var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
-              'select:not([disabled]), textarea:not([disabled]), ' +
-              '[tabindex]:not([tabindex="-1"])';
-    return Array.prototype.filter.call(
-      container.querySelectorAll(sel),
-      function (el) {
-        // Skip hidden/zero-size nodes (e.g. a hidden step button).
-        return el.offsetWidth > 0 || el.offsetHeight > 0 ||
-               el === document.activeElement;
-      }
-    );
-  }
-
-  // Build an open/close pair that manages focus for a given overlay + card.
-  // `preferredFocusId` is focused first on open (falls back to first focusable).
-  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
-    var lastFocused = null;
-
-    function onKeydown(e) {
-      if (e.key !== 'Tab') return;
-      var items = focusables(cardEl);
-      if (items.length === 0) { e.preventDefault(); return; }
-      var first = items[0];
-      var last = items[items.length - 1];
-      var active = document.activeElement;
-      if (e.shiftKey) {
-        if (active === first || !cardEl.contains(active)) {
-          e.preventDefault();
-          last.focus();
-        }
-      } else {
-        if (active === last || !cardEl.contains(active)) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-
-    return {
-      onOpen: function () {
-        lastFocused = document.activeElement;
-        var pref = preferredFocusId && document.getElementById(preferredFocusId);
-        var items = focusables(cardEl);
-        var target = pref || items[0] || cardEl;
-        // Focus synchronously. The overlay's `.show` class is added by the
-        // caller before onOpen(), so the card is already displayed and
-        // focusable. Doing this synchronously matters for nested dialogs: the
-        // caller can then make the layer behind inert *after* focus has already
-        // moved into this dialog, with no transient "focused element inside an
-        // inert subtree" window.
-        if (target && target.focus) target.focus();
-        overlayEl.addEventListener('keydown', onKeydown);
-      },
-      onClose: function () {
-        overlayEl.removeEventListener('keydown', onKeydown);
-        if (lastFocused && lastFocused.focus) lastFocused.focus();
-        lastFocused = null;
-      },
-    };
-  }
-
   settingsFocus = makeDialogFocusManager(settingsOverlay, settingsCard, 'settings-close');
 
   function openSettings() {
@@ -708,6 +1070,7 @@
       if (busy) resumeAnimation = animSchedule;
     }
     settingsOverlay.classList.add('show');
+    syncPersistenceUI(); // save-state may have changed since last opened
     settingsFocus.onOpen();
   }
   function closeSettings() {
@@ -748,7 +1111,7 @@
       stepping.active = false; // no longer manual stepping
       if (cascadeSettled()) {
         // Nothing left to resolve: just finalise.
-        G.finalizeAfterCascade(state);
+        finalizeTurn();
         busy = false;
         render();
       } else {
@@ -765,7 +1128,7 @@
       if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
       resumeAnimation = null;
       if (cascadeSettled()) {
-        G.finalizeAfterCascade(state);
+        finalizeTurn();
         busy = false;
       } else {
         stepping.active = true; // > button now drives it
@@ -783,6 +1146,59 @@
   // Initialise readout from the default slider position.
   sliderIndexToSetting(parseInt(delayRange.value, 10));
   updateDelayReadout();
+
+  // --- persistence controls (Settings > Persistence) -----------------------
+  var autoSaveToggle = document.getElementById('autosave-toggle');
+  var removeSaveBtn = document.getElementById('remove-save');
+  var persistenceNote = document.getElementById('persistence-note');
+
+  // Dimension gate: this UI only adopts/recognises saves matching its fixed size.
+  function fitsDimensions(r, c, p) {
+    return r === ROWS && c === COLS && p === PLAYERS;
+  }
+
+  // Reflect the current persistence state in the panel. Two derived states:
+  //   - note shown  : auto-save OFF *and* a valid saved game exists (the only case a
+  //                   silent restore-next-time could surprise the user);
+  //   - remove enabled: exactly the same condition — there is removable data
+  //                   that isn't being continuously rewritten by an active
+  //                   auto-save. With auto-save ON, removing is pointless (the
+  //                   next move rewrites it), so the button is disabled.
+  function syncPersistenceUI() {
+    var on = prefs.getAutoSave();
+    var hasSave = boardStore.has(fitsDimensions);
+    if (autoSaveToggle) autoSaveToggle.checked = on;
+    var orphanSave = (!on && hasSave);
+    if (persistenceNote) persistenceNote.hidden = !orphanSave;
+    if (removeSaveBtn) removeSaveBtn.disabled = !orphanSave;
+  }
+
+  if (autoSaveToggle) {
+    autoSaveToggle.addEventListener('change', function () {
+      prefs.setAutoSave(this.checked);
+      // Turning auto-save ON should immediately capture the current board (so a
+      // reload right after enabling restores this game, not nothing) — BUT only
+      // when no turn is in progress. If a cascade is mid-resolution (animated/
+      // paused `busy`, or manual `stepping.active`), the current state contains
+      // overloaded cells; persisting it would restore an unstable board as if
+      // settled (the cascade never resumes after reload). In that case we skip
+      // the immediate save and let the eventual finalizeTurn() persist the
+      // settled end-state instead. Turning OFF leaves any existing save intact.
+      if (this.checked && !busy && !stepping.active) autoSaveIfOn();
+      syncPersistenceUI();
+    });
+  }
+
+  if (removeSaveBtn) {
+    removeSaveBtn.addEventListener('click', function () {
+      boardStore.remove();
+      syncPersistenceUI();
+    });
+  }
+
+  // Keep the panel honest every time Settings opens (the save state can change
+  // between openings as the game is played).
+  syncPersistenceUI();
 
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game
@@ -915,6 +1331,39 @@
   }
   var aboutVersionEl = document.getElementById('about-version');
   if (aboutVersionEl) aboutVersionEl.textContent = 'Build ' + BUILD;
+
+  // Seamless restore: if a valid saved game exists, adopt it as the live state
+  // BEFORE the grid is built, so the player resumes exactly where they left off
+  // after a reload / reopened tab. This happens regardless of the auto-save
+  // toggle — "off" only stops WRITING new saves; an existing, valid save is
+  // still honoured (and the Persistence panel shows a note explaining it).
+  // Corrupt saves are discarded inside boardStore.load() (logged + removed), so
+  // a null return simply means "boot the fresh game created above".
+  (function restoreSavedGame() {
+    // Pass a predicate so an engine-valid but UI-incompatible save is rejected
+    // BEFORE rehydration (no large allocation for, e.g., a 1000x1000 board).
+    // This UI is fixed at ROWS x COLS / PLAYERS; the engine validator stays
+    // generous for a future board-size picker.
+    var restored = boardStore.load(fitsDimensions);
+    if (!restored) return;
+    // Defence-in-depth: the pre-load predicate above already rejects mismatched
+    // dimensions before rehydration, but re-check the rehydrated state too in
+    // case the two ever diverge. Normally unreachable.
+    if (restored.rows !== ROWS || restored.cols !== COLS ||
+        restored.players !== PLAYERS) {
+      boardStore.remove();
+      return;
+    }
+    state = restored;
+    if (state.winner !== G.EMPTY) {
+      // A FINISHED game was restored: show the board + standalone New button but
+      // NOT the "X wins!" modal (per the layered end-game design). Also mark the
+      // win as already recorded so render()'s one-shot tally guard does not
+      // double-count a win that was tallied when the game actually ended.
+      suppressWinnerModal = true;
+      winRecorded = true;
+    }
+  })();
 
   buildGrid();
   sizeBoard();

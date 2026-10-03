@@ -97,27 +97,38 @@ version-tag consistency (see below).
 
 ## Persistence
 
-A small amount of **cosmetic preference data** is saved **locally in your
-browser** so it survives reloads and restarts:
+Game and preference data are saved **locally in your browser** so they survive
+reloads and reopened tabs:
 
+- **Board state (auto-save)** — your current board is automatically saved on
+  every completed turn and on New Game / Play Again, restoring seamlessly when
+  you reload or return to the tab. Controlled via the **Auto-save game** toggle
+  under **Settings → Persistence** (enabled by default). When auto-save is
+  turned off, writing stops but any existing save remains until removed via the
+  **Remove saved data** button.
 - **Player names** — the custom names you set by clicking the turn indicator.
 - **Win tally** — the running score for the current name pair.
 
 How it works and its boundaries:
 
-- Stored via the browser's **`localStorage`** under a single namespaced key,
-  `jumping_squares:prefs` (namespaced because GitHub Pages serves every project
+- Stored via the browser's **`localStorage`** under two namespaced keys:
+  `jumping_squares:save` for the board state and `jumping_squares:prefs` for
+  preferences and scores (namespaced because GitHub Pages serves every project
   of the account from the same origin). There is **no server** and nothing is
-  sent anywhere — it never leaves your browser.
+  sent anywhere — data never leaves your browser.
 - **No expiry logic by design** — the browser (and you) manage its lifetime;
   clearing site data removes it. It's **per browser / profile**, so a different
   browser, device, or a private window starts fresh.
 - **Best-effort and non-essential** — access is feature-detected and wrapped,
   so if storage is unavailable (e.g. private mode) the game falls back to
   in-memory defaults and plays normally; nothing breaks.
-- The stored record carries a schema **version** so future changes can migrate
-  old data forward. Entered names are sanitised (text-only, length-capped) and
-  only ever rendered as text.
+- Both the board envelope and preferences record carry schema **versions**
+  (`formatVersion` and `v`) with migration seams.
+- Untrusted board saves pass strict validation (`loadState`) before rehydration,
+  enforcing board dimensions, cell invariants, turn-gate consistency, and settled
+  state; corrupt or incompatible saves are discarded and sanitised-logged.
+  Entered names are sanitised (text-only, length-capped) and only ever rendered
+  as text.
 
 Implementation note: this lives in a tiny preferences module in `js/ui.js`,
 written so other settings (e.g. the propagation speed) can be persisted the

@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '24';
+  var VERSION = '25';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,6 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
+    { v: '25', text: 'Auto-save: your game is kept in this browser and restored after a reload or reopened tab. Turn it off (and clear saved data) under Settings \u2192 Persistence.' },
     { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
     { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
@@ -430,6 +431,226 @@
     }
   }
 
+  // ---- validation / rehydration ------------------------------------------
+  //
+  // loadState() turns an UNTRUSTED plain object (from localStorage, an imported
+  // file, or a future format-migration step) into a known-good game state, or
+  // returns null if it cannot. It is deliberately strict and side-effect-free:
+  // it never mutates its input and never throws for bad data — callers treat a
+  // null return as "discard this, start fresh". This single primitive is the
+  // one gate used by (1) restore-on-boot, (2) file import (later phase), and
+  // (3) schema migration (validate AFTER converting), so correctness here is
+  // load-bearing for all persistence.
+
+  function isPlainInt(n) {
+    return typeof n === 'number' && isFinite(n) && Math.floor(n) === n;
+  }
+
+  /**
+   * Validate and normalise an arbitrary object into a clean game state.
+   *
+   * Checks performed:
+   *   - rows/cols are integers >= 2; players is an integer >= 2.
+   *   - cells is an array of exactly rows*cols entries, each { owner, value }
+   *     with owner an integer in 0..players and value a non-negative integer.
+   *   - current is an integer in 1..players.
+   *   - winner is an integer in 0..players (0 = ongoing).
+   *   - moveCount is a non-negative integer.
+   *   - turnsTaken is an array of length players+1 of non-negative integers
+   *     (index 0 unused), reconstructed defensively if missing/malformed.
+   *   - An owned cell (owner != EMPTY) must have value >= 1, and an empty cell
+   *     (owner == EMPTY) must have value 0 — the engine's own invariant.
+   *
+   * @param {*} obj - untrusted candidate state
+   * @returns {Object|null} a fresh, independent clean state, or null if invalid
+   */
+  function loadState(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+
+    var rows = obj.rows, cols = obj.cols, players = obj.players;
+    // Lower AND upper bounds. The upper caps matter for safety, not just
+    // sanity: without them a crafted value like players=4294967295 passes the
+    // integer check and then throws RangeError at `new Array(players + 1)`
+    // below — an exception the caller (boardStore.load) does not catch, so one
+    // malformed stored value would abort boot instead of being discarded. The
+    // caps are far above any real game (the UI is 5x5/2) yet well under array
+    // limits, so legitimate saves are unaffected.
+    var MAX_DIM = 1000;      // per-axis cell count ceiling
+    var MAX_PLAYERS = 100;   // player-count ceiling
+    var MAX_VALUE = 1000;    // per-cell dot count ceiling
+    if (!isPlainInt(rows) || rows < 2 || rows > MAX_DIM) return null;
+    if (!isPlainInt(cols) || cols < 2 || cols > MAX_DIM) return null;
+    if (!isPlainInt(players) || players < 2 || players > MAX_PLAYERS) return null;
+
+    if (!Array.isArray(obj.cells)) return null;
+    if (obj.cells.length !== rows * cols) return null;
+
+    if (!isPlainInt(obj.current) || obj.current < 1 || obj.current > players) {
+      return null;
+    }
+    var winner = obj.winner;
+    if (!isPlainInt(winner) || winner < 0 || winner > players) return null;
+    if (!isPlainInt(obj.moveCount) || obj.moveCount < 0) return null;
+
+    // Turn order invariant:
+    // - For an ongoing state (winner == 0), current must match completed moveCount
+    //   (moves alternate strictly starting from player 1).
+    // - For a terminal state (winner != 0), the winning move was made by the winner,
+    //   so moveCount must be >= 1, current must equal winner, and winner must match
+    //   the player who made the last move.
+    if (winner === EMPTY) {
+      if (obj.current !== (obj.moveCount % players) + 1) return null;
+    } else {
+      if (obj.moveCount < 1) return null;
+      if (obj.current !== winner) return null;
+      if (winner !== ((obj.moveCount - 1) % players) + 1) return null;
+    }
+
+    // Rebuild cells, enforcing per-cell invariants.
+    var cells = new Array(obj.cells.length);
+    var pointTotal = 0;
+    for (var i = 0; i < obj.cells.length; i++) {
+      var src = obj.cells[i];
+      if (!src || typeof src !== 'object') return null;
+      var owner = src.owner, value = src.value;
+      if (!isPlainInt(owner) || owner < 0 || owner > players) return null;
+      if (!isPlainInt(value) || value < 0 || value > MAX_VALUE) return null;
+      // Invariant coupling owner and value: empty <=> value 0.
+      if (owner === EMPTY && value !== 0) return null;
+      if (owner !== EMPTY && value < 1) return null;
+      pointTotal += value;
+      cells[i] = { owner: owner, value: value };
+    }
+    if (pointTotal !== obj.moveCount) return null;
+
+    // turnsTaken: accept a well-formed array of length players+1. For malformed
+    // or missing values, finished states are rejected because their turn-gate
+    // cannot be proven; ongoing states reconstruct deterministic turn counts
+    // from moveCount and the strict player order below.
+    //
+    // NOTE: this is built BEFORE the winner is validated, because the winner
+    // check below depends on turnsTaken (the engine's win rule includes a
+    // turn-gate: every player must have taken a turn).
+    var turnsTaken;
+    if (Array.isArray(obj.turnsTaken) && obj.turnsTaken.length === players + 1) {
+      turnsTaken = new Array(players + 1).fill(0);
+      var okTurns = true;
+      var sumTurns = 0;
+      for (var t = 0; t < obj.turnsTaken.length; t++) {
+        var tv = obj.turnsTaken[t];
+        if (!isPlainInt(tv) || tv < 0) { okTurns = false; break; }
+        turnsTaken[t] = tv;
+        if (t >= 1) sumTurns += tv;
+      }
+      if (okTurns) {
+        // Invariant: sum of individual player turns must match moveCount.
+        if (sumTurns !== obj.moveCount) okTurns = false;
+
+        // Invariant: any player who owns cells MUST have taken at least one
+        // turn (cells start neutral and only become owned when a player moves).
+        // If obj.turnsTaken reports 0 turns for an active cell owner, it is
+        // inconsistent and falls back to conservative reconstruction.
+        var cellCounts = new Array(players + 1).fill(0);
+        for (var cIdx = 0; cIdx < cells.length; cIdx++) cellCounts[cells[cIdx].owner]++;
+        for (var pIdx = 1; pIdx <= players; pIdx++) {
+          if (cellCounts[pIdx] > 0 && turnsTaken[pIdx] < 1) { okTurns = false; break; }
+        }
+      }
+      if (!okTurns) turnsTaken = null;
+    }
+
+    // A finished save MUST have a faithful, verified turnsTaken array: without
+    // it, the turn-gate cannot be proven (the loser owns no cells, so any
+    // reconstruction is ambiguous/fabricated). Reject malformed finished saves.
+    if (winner !== EMPTY && !turnsTaken) return null;
+
+    if (!turnsTaken) {
+      // For an ongoing game, reconstruct turnsTaken deterministically from
+      // moveCount and player turn order (M moves alternate strictly among
+      // players 1..players).
+      turnsTaken = new Array(players + 1).fill(0);
+      var baseTurns = Math.floor(obj.moveCount / players);
+      var remTurns = obj.moveCount % players;
+      for (var p = 1; p <= players; p++) {
+        turnsTaken[p] = baseTurns + (p <= remTurns ? 1 : 0);
+      }
+      // Invariant: any player who owns cells MUST have taken at least one turn.
+      // If moveCount was too low for an active cell owner (e.g. moveCount: 0
+      // with owned cells), the state is physically impossible: reject it rather
+      // than bumping turns and violating the sum(turnsTaken) === moveCount invariant.
+      var ownerCounts = new Array(players + 1).fill(0);
+      for (var k = 0; k < cells.length; k++) ownerCounts[cells[k].owner]++;
+      for (var pIdx2 = 1; pIdx2 <= players; pIdx2++) {
+        if (ownerCounts[pIdx2] > 0 && turnsTaken[pIdx2] < 1) {
+          return null;
+        }
+      }
+    }
+
+    // Assemble the candidate and validate its WINNER against the engine's own
+    // rule rather than re-implementing it here. checkWinner enforces BOTH the
+    // physical condition (one player owns every cell, no neutral cells) AND the
+    // turn-gate (every player has taken at least one turn). Requiring the stored
+    // `winner` to equal checkWinner(candidate) rejects any inconsistent save:
+    //   - winner set over a contested/empty board (physical condition fails);
+    //   - winner set with all cells owned but a player never moved
+    //     (turn-gate fails — e.g. turnsTaken [0,0,0]);
+    //   - winner cleared (0) on a board the engine would have decided.
+    // This also means a finished save whose turnsTaken was not faithfully
+    // stored (so reconstruction can't prove every player moved) is rejected
+    // rather than restored as a bogus "finished" game.
+    var candidate = {
+      rows: rows,
+      cols: cols,
+      players: players,
+      current: obj.current,
+      moveCount: obj.moveCount,
+      turnsTaken: turnsTaken,
+      winner: winner,
+      cells: cells,
+    };
+    if (checkWinner(candidate) !== winner) return null;
+
+    // Reject a physically-terminal board that is NOT a declared win. If one
+    // player owns every cell (soleOwner != EMPTY) but winner is EMPTY — only
+    // possible when the turn-gate was not met, e.g. an opponent never moved —
+    // the position is unreachable in real play and, if restored, is permanently
+    // stuck: the opponent has no legal move (no empty and no own cells) and no
+    // winner is declared. The engine would never persist such an ongoing state,
+    // so treat it as invalid. (A genuine terminal with winner set is handled by
+    // the checkWinner equality above; a legitimate ongoing game always has
+    // neutral cells or more than one owner, so soleOwner is EMPTY here.)
+    if (winner === EMPTY && soleOwner(candidate) !== EMPTY) return null;
+
+    // Ongoing game contract: the current player must have at least one legal
+    // move. A player can move if at least one cell is neutral (EMPTY) or owned
+    // by that player. If there are no neutral cells and the current player owns
+    // no cells, they cannot play and the restored game would be permanently stuck.
+    if (winner === EMPTY) {
+      var hasMove = false;
+      for (var m = 0; m < cells.length; m++) {
+        if (cells[m].owner === EMPTY || cells[m].owner === candidate.current) {
+          hasMove = true;
+          break;
+        }
+      }
+      if (!hasMove) return null;
+    }
+
+    // Settled-state contract. Persistence intentionally stores only SETTLED
+    // boards (the end-state of a move); mid-cascade snapshots are out of scope
+    // by design. So reject any candidate that still has a cell over capacity —
+    // UNLESS one player physically owns the whole board, which is the single
+    // legitimate case where a board can stay perpetually over capacity (further
+    // overflows only shuffle points within one owner's territory). Without this
+    // check, a crafted save with an overloaded cell on a contested board would
+    // be adopted and rendered as a settled, playable position whose pending
+    // cascade never resumes.
+    if (hasOverflow(candidate) && soleOwner(candidate) === EMPTY) return null;
+
+    return candidate;
+  }
+
   /** Deep-ish clone for snapshots (undo, AI lookahead). */
   function cloneState(state) {
     return {
@@ -465,6 +686,7 @@
     stepOverflowsOnce: stepOverflowsOnce,
     placeDot: placeDot,
     finalizeAfterCascade: finalizeAfterCascade,
+    loadState: loadState,
     cloneState: cloneState,
   };
 });

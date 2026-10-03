@@ -265,6 +265,68 @@
       animation: shadowPulse 1s ease-in-out infinite;
     }
 
+    /* --- End-of-game layers -------------------------------------------------
+       Three stacked layers (lowest to highest):
+         1. the board (always present, beneath everything);
+         2. #endgame-bar — a standalone "New Game" button shown whenever the
+            game is finished (state.winner set). It does NOT dim or cover the
+            board, so a finished position stays visible: a restored finished
+            game shows the uniform-colour board + this button + the winner's
+            name in the top-left turn indicator (no modal);
+         3. #winner-overlay — the dimmed "X wins!" dialog, shown only on a LIVE
+            win (not when a finished game is merely restored from storage).
+
+       Because #endgame-bar is beneath the modal, a live win shows both: the
+       modal on top, the standalone button behind it. */
+    #endgame-bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: none;              /* shown via .show when the game is over */
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      z-index: 8;                 /* above board (and build tag), below modal */
+      pointer-events: none;       /* let the board show through; button re-enables */
+    }
+    #endgame-bar.show { display: flex; }
+    #endgame-new {
+      pointer-events: auto;       /* the button itself is clickable */
+      font-size: clamp(14px, 3.6vw, 17px);
+      font-weight: 700;
+      padding: 10px 22px;
+      /* Quiet by default: on a LIVE win it sits BEHIND the modal's prominent
+         "Play Again", so it must read as the secondary action (grey). */
+      background: #2c313c;
+      border-color: #3a4150;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    /* When the end-game bar is the SOLE call-to-action — a finished game
+       restored after reload, with no winner modal above it — promote the
+       standalone New Game, since it is now the only button on screen.
+       It must stand out against ANY board colour, including a board that is
+       entirely the player-2 blue (very close to a plain button blue). So it
+       uses a BRIGHTER blue, a light (near-white) border, and a dark outer ring
+       (layered shadow) that carves a separating gap from whatever is behind it. */
+    #endgame-bar.sole-cta #endgame-new {
+      font-size: clamp(16px, 4.5vw, 20px);
+      padding: 12px 28px;
+      color: #ffffff;
+      background: #1d4fd0;        /* deeper, more saturated than --p2 (#3d7bd6) */
+      border: 2px solid #cfe2ff;  /* light rim lifts it off a blue board */
+      /* Dark halo first (separation from any colour), then a soft drop shadow. */
+      box-shadow: 0 0 0 3px rgba(0,0,0,0.55), 0 8px 22px rgba(0,0,0,0.5);
+    }
+    #endgame-bar.sole-cta #endgame-new:hover {
+      background: #2f6bd0;
+    }
+    #endgame-bar.sole-cta #endgame-new:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 3px;
+    }
+
     #winner-overlay {
       position: fixed;
       inset: 0;
@@ -280,6 +342,17 @@
     #winner-overlay .msg {
       font-size: clamp(22px, 7vw, 44px);
       font-weight: 800;
+    }
+    /* The modal's primary action on a LIVE win: prominent blue and noticeably
+       larger than the standalone New Game behind it, so it is the obvious thing
+       to click (size, not just centre position). */
+    #play-again {
+      font-size: clamp(18px, 5.5vw, 24px);
+      font-weight: 800;
+      padding: 14px 36px;
+      background: #2f6bd0;
+      border-color: #4d86e0;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
     }
     /* Prominent running tally under the win message, e.g. "Alice 2 - 1 Bob". */
     #winner-score {
@@ -372,6 +445,91 @@
       justify-content: space-between;
       font-size: clamp(10px, 2.6vw, 12px);
       opacity: 0.6;
+    }
+
+    /* --- Persistence section ------------------------------------------------
+       A second settings block below Propagation speed. A thin rule separates
+       the two groups (precursor to tabbed Settings later). */
+    .setting-persistence {
+      border-top: 1px solid #2c2f38;
+      padding-top: 16px;
+    }
+
+    /* Slide switch: an accessible checkbox visually rendered as an on/off
+       toggle. The native input is kept (focusable, keyboard-operable, exposed
+       to assistive tech) but visually hidden; the track + knob are drawn and
+       react to :checked / :focus-visible on the input. */
+    .switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
+    }
+    .switch input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .switch-track {
+      width: 44px;
+      height: 26px;
+      border-radius: 999px;
+      background: #3a4150;
+      border: 1px solid #4a5160;
+      transition: background-color 120ms ease, border-color 120ms ease;
+      display: inline-block;
+      position: relative;
+      pointer-events: none;
+    }
+    .switch-knob {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #e8e8ea;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+      transition: transform 120ms ease;
+    }
+    .switch input:checked + .switch-track {
+      background: #2f6bd0;
+      border-color: #4d86e0;
+    }
+    .switch input:checked + .switch-track .switch-knob {
+      transform: translateX(18px);
+    }
+    .switch input:focus-visible + .switch-track {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+
+    /* Attention note: muted red, only shown when a save would restore while
+       auto-save is off (the potentially-surprising case). */
+    .persistence-note {
+      font-size: clamp(11px, 2.9vw, 13px);
+      line-height: 1.35;
+      color: #ffb3b3;
+      background: rgba(230,72,77,0.12);
+      border: 1px solid rgba(230,72,77,0.4);
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .persistence-note[hidden] { display: none; }
+
+    /* "Remove saved data" button: disabled styling matches the step button. */
+    #remove-save {
+      align-self: flex-start;
+    }
+    #remove-save:disabled {
+      opacity: 0.4;
+      cursor: default;
+      background: #2c313c;
+      border-color: #3a4150;
     }
 
     /* --- About overlay ------------------------------------------------------
@@ -573,10 +731,14 @@
           title="About Jumping Squares (build version)"
           aria-label="About Jumping Squares"></button>
 
-  <div id="winner-overlay">
+  <div id="endgame-bar">
+    <button id="endgame-new" type="button">New Game</button>
+  </div>
+
+  <div id="winner-overlay" role="dialog" aria-modal="true" aria-labelledby="winner-msg">
     <div class="msg" id="winner-msg"></div>
     <div id="winner-score"></div>
-    <button id="play-again">Play Again</button>
+    <button id="play-again" type="button">Play Again</button>
   </div>
 
   <div id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
@@ -603,6 +765,36 @@
           follow). At the far end (<strong>&gt; Step</strong>) you advance each
           step manually with a <strong>&gt;</strong> button.
         </div>
+      </div>
+
+      <div class="setting setting-persistence">
+        <div class="setting-label">
+          <label for="autosave-toggle" id="autosave-label">Auto-save game</label>
+          <!-- Slide switch: a checkbox styled as an on/off toggle. The label is
+               associated via for=; the visual track/knob is drawn with CSS. -->
+          <span class="switch">
+            <input type="checkbox" id="autosave-toggle" checked role="switch"
+                   aria-describedby="autosave-hint" />
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-knob"></span>
+            </span>
+          </span>
+        </div>
+        <div class="setting-hint" id="autosave-hint">
+          Keeps your current game in this browser so it survives a reload or a
+          reopened tab, and restores it automatically. Nothing leaves your
+          browser. Turn it off to stop saving; use <strong>New Game</strong> any
+          time to start over.
+        </div>
+        <!-- Attention note: shown only when auto-save is OFF but a saved game
+             still exists (so a silent restore next time isn't surprising). -->
+        <div class="persistence-note" id="persistence-note" role="status" aria-live="polite" hidden>
+          There is saved game data that will be restored next time.
+        </div>
+        <!-- Enabled only when there is removable saved data that isn't being
+             continuously overwritten by an active auto-save (i.e. auto-save OFF
+             and a save exists). -->
+        <button id="remove-save" type="button" disabled>Remove saved data</button>
       </div>
     </div>
   </div>
@@ -661,7 +853,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=24"></script>
-  <script src="js/ui.js?v=24"></script>
+  <script src="js/game.js?v=25"></script>
+  <script src="js/ui.js?v=25"></script>
 </body>
 </html>
