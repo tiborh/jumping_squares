@@ -518,12 +518,17 @@
     if (Array.isArray(obj.turnsTaken) && obj.turnsTaken.length === players + 1) {
       turnsTaken = new Array(players + 1).fill(0);
       var okTurns = true;
+      var sumTurns = 0;
       for (var t = 0; t < obj.turnsTaken.length; t++) {
         var tv = obj.turnsTaken[t];
         if (!isPlainInt(tv) || tv < 0) { okTurns = false; break; }
         turnsTaken[t] = tv;
+        if (t >= 1) sumTurns += tv;
       }
       if (okTurns) {
+        // Invariant: sum of individual player turns must match moveCount.
+        if (sumTurns !== obj.moveCount) okTurns = false;
+
         // Invariant: any player who owns cells MUST have taken at least one
         // turn (cells start neutral and only become owned when a player moves).
         // If obj.turnsTaken reports 0 turns for an active cell owner, it is

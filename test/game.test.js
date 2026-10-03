@@ -453,7 +453,7 @@ console.log('loadState: rejects malformed / out-of-range input');
   // A legitimately finished board (winner owns every cell) is accepted.
   var finOk = {
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 2,
-    turnsTaken: [0, 1, 1],
+    turnsTaken: [0, 4, 5],
     cells: [
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
@@ -470,7 +470,7 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // resumes). Corner (0,0) cap 2 at value 3 is over capacity.
   var unsettled = {
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 3, winner: 0,
-    turnsTaken: [0, 1, 1],
+    turnsTaken: [0, 2, 1],
     cells: [
       { owner: 1, value: 3 }, { owner: 2, value: 1 },  // (0,0) over cap -> unstable
       { owner: 0, value: 0 }, { owner: 2, value: 1 },
@@ -485,7 +485,7 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // is a valid terminal; it must still load. Fill a 2x2 with p1, one over cap.
   var soleOverflow = {
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
-    turnsTaken: [0, 3, 2],
+    turnsTaken: [0, 5, 4],
     cells: [
       { owner: 1, value: 3 }, { owner: 1, value: 1 },  // (0,0) cap 2, value 3
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
@@ -558,7 +558,7 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
   ok(lut !== null, 'inconsistent turnsTaken repaired (loads successfully)');
   ok(lut.turnsTaken[1] >= 1, 'player owning cells reconstructed with at least 1 turn');
 
-  // A FINISHED save whose turnsTaken is malformed is now REJECTED: after
+  // A finished save whose turnsTaken is malformed is now REJECTED: after
   // reconstruction, player 2 (who owns nothing) has 0 turns, so the engine's
   // turn-gate (checkWinner) would NOT declare winner 1. loadState requires the
   // stored winner to equal checkWinner(candidate), so an unfaithful finished
@@ -573,6 +573,18 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
   };
   ok(G.loadState(finBad) === null,
      'finished state with malformed turnsTaken is rejected (turn-gate not provable)');
+
+  // A finished save whose turnsTaken sum mismatches moveCount is rejected:
+  var finMismatch = {
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
+    turnsTaken: [0, 1, 1], // sum is 2 != moveCount 9
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finMismatch) === null,
+     'finished save with turnsTaken sum mismatching moveCount is rejected');
 
   // A finished save with a FAITHFUL turnsTaken (every player moved) is accepted.
   var finGood = {

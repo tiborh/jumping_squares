@@ -504,11 +504,17 @@
   }
 
   // --- accessible dialog focus management ----------------------------------
-  // Shared by Winner, Settings, and About dialogs. When a modal opens we
-  // (1) remember what had focus, (2) move focus into the dialog, and (3) trap
-  // Tab within it so keyboard/screen-reader users can't wander behind the
-  // overlay. On close we restore focus to the element that opened the dialog
-  // (or a sensible fallback if that element was unmounted).
+  // Shared by Winner, Settings, About, and What's New dialogs. Maintains a
+  // stack of open dialogs so nested dialogs (e.g. What's new inside About)
+  // trap focus strictly within the topmost active dialog without conflicting.
+  var activeDialogs = [];
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Tab' || activeDialogs.length === 0) return;
+    var current = activeDialogs[activeDialogs.length - 1];
+    current.onTab(e);
+  });
+
   function focusables(container) {
     var sel = 'a[href], button:not([disabled]), input:not([disabled]), ' +
               'select:not([disabled]), textarea:not([disabled]), ' +
@@ -528,8 +534,7 @@
   function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
     var lastFocused = null;
 
-    function onKeydown(e) {
-      if (e.key !== 'Tab') return;
+    function onTab(e) {
       var items = focusables(cardEl);
       if (items.length === 0) { e.preventDefault(); return; }
       var first = items[0];
@@ -548,23 +553,19 @@
       }
     }
 
-    return {
+    var manager = {
+      onTab: onTab,
       onOpen: function () {
         lastFocused = document.activeElement;
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
         var target = pref || items[0] || cardEl;
-        // Focus synchronously. The overlay's `.show` class is added by the
-        // caller before onOpen(), so the card is already displayed and
-        // focusable. Doing this synchronously matters for nested dialogs: the
-        // caller can then make the layer behind inert *after* focus has already
-        // moved into this dialog, with no transient "focused element inside an
-        // inert subtree" window.
         if (target && target.focus) target.focus();
-        document.addEventListener('keydown', onKeydown);
+        activeDialogs.push(manager);
       },
       onClose: function () {
-        document.removeEventListener('keydown', onKeydown);
+        var idx = activeDialogs.indexOf(manager);
+        if (idx !== -1) activeDialogs.splice(idx, 1);
         if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
           lastFocused.focus();
         } else if (cellEls && cellEls[0] && cellEls[0].focus) {
@@ -573,6 +574,7 @@
         lastFocused = null;
       },
     };
+    return manager;
   }
 
   var winnerFocus = makeDialogFocusManager(overlay, overlay, 'play-again');
