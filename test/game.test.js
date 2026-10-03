@@ -417,6 +417,8 @@ console.log('loadState: rejects malformed / out-of-range input');
   ok(G.loadState(base()) !== null, 'sanity: base() is valid');
 
   var b;
+  b = base(); b.moveCount = 2; b.current = 1; b.turnsTaken = [0, 2, 0];
+  ok(G.loadState(b) === null, 'point total must match moveCount');
   b = base(); b.rows = 1;                       ok(G.loadState(b) === null, 'rows < 2 rejected');
   b = base(); b.cols = 1.5;                      ok(G.loadState(b) === null, 'non-integer cols rejected');
   b = base(); b.players = 1;                     ok(G.loadState(b) === null, 'players < 2 rejected');
@@ -453,8 +455,8 @@ console.log('loadState: rejects malformed / out-of-range input');
   ok(G.loadState(b) === null, 'winner set but board not fully owned -> rejected');
   // A legitimately finished board (winner owns every cell) is accepted.
   var finOk = {
-    rows: 2, cols: 2, players: 2, current: 2, moveCount: 10, winner: 2,
-    turnsTaken: [0, 5, 5],
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 4, winner: 2,
+    turnsTaken: [0, 2, 2],
     cells: [
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
@@ -467,7 +469,7 @@ console.log('loadState: rejects malformed / out-of-range input');
     rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 1,
     turnsTaken: [0, 5, 4],
     cells: [
-      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
@@ -479,7 +481,7 @@ console.log('loadState: rejects malformed / out-of-range input');
     rows: 2, cols: 2, players: 2, current: 2, moveCount: 9, winner: 2,
     turnsTaken: [0, 4, 5],
     cells: [
-      { owner: 2, value: 1 }, { owner: 2, value: 1 },
+      { owner: 2, value: 6 }, { owner: 2, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
     ],
   };
@@ -494,8 +496,8 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // (otherwise it would be adopted as a playable board whose cascade never
   // resumes). Corner (0,0) cap 2 at value 3 is over capacity.
   var unsettled = {
-    rows: 2, cols: 2, players: 2, current: 1, moveCount: 3, winner: 0,
-    turnsTaken: [0, 2, 1],
+    rows: 2, cols: 2, players: 2, current: 2, moveCount: 5, winner: 0,
+    turnsTaken: [0, 3, 2],
     cells: [
       { owner: 1, value: 3 }, { owner: 2, value: 1 },  // (0,0) over cap -> unstable
       { owner: 0, value: 0 }, { owner: 2, value: 1 },
@@ -512,7 +514,7 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
     turnsTaken: [0, 5, 4],
     cells: [
-      { owner: 1, value: 3 }, { owner: 1, value: 1 },  // (0,0) cap 2, value 3
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },  // (0,0) cap 2, over capacity
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
@@ -524,10 +526,10 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // A board physically owned by one player but with winner EMPTY (turn-gate not
   // met) is UNREACHABLE in real play and would be permanently stuck if restored
   // (the other player has no legal move and no winner is declared). Reject it.
-  // All cells p1, current 2, winner 0, p2 never moved.
+  // All cells p1, current 1, winner 0, p2 never moved.
   var stuck = {
-    rows: 2, cols: 2, players: 2, current: 2, moveCount: 3, winner: 0,
-    turnsTaken: [0, 3, 0], // p2 never took a turn
+    rows: 2, cols: 2, players: 2, current: 1, moveCount: 4, winner: 0,
+    turnsTaken: [0, 4, 0], // p2 never took a turn
     cells: [
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
@@ -542,10 +544,10 @@ console.log('loadState: rejects unsettled (over-capacity) states, keeps sole-own
   // p1 and p2 own all cells, 0 neutral cells, current is p3). p3 cannot move,
   // so restoring would leave the game permanently stuck.
   var noLegalMove = {
-    rows: 2, cols: 2, players: 3, current: 3, moveCount: 2, winner: 0,
-    turnsTaken: [0, 1, 1, 0],
+    rows: 2, cols: 2, players: 3, current: 3, moveCount: 5, winner: 0,
+    turnsTaken: [0, 2, 2, 1],
     cells: [
-      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 2 }, { owner: 1, value: 1 },
       { owner: 2, value: 1 }, { owner: 2, value: 1 },
     ],
   };
@@ -597,7 +599,7 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
     rows: 2, cols: 2, players: 2, current: 2, moveCount: 3, winner: 0,
     turnsTaken: [0, 0, 2], // p1 owns cells but turnsTaken[1] is 0!
     cells: [
-      { owner: 1, value: 1 }, { owner: 2, value: 1 },
+      { owner: 1, value: 1 }, { owner: 2, value: 2 },
       { owner: 0, value: 0 }, { owner: 0, value: 0 },
     ],
   };
@@ -614,7 +616,7 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
     turnsTaken: 'bogus', // malformed -> reconstructed -> p2 has 0 turns
     cells: [
-      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
@@ -626,7 +628,7 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
     turnsTaken: [0, 1, 1], // sum is 2 != moveCount 9
     cells: [
-      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
@@ -638,7 +640,7 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
     rows: 2, cols: 2, players: 2, current: 1, moveCount: 9, winner: 1,
     turnsTaken: [0, 5, 4], // both players took turns
     cells: [
-      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 6 }, { owner: 1, value: 1 },
       { owner: 1, value: 1 }, { owner: 1, value: 1 },
     ],
   };
