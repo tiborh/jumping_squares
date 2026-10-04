@@ -17,6 +17,9 @@
   'use strict';
 
   var G = window.JumpingSquares;
+  // AI agents module (optional): present when js/agents.js is loaded. Guarded so
+  // the UI still works (all-human) if the script is missing.
+  var AGENTS = window.JumpingSquaresAgents || null;
 
   // --- configuration (Iteration 1: fixed 5x5, two human players) ----------
   var ROWS = 5;
@@ -52,7 +55,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 3; // v3 adds `autoSave`; v2 adds `score`; v1 (names only) migrates forward
+  var PREFS_VERSION = 4; // v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -68,6 +71,9 @@
       // off is remembered even when there is no saved board. See the Persistence
       // section in Settings.
       autoSave: true,
+      // Who controls each player: 'human' (default), 'random', or 'tutor'.
+      // Persisted so the chosen match-up survives reloads.
+      playerType: { 1: 'human', 2: 'human' },
     };
 
     function storageAvailable() {
@@ -110,6 +116,16 @@
         // garbage falls back to the default rather than being coerced.
         if (typeof parsed.autoSave === 'boolean') {
           mem.autoSave = parsed.autoSave;
+        }
+
+        // playerType: introduced in schema v4; absent in older records (keep
+        // the default, all 'human'). Only adopt known values per seat.
+        if (parsed.playerType && typeof parsed.playerType === 'object') {
+          var valid = { human: 1, random: 1, tutor: 1 };
+          [1, 2].forEach(function (n) {
+            var t = parsed.playerType[n];
+            if (typeof t === 'string' && valid[t]) mem.playerType[n] = t;
+          });
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -182,6 +198,15 @@
       getAutoSave: function () { return mem.autoSave !== false; },
       setAutoSave: function (on) {
         mem.autoSave = !!on;
+        persist();
+      },
+      // --- player types (human / random / tutor) ---
+      getPlayerType: function (n) {
+        var t = mem.playerType[n];
+        return (t === 'random' || t === 'tutor') ? t : 'human';
+      },
+      setPlayerType: function (n, t) {
+        mem.playerType[n] = (t === 'random' || t === 'tutor') ? t : 'human';
         persist();
       },
     };
@@ -431,8 +456,12 @@
     return s;
   }
 
-  // The name to display for player n: custom (stored) name if set, else default.
+  // The name to display for player n: for an AI-controlled seat, the agent's
+  // label (e.g. "Random (AI)"); otherwise the custom (stored) name or default.
   function playerName(n) {
+    var type = prefs.getPlayerType(n);
+    if (type === 'random') return 'Random (AI)';
+    if (type === 'tutor') return 'Tutor (AI)';
     var custom = sanitizeName(prefs.getPlayerName(n));
     return custom || defaultPlayerName(n);
   }
@@ -702,6 +731,13 @@
         winnerFocus.onClose();
       }
     }
+
+    // After reflecting the current state, if it's an AI player's turn (and
+    // nothing is in progress), schedule its move. This single hook covers every
+    // path that ends a turn (all of them re-render), and it is a safe no-op
+    // when busy/stepping/paused or when the current player is human. maybeTrig-
+    // gerAI is defined later in this IIFE (hoisted) and is runtime-only here.
+    maybeTriggerAI();
   }
 
   // --- rename current player (click the turn label on your turn) -----------
@@ -711,6 +747,8 @@
   var renaming = false; // true while the inline editor is open
 
   function canRenameNow() {
+    // AI-controlled seats aren't renamed (their label is the agent name).
+    if (prefs.getPlayerType(state.current) !== 'human') return false;
     return !renaming && !busy && !stepping.active && state.winner === G.EMPTY;
   }
 
@@ -971,6 +1009,60 @@
     else animStep(); // 0 ms: resolve immediately, no visible pause
   }
 
+  // --- AI players ----------------------------------------------------------
+  // A player can be controlled by an agent (Random / Tutor). On that player's
+  // turn the UI asks the agent for a move and plays it through the SAME path a
+  // human click uses (startStepMode / playMoveAnimated), so cascades animate at
+  // the chosen propagation speed and all the existing bookkeeping applies.
+  //
+  // maybeTriggerAI() is scheduled (deferred) after every finalised turn, after
+  // New Game, and after boot-restore. It is heavily gated so it never fires
+  // mid-cascade, while the Settings dialog is paused, or out of turn — and it
+  // chains naturally for AI-vs-AI (each AI move finalises, which schedules the
+  // next). `aiTimer` + `playToken` let New Game cancel a pending AI move.
+  var aiAgents = {};        // cache: type -> agent instance
+  var aiTimer = null;       // pending "AI is about to move" timeout
+  var AI_THINK_MS = 350;    // small pause so AI (esp. AI-vs-AI) is watchable
+
+  function agentFor(type) {
+    if (type !== 'random' && type !== 'tutor') return null;
+    if (!AGENTS) return null;
+    if (!aiAgents[type]) {
+      aiAgents[type] = (type === 'tutor')
+        ? AGENTS.makeTutor(G) : AGENTS.makeRandom(G);
+    }
+    return aiAgents[type];
+  }
+
+  // Is the player currently to move an AI? (false if agents module absent.)
+  function isAITurn() {
+    if (state.winner !== G.EMPTY) return false;
+    return agentFor(prefs.getPlayerType(state.current)) !== null;
+  }
+
+  function cancelPendingAI() {
+    if (aiTimer !== null) { clearTimeout(aiTimer); aiTimer = null; }
+  }
+
+  // If it's an AI's turn and nothing is in progress, schedule the AI's move.
+  function maybeTriggerAI() {
+    cancelPendingAI();
+    if (busy || stepping.active || paused) return; // let the current action finish
+    if (!isAITurn()) return;
+    var tokenAtSchedule = playToken;
+    aiTimer = setTimeout(function () {
+      aiTimer = null;
+      if (playToken !== tokenAtSchedule) return; // New Game cancelled us
+      if (busy || stepping.active || paused || !isAITurn()) return;
+      var agent = agentFor(prefs.getPlayerType(state.current));
+      if (!agent) return;
+      var mv = agent.chooseMove(state);
+      if (!mv) return; // no legal move (shouldn't happen before a winner)
+      if (settings.stepMode) startStepMode(mv.r, mv.c);
+      else playMoveAnimated(mv.r, mv.c, settings.delayMs);
+    }, AI_THINK_MS);
+  }
+
   // --- new game ------------------------------------------------------------
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
@@ -1099,6 +1191,7 @@
     }
     settingsOverlay.classList.add('show');
     syncPersistenceUI(); // save-state may have changed since last opened
+    syncPlayerTypeUI();  // reflect current player types
     settingsFocus.onOpen();
   }
   function closeSettings() {
@@ -1110,6 +1203,11 @@
       var fn = resumeAnimation;
       resumeAnimation = null;
       fn();
+    } else {
+      // Nothing mid-cascade: if it's an AI's turn (e.g. the player just set a
+      // seat to AI, or closed Settings on an AI turn), get it moving now that
+      // we're unpaused.
+      maybeTriggerAI();
     }
   }
 
@@ -1227,6 +1325,39 @@
   // Keep the panel honest every time Settings opens (the save state can change
   // between openings as the game is played).
   syncPersistenceUI();
+
+  // --- player type selects (Human / Random / Tutor) ------------------------
+  var p1TypeSel = document.getElementById('p1-type');
+  var p2TypeSel = document.getElementById('p2-type');
+
+  // Reflect the stored player types in the selects. If the agents module is
+  // missing (script not loaded), fall back to Human and disable the selects so
+  // the UI can't offer AI it can't run.
+  function syncPlayerTypeUI() {
+    var sels = { 1: p1TypeSel, 2: p2TypeSel };
+    [1, 2].forEach(function (n) {
+      var sel = sels[n];
+      if (!sel) return;
+      if (!AGENTS) { sel.value = 'human'; sel.disabled = true; return; }
+      sel.value = prefs.getPlayerType(n);
+    });
+  }
+
+  function onPlayerTypeChange(n, sel) {
+    prefs.setPlayerType(n, sel.value);
+    // Re-render so the turn label (which shows the agent name for an AI seat)
+    // and the rename affordance update; render() also re-evaluates whether the
+    // CURRENT player is now an AI and, if so, schedules its move.
+    render();
+  }
+
+  if (p1TypeSel) {
+    p1TypeSel.addEventListener('change', function () { onPlayerTypeChange(1, this); });
+  }
+  if (p2TypeSel) {
+    p2TypeSel.addEventListener('change', function () { onPlayerTypeChange(2, this); });
+  }
+  syncPlayerTypeUI();
 
   // --- confirm dialog ------------------------------------------------------
   // A small in-app yes/no modal, used instead of window.confirm (which prefixes
