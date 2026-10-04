@@ -37,7 +37,6 @@
   var winnerScoreEl = document.getElementById('winner-score');
   var endgameBar = document.getElementById('endgame-bar');
   var endgameNew = document.getElementById('endgame-new');
-  var topbarNewGame = document.getElementById('new-game');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -649,21 +648,19 @@
     for (var p = 1; p <= state.players; p++) {
       parts.push(playerName(p) + ': ' + counts[p]);
     }
-    // Tile counts go in the plain-text span; the running tally is a SEPARATE,
-    // pushable control (clicking it resets the score, with confirmation), so it
-    // is rendered into its own button rather than concatenated into the text.
+    // Tile counts render into a pushable button that doubles as the New Game
+    // control (clicking it asks "New game?" with confirmation). It is disabled
+    // once the game is over — then the end-game bar's New Game button is the
+    // sole restart path, so there's exactly one New-Game affordance per state.
+    // The running tally is a separate button (resets the score, with confirm).
     statusCountsEl.textContent = parts.join(', ');
+    statusCountsEl.disabled = (state.winner !== G.EMPTY);
     tallyBtn.textContent = scoreLabel();
 
     if (state.winner !== G.EMPTY) {
       // Layer 2: the standalone New button is always shown when the game is
       // over (both live wins and restored finished games).
       endgameBar.classList.add('show');
-      // The top-bar New Game is redundant once the game is over (the endgame
-      // bar provides it), and leaving it visible would mean the standalone
-      // button is not truly the "sole" call-to-action. Hide it while the
-      // endgame bar is shown; it returns on New Game / Play Again.
-      if (topbarNewGame) topbarNewGame.hidden = true;
       // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
       // finished game is merely restored from storage (suppressWinnerModal).
       if (suppressWinnerModal) {
@@ -703,7 +700,6 @@
         }
         winnerFocus.onClose();
       }
-      if (topbarNewGame) topbarNewGame.hidden = false;
     }
   }
 
@@ -1004,20 +1000,30 @@
       winnerFocus.onClose();
     } else if (fromEndgame) {
       // The standalone endgame button is now hidden by render(); move focus to
-      // the newly visible top-bar New Game button (or the first board cell)
-      // so keyboard focus is not stranded on a hidden element.
-      if (topbarNewGame && !topbarNewGame.hidden && topbarNewGame.focus) {
-        topbarNewGame.focus();
-      } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+      // the first board cell so keyboard focus is not stranded on a hidden
+      // element (the top-bar New Game button no longer exists).
+      if (cellEls && cellEls[0] && cellEls[0].focus) {
         cellEls[0].focus();
       }
     }
   }
 
-  topbarNewGame.addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
   endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
+
+  // --- new game (click the tile-count pill) --------------------------------
+  // The tile-count readout doubles as the New Game control during play. It asks
+  // for confirmation first so a stray tap doesn't abandon a game mid-play. It is
+  // disabled once the game is over (render() sets .disabled), since the end-game
+  // bar then provides the New Game button.
+  if (statusCountsEl) {
+    statusCountsEl.addEventListener('click', function () {
+      if (statusCountsEl.disabled) return;
+      confirmDialog('Start a new game? The current board will be cleared.',
+        newGame);
+    });
+  }
 
   // --- win tally reset (click the tally pill) ------------------------------
   // The win tally is its own pushable control. Resetting it is now a deliberate,

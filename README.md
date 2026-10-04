@@ -39,8 +39,11 @@ Rules:
   empty/neutral cells left. (A win is only declared once every player has taken
   at least one turn, so an opening cascade can't end the game prematurely.)
 
-Use **New Game** (top right) to restart. On a phone, the board auto-sizes to
-fill the viewport and re-fits on rotation.
+To restart, **click the tile-count readout** (e.g. `Player 1: 10, Player 2: 9`)
+in the top bar — it's a button (tooltip: *New Game*) and asks you to confirm
+before clearing the board. When a round ends, the end-of-round screen also
+offers a **New Game** button. On a phone, the board auto-sizes to fill the
+viewport and re-fits on rotation.
 
 **Player names & score.** Click a player's **name** (the turn indicator at the
 top) **on their turn** to rename them: type a name, then press **Enter** or

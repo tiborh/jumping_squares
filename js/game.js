@@ -62,7 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
-    { v: '26', text: 'The win tally is now its own button: click it to reset the score to 0 : 0 (with a confirmation). Renaming a player no longer resets the tally.' },
+    { v: '26', text: 'Top-bar tidy-up: the win tally is now a button (click to reset to 0 : 0, with confirmation), and the tile-count readout starts a New Game (also with confirmation). Renaming a player no longer resets the tally. Confirmations use an in-app dialog.' },
     { v: '25', text: 'Auto-save: your game is kept in this browser and restored after a reload or reopened tab. Turn it off (and clear saved data) under Settings \u2192 Persistence.' },
     { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
