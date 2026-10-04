@@ -251,6 +251,10 @@ Status of the project and planned work. Done items reflect the current build.
       remembered in the browser via a namespaced `localStorage` prefs module
 - [x] **Win tally** per name pair, shown in the status line and the
       end-of-round dialog; accumulates across rounds; a rename resets it
+- [x] **Auto-save & restore** (board persistence, Phase 1): the current game is
+      saved to `localStorage` and restored seamlessly on reload / reopened tab;
+      a **Settings → Persistence** panel toggles auto-save and clears saved
+      data; an engine-side `loadState` validator guards untrusted saves
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
 - [x] Node test harness (76 assertions, no dependencies)
@@ -263,6 +267,14 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] Animated cascades — settable speed + manual step mode (see Done above)
 - [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS)
 - [ ] Undo / replay via per-move snapshots
+- [ ] **Persistence Phase 2** — explicit **Save As… / Load** to a file (export
+      the board as JSON, import it back), with the top-bar **New Game** replaced
+      by a **Menu** (New Game / Save As… / Load / Reset-with-confirmation). Useful
+      for bug reports and testing, not just play. A later **"load with trace"**
+      option could capture a cascade by replaying from the saved start state
+      (the engine is deterministic), rather than storing mid-cascade frames;
+      saving the settings in the file lets a reporter force **› Step** mode to
+      walk the cascade. (Phase 1 — auto-save/restore — is done above.)
 - [ ] Optional sound and haptic feedback on mobile
 - [ ] Icon buttons for Settings / New Game to save top-bar space on narrow
       screens (portrait phones get crowded once more controls are added)
