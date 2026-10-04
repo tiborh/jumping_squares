@@ -29,7 +29,25 @@ the nearest user-facing entry.
 
 ---
 
-## v31 — The after-flash was a timing race (really fixed now)
+## v32 — "What's new" list capped at 12
+
+Player-facing:
+
+- The **About → What's new** panel now shows at most the **12 most recent**
+  entries. When there is older history beyond that, a **"See full changelog"**
+  link appears at the end of the list (in addition to the existing footer
+  links), pointing to the complete `CHANGELOG.md`.
+
+Background:
+
+- `renderWhatsNew()` previously rendered the *entire* engine `CHANGELOG` array
+  (the card just scrolled). It now renders `min(entries, 12)` and, only when
+  entries were actually dropped, appends a `.wn-more` list item linking to the
+  full changelog — so the "there's more" cue shows precisely when something was
+  hidden, not as permanent chrome. The cap is a display concern only; the engine
+  `CHANGELOG` array (and the test that guards its shape/ordering) is unchanged.
+
+
 
 Player-facing:
 

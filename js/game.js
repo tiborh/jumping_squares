@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '31';
+  var VERSION = '32';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,6 +62,7 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
+    { v: '32', text: 'The \u201CWhat\u2019s new\u201D list now shows the 12 most recent entries, with a \u201CSee full changelog\u201D link for older history.' },
     { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
     { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
     { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },

@@ -1687,10 +1687,22 @@
   // Render the curated entries once (newest first, as authored in the engine).
   // Built with DOM APIs (not innerHTML) so entry text is inserted as plain text
   // and can't be interpreted as markup.
+  //
+  // The list is capped at MAX_WHATSNEW entries (newest first). When the engine
+  // CHANGELOG has MORE than that, the extra (oldest) entries are not rendered
+  // inline; instead a final "see full changelog" item links to the complete
+  // history. The always-present footer also links to the changelog, but this
+  // in-list note appears ONLY when entries were actually dropped, so it reads
+  // as "there is more above the cap", not just general context.
+  var MAX_WHATSNEW = 12;
+  var CHANGELOG_URL =
+    'https://github.com/tiborh/jumping_squares/blob/main/CHANGELOG.md';
+
   function renderWhatsNew() {
     var entries = (G.CHANGELOG || []);
     whatsnewList.innerHTML = '';
-    for (var i = 0; i < entries.length; i++) {
+    var shown = Math.min(entries.length, MAX_WHATSNEW);
+    for (var i = 0; i < shown; i++) {
       var entry = entries[i];
       var li = document.createElement('li');
 
@@ -1712,6 +1724,19 @@
       li.appendChild(meta);
       li.appendChild(text);
       whatsnewList.appendChild(li);
+    }
+
+    // Capped: tell the user there is older history and link to the full file.
+    if (entries.length > MAX_WHATSNEW) {
+      var moreLi = document.createElement('li');
+      moreLi.className = 'wn-more';
+      var link = document.createElement('a');
+      link.href = CHANGELOG_URL;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'See full changelog \u2197'; // ↗
+      moreLi.appendChild(link);
+      whatsnewList.appendChild(moreLi);
     }
   }
   renderWhatsNew();

@@ -920,6 +920,20 @@
       font-size: clamp(12px, 3vw, 14px);
       opacity: 0.8;
     }
+    /* "See full changelog" item, shown only when the list is capped (more
+       entries exist than are rendered inline). A thin rule separates it from
+       the last entry; it reads as a clear link, slightly set apart. */
+    #whatsnew-list .wn-more {
+      border-top: 1px solid #2c2f38;
+      padding-top: 10px;
+      margin-top: 2px;
+    }
+    #whatsnew-list .wn-more a {
+      color: #9fd0ff;
+      font-size: clamp(13px, 3.4vw, 15px);
+      text-decoration: underline;
+    }
+    #whatsnew-list .wn-more a:hover { color: #c7e4ff; }
     #whatsnew-card a { color: #9fd0ff; }
   </style>
 </head>
@@ -1137,8 +1151,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=31"></script>
-  <script src="js/agents.js?v=31"></script>
-  <script src="js/ui.js?v=31"></script>
+  <script src="js/game.js?v=32"></script>
+  <script src="js/agents.js?v=32"></script>
+  <script src="js/ui.js?v=32"></script>
 </body>
 </html>
