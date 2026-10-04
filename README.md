@@ -77,6 +77,23 @@ Opening **Settings** while a cascade is animating **pauses** it (the board
 freezes); it resumes when you close the dialog. Changing the speed mid-cascade
 applies from that point on.
 
+**Players — play against the computer (Settings).** Under **⚙ Settings →
+Players**, set either player (or both) to an AI:
+
+- **Random** — plays any legal move (a gentle sparring partner).
+- **Tutor** — a simple, human-style strategy (take corners then edges, win the
+  local arms race, guard your chains); good for *learning* the game.
+- **Shark** — searches several moves ahead and plays strongly, exploiting
+  cascades that are hard to read by eye. Its **difficulty** (Easy / Medium /
+  Hard) sets how far it looks ahead — the control appears under Players
+  whenever a Shark is selected.
+
+AI moves use the chosen **propagation speed**, so you can watch their cascades;
+two AIs play each other automatically. You can open **Settings** at any time
+mid-game to change who controls a player (it pauses play while open). See
+[`docs/strategy-notes.md`](docs/strategy-notes.md) for how the Tutor's
+heuristics and the Shark's search relate to human vs. machine play.
+
 ## Project structure
 
 ```
@@ -274,11 +291,19 @@ Status of the project and planned work. Done items reflect the current build.
 
 **Planned / ideas (not yet implemented):**
 
-- [ ] Board-size and player-count picker in the UI (engine already supports it)
+- [ ] Board-size and player-count picker in the UI (engine already supports it).
+      On larger boards, Shark's higher difficulties get slow and timing is
+      device-dependent, so this needs a **per-device calibration** + time hint
+      for Shark difficulty — see
+      [`docs/strategy-notes.md`](docs/strategy-notes.md) (*Shark performance,
+      difficulty, and device calibration*).
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
 - [x] Animated cascades — settable speed + manual step mode (see Done above)
-- [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS) — see
-      [`docs/strategy-notes.md`](docs/strategy-notes.md) for evaluation ideas
+- [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**
+      (1-ply heuristic), and **Shark** (minimax + alpha-beta, Easy/Medium/Hard
+      depth), selectable per player under Settings → Players. See
+      [`docs/strategy-notes.md`](docs/strategy-notes.md) and
+      `test/agents.harness.js` (agent-vs-agent runner).
 - [ ] Undo / replay via per-move snapshots
 - [ ] **Persistence Phase 2** — explicit **Save As… / Load** to a file (export
       the board as JSON, import it back), introducing a **Menu** (New Game /

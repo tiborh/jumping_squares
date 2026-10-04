@@ -542,6 +542,18 @@
     }
     .setting-players .player-dot.p1 { background: var(--p1); }
     .setting-players .player-dot.p2 { background: var(--p2); }
+    /* The Shark difficulty row is shown only when a Shark player is selected. */
+    .setting-players .shark-level-row[hidden] { display: none; }
+    /* The shark marker is a glyph, not a colour dot: strip the dot styling. */
+    .setting-players .player-dot.shark {
+      background: none;
+      box-shadow: none;
+      border-radius: 0;
+      width: auto;
+      height: auto;
+      font-size: 1em;
+      line-height: 1;
+    }
     .setting-players select {
       font: inherit;
       color: #e8e8ea;
@@ -946,6 +958,7 @@
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
             <option value="tutor">Tutor (AI)</option>
+            <option value="shark">Shark (AI)</option>
           </select>
         </div>
         <div class="player-row">
@@ -955,13 +968,26 @@
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
             <option value="tutor">Tutor (AI)</option>
+            <option value="shark">Shark (AI)</option>
+          </select>
+        </div>
+        <div class="player-row shark-level-row" id="shark-level-row" hidden>
+          <span class="player-dot shark" aria-hidden="true">🦈</span>
+          <label for="shark-level">Shark difficulty</label>
+          <select id="shark-level" aria-label="Shark difficulty">
+            <option value="2">Easy</option>
+            <option value="3">Medium</option>
+            <option value="4">Hard</option>
           </select>
         </div>
         <div class="setting-hint">
           Choose who controls each player. <strong>Random</strong> plays any
           legal move; <strong>Tutor</strong> plays a simple human-style
-          strategy (good for learning). AI moves use the propagation speed
-          above. A stronger AI (<strong>Shark</strong>) will join later.
+          strategy (good for learning); <strong>Shark</strong> searches ahead
+          and plays strongly (it exploits cascades a human can't easily read).
+          Shark difficulty sets how many moves it looks ahead — higher is
+          stronger (and thinks a little longer). AI moves use the propagation
+          speed above.
         </div>
       </div>
 
@@ -1062,8 +1088,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=27"></script>
-  <script src="js/agents.js?v=27"></script>
-  <script src="js/ui.js?v=27"></script>
+  <script src="js/game.js?v=28"></script>
+  <script src="js/agents.js?v=28"></script>
+  <script src="js/ui.js?v=28"></script>
 </body>
 </html>
