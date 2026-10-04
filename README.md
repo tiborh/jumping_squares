@@ -275,15 +275,15 @@ Status of the project and planned work. Done items reflect the current build.
 - [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS)
 - [ ] Undo / replay via per-move snapshots
 - [ ] **Persistence Phase 2** — explicit **Save As… / Load** to a file (export
-      the board as JSON, import it back), with the top-bar **New Game** replaced
-      by a **Menu** (New Game / Save As… / Load / Reset-with-confirmation). Useful
+      the board as JSON, import it back), introducing a **Menu** (New Game /
+      Save As… / Load / Reset-with-confirmation) in the top bar. Useful
       for bug reports and testing, not just play. A later **"load with trace"**
       option could capture a cascade by replaying from the saved start state
       (the engine is deterministic), rather than storing mid-cascade frames;
       saving the settings in the file lets a reporter force **› Step** mode to
       walk the cascade. (Phase 1 — auto-save/restore — is done above.)
 - [ ] Optional sound and haptic feedback on mobile
-- [ ] Icon buttons for Settings / New Game to save top-bar space on narrow
+- [ ] Icon buttons for Settings / Step to save top-bar space on narrow
       screens (portrait phones get crowded once more controls are added)
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
 - [x] Deploy as a GitHub Pages site
