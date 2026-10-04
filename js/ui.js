@@ -30,7 +30,8 @@
   var boardWrap = document.getElementById('board-wrap');
   var turnDot = document.getElementById('turn-dot');
   var turnLabel = document.getElementById('turn-label');
-  var statusEl = document.getElementById('status');
+  var statusCountsEl = document.getElementById('status-counts');
+  var tallyBtn = document.getElementById('tally-btn');
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
   var winnerScoreEl = document.getElementById('winner-score');
@@ -648,8 +649,11 @@
     for (var p = 1; p <= state.players; p++) {
       parts.push(playerName(p) + ': ' + counts[p]);
     }
-    // Append the running tally, e.g. "Alice: 10, Bob: 9   (1 - 0)".
-    statusEl.textContent = parts.join(', ') + '   ' + scoreLabel();
+    // Tile counts go in the plain-text span; the running tally is a SEPARATE,
+    // pushable control (clicking it resets the score, with confirmation), so it
+    // is rendered into its own button rather than concatenated into the text.
+    statusCountsEl.textContent = parts.join(', ');
+    tallyBtn.textContent = scoreLabel();
 
     if (state.winner !== G.EMPTY) {
       // Layer 2: the standalone New button is always shown when the game is
@@ -761,11 +765,11 @@
         var clean = sanitizeName(input.value);
         var def = defaultPlayerName(n);
         prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
-        // Any rename COMMIT resets the win tally to 0:0 for the (new) pair —
-        // the documented, button-less way to reset the score. This fires on
-        // Enter/blur regardless of whether the value actually changed; Esc
-        // (cancel) takes the other branch and leaves the score intact.
-        prefs.resetScore(playerName(1), playerName(2));
+        // Renaming is now PURELY cosmetic: it has no side effect on the win
+        // tally. The tally is reset only via its own control (click the tally
+        // pill in the status line, which asks for confirmation). This keeps
+        // "change a name" and "start a fresh series" as separate, deliberate
+        // actions.
       }
       render(); // rebuilds the label text (and affordance) from current state
     }
@@ -1014,6 +1018,25 @@
   document.getElementById('play-again').addEventListener('click', newGame);
   endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
+
+  // --- win tally reset (click the tally pill) ------------------------------
+  // The win tally is its own pushable control. Resetting it is now a deliberate,
+  // separate action from renaming a player (rename is purely cosmetic). Clicking
+  // asks for confirmation first, since the series score is otherwise sticky
+  // across rounds. On confirm, the tally goes to 0:0, stamped with the current
+  // pair of names.
+  if (tallyBtn) {
+    tallyBtn.addEventListener('click', function () {
+      var msg = 'Reset the win tally to 0 : 0 for ' +
+        playerName(1) + ' and ' + playerName(2) + '?';
+      var confirmFn = (typeof window.confirm === 'function')
+        ? window.confirm : function () { return true; };
+      if (confirmFn(msg)) {
+        prefs.resetScore(playerName(1), playerName(2));
+        render();
+      }
+    });
+  }
 
   // --- settings ------------------------------------------------------------
   // Increment 1: menu shell + propagation-speed slider. The value is stored in
