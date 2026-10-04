@@ -920,6 +920,42 @@
       font-size: clamp(12px, 3vw, 14px);
       opacity: 0.8;
     }
+    /* "Show N more" control: a quiet, link-like button that expands the list. */
+    #whatsnew-list .wn-action {
+      align-items: flex-start;
+    }
+    #whatsnew-list .wn-showmore {
+      align-self: flex-start;
+      background: none;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      color: #9fd0ff;
+      font: inherit;
+      font-size: clamp(13px, 3.4vw, 15px);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #whatsnew-list .wn-showmore:hover { color: #c7e4ff; }
+    #whatsnew-list .wn-showmore:focus-visible {
+      color: #c7e4ff;
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+    /* "See full changelog" item, shown at the end once the inline list is fully
+       expanded (or when nothing is hidden). A thin rule sets it apart. */
+    #whatsnew-list .wn-more {
+      border-top: 1px solid #2c2f38;
+      padding-top: 10px;
+      margin-top: 2px;
+    }
+    #whatsnew-list .wn-more a {
+      color: #9fd0ff;
+      font-size: clamp(13px, 3.4vw, 15px);
+      text-decoration: underline;
+    }
+    #whatsnew-list .wn-more a:hover { color: #c7e4ff; }
     #whatsnew-card a { color: #9fd0ff; }
   </style>
 </head>
@@ -1137,8 +1173,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=31"></script>
-  <script src="js/agents.js?v=31"></script>
-  <script src="js/ui.js?v=31"></script>
+  <script src="js/game.js?v=32"></script>
+  <script src="js/agents.js?v=32"></script>
+  <script src="js/ui.js?v=32"></script>
 </body>
 </html>

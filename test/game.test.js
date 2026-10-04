@@ -711,6 +711,17 @@ console.log('changelog wiring');
   var current = parseInt(G.VERSION, 10);
   ok(nums[0] <= current,
      'newest CHANGELOG version (' + nums[0] + ') does not exceed VERSION (' + current + ')');
+
+  // Storage cap: the panel never displays more than WHATSNEW_MAX entries
+  // inline (it shows 5, then "Show more" expands to the full stored set), so
+  // the engine must not SHIP more than that — older entries live only in
+  // CHANGELOG.md. This guards the "don't store what can never be displayed"
+  // rule against an accidental un-trimmed array.
+  ok(typeof G.WHATSNEW_MAX === 'number' && G.WHATSNEW_MAX > 0,
+     'engine exports a positive WHATSNEW_MAX');
+  ok(cl.length <= G.WHATSNEW_MAX,
+     'CHANGELOG length (' + cl.length + ') is within the storage cap WHATSNEW_MAX (' +
+     G.WHATSNEW_MAX + ')');
 })();
 
 // ---------------------------------------------------------------------------

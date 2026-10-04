@@ -1684,39 +1684,101 @@
   var whatsnewList = document.getElementById('whatsnew-list');
   var whatsnewFocus = makeDialogFocusManager(whatsnewOverlay, whatsnewCard, 'whatsnew-close');
 
-  // Render the curated entries once (newest first, as authored in the engine).
-  // Built with DOM APIs (not innerHTML) so entry text is inserted as plain text
-  // and can't be interpreted as markup.
+  // Render the curated entries (newest first, as authored in the engine). Built
+  // with DOM APIs (not innerHTML) so entry text is inserted as plain text and
+  // can't be interpreted as markup.
+  //
+  // Progressive disclosure, three tiers:
+  //   1. Collapsed: show the WHATSNEW_COLLAPSED (5) most recent entries, with a
+  //      "Show more" button when more are stored.
+  //   2. Expanded: "Show more" reveals the rest of the STORED entries (the
+  //      engine caps storage at G.WHATSNEW_MAX = 12, so this is at most 12).
+  //   3. Full history: a "See full changelog" link always sits at the end,
+  //      because the stored list is a capped excerpt — entries older than the
+  //      cap live only in CHANGELOG.md.
+  var WHATSNEW_COLLAPSED = 5;
+  var CHANGELOG_URL =
+    'https://github.com/tiborh/jumping_squares/blob/main/CHANGELOG.md';
+  var whatsnewExpanded = false; // reset to collapsed each time the panel opens
+
+  function makeEntryLi(entry) {
+    var li = document.createElement('li');
+    var meta = document.createElement('div');
+    meta.className = 'wn-meta';
+    var ver = document.createElement('span');
+    ver.textContent = 'v' + entry.v;
+    meta.appendChild(ver);
+    if (entry.experimental) {
+      var pill = document.createElement('span');
+      pill.className = 'wn-experimental';
+      pill.textContent = 'experimental';
+      meta.appendChild(pill);
+    }
+    var text = document.createElement('div');
+    text.textContent = entry.text;
+    li.appendChild(meta);
+    li.appendChild(text);
+    return li;
+  }
+
   function renderWhatsNew() {
     var entries = (G.CHANGELOG || []);
     whatsnewList.innerHTML = '';
-    for (var i = 0; i < entries.length; i++) {
-      var entry = entries[i];
-      var li = document.createElement('li');
 
-      var meta = document.createElement('div');
-      meta.className = 'wn-meta';
-      var ver = document.createElement('span');
-      ver.textContent = 'v' + entry.v;
-      meta.appendChild(ver);
-      if (entry.experimental) {
-        var pill = document.createElement('span');
-        pill.className = 'wn-experimental';
-        pill.textContent = 'experimental';
-        meta.appendChild(pill);
-      }
+    var visibleCount = whatsnewExpanded
+      ? entries.length
+      : Math.min(entries.length, WHATSNEW_COLLAPSED);
 
-      var text = document.createElement('div');
-      text.textContent = entry.text;
+    for (var i = 0; i < visibleCount; i++) {
+      whatsnewList.appendChild(makeEntryLi(entries[i]));
+    }
 
-      li.appendChild(meta);
-      li.appendChild(text);
-      whatsnewList.appendChild(li);
+    // Tier 2 control: "Show more" — only when collapsed AND there are more
+    // stored entries to reveal. Activating it expands and re-renders.
+    if (!whatsnewExpanded && entries.length > WHATSNEW_COLLAPSED) {
+      var moreLi = document.createElement('li');
+      moreLi.className = 'wn-action';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'wn-showmore';
+      var hidden = entries.length - WHATSNEW_COLLAPSED;
+      btn.textContent = 'Show ' + hidden + ' more \u25BE'; // ▾
+      btn.addEventListener('click', function () {
+        whatsnewExpanded = true;
+        renderWhatsNew();
+        // Keep keyboard focus sensible: move it to the full-changelog link that
+        // now sits where the button was.
+        var full = whatsnewList.querySelector('.wn-more a');
+        if (full && full.focus) full.focus();
+      });
+      moreLi.appendChild(btn);
+      whatsnewList.appendChild(moreLi);
+    }
+
+    // Tier 3: the full-changelog link. Always present (the stored list is a
+    // capped excerpt), but shown at the END only once there's nothing more to
+    // expand inline — i.e. when collapsed-and-nothing-hidden, or expanded. That
+    // keeps a single clear "next step" at the bottom: Show more first, then See
+    // full changelog.
+    if (whatsnewExpanded || entries.length <= WHATSNEW_COLLAPSED) {
+      var moreHistoryLi = document.createElement('li');
+      moreHistoryLi.className = 'wn-more';
+      var link = document.createElement('a');
+      link.href = CHANGELOG_URL;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'See full changelog \u2197'; // ↗
+      moreHistoryLi.appendChild(link);
+      whatsnewList.appendChild(moreHistoryLi);
     }
   }
   renderWhatsNew();
 
   function openWhatsNew() {
+    // Always start collapsed (5 entries) each time the panel is opened, so a
+    // prior "Show more" doesn't persist across openings.
+    whatsnewExpanded = false;
+    renderWhatsNew();
     whatsnewOverlay.classList.add('show');
     // onOpen() runs first and moves focus into the What's new dialog
     // synchronously; only then do we make the About layer inert. This ordering

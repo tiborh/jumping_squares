@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '31';
+  var VERSION = '32';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -59,9 +59,16 @@
   //   { v: '18', text: 'What changed, in one player-facing line.' }
   //   { v: '19', text: '...', experimental: true }  // early-test / not-yet-complete
   //
-  // Keep it short (the panel shows the most recent handful). The newest entry's
-  // version must not exceed VERSION — a test guards against drift.
+  // STORAGE CAP: keep at most WHATSNEW_MAX (12) entries here — the panel can
+  // never display more than that inline (it shows 5, then "Show more" expands
+  // to the full stored set, capped at 12), so there is no reason to ship older
+  // entries in the JS. When adding a new entry at the top, drop the oldest to
+  // stay within the cap. The COMPLETE history (including entries trimmed from
+  // here) lives in CHANGELOG.md, reachable via the panel's "See full changelog"
+  // link. A test enforces this cap and the newest-version/ordering invariants.
+  var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '32', text: 'The \u201CWhat\u2019s new\u201D list now shows the 5 most recent entries; \u201CShow more\u201D expands the rest, and \u201CSee full changelog\u201D opens the complete history.' },
     { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
     { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
     { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },
@@ -73,9 +80,6 @@
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
     { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
     { v: '18', text: 'About/Settings dialogs handle keyboard focus; the corner build tag no longer overlaps the board.' },
-    { v: '16', text: 'Click the small build tag (bottom-left corner) to open the About panel: description, source link, licence.' },
-    { v: '15', text: 'Settings (\u2699): choose how a cascade spreads \u2014 Instant, timed (100\u20131000 ms), or manual \u203A Step with a preview.' },
-    { v: '5',  text: 'Iteration 1: playable 5\u00d75 two-player game \u2014 overflow, capture, chain reactions; win by owning the whole board.' },
   ];
 
   // Owner sentinel for an empty/neutral cell.
@@ -683,6 +687,7 @@
     EMPTY: EMPTY,
     VERSION: VERSION,
     CHANGELOG: CHANGELOG,
+    WHATSNEW_MAX: WHATSNEW_MAX,
     createGame: createGame,
     idx: idx,
     inBounds: inBounds,
