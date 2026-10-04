@@ -729,6 +729,28 @@
       line-height: 1.45;
       opacity: 0.9;
     }
+    /* Optional checkbox row in the confirm dialog (e.g. tally reset's
+       "also reset who starts first"). Hidden until a caller opts in. */
+    #confirm-card .confirm-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: clamp(13px, 3.4vw, 15px);
+      cursor: pointer;
+      opacity: 0.95;
+    }
+    #confirm-card .confirm-option[hidden] { display: none; }
+    #confirm-card .confirm-option input {
+      width: 18px;
+      height: 18px;
+      accent-color: #3d7bd6;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    #confirm-card .confirm-option input:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
     #confirm-card .confirm-actions {
       display: flex;
       justify-content: flex-end;
@@ -1112,6 +1134,13 @@
     <div id="confirm-card">
       <h2 id="confirm-title">Confirm</h2>
       <p id="confirm-message"></p>
+      <!-- Optional checkbox, shown only for confirmations that offer a toggle
+           (e.g. tally reset: "also reset who starts first"). Hidden by default;
+           confirmDialog() reveals it and reads its state back to the caller. -->
+      <label id="confirm-option-row" class="confirm-option" hidden>
+        <input type="checkbox" id="confirm-option" />
+        <span id="confirm-option-label"></span>
+      </label>
       <div class="confirm-actions">
         <button id="confirm-cancel" type="button">Cancel</button>
         <button id="confirm-ok" type="button">OK</button>
@@ -1173,8 +1202,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=32"></script>
-  <script src="js/agents.js?v=32"></script>
-  <script src="js/ui.js?v=32"></script>
+  <script src="js/game.js?v=33"></script>
+  <script src="js/agents.js?v=33"></script>
+  <script src="js/ui.js?v=33"></script>
 </body>
 </html>

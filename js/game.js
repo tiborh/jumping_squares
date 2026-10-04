@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '32';
+  var VERSION = '33';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '33', text: 'Turn-taking: after a game ends, New Game / Play Again now lets the OTHER player open the next game (it alternates across completed games and is remembered). Resetting the win tally can also reset who starts \u2014 there\u2019s a checkbox for it in the reset dialog.' },
     { v: '32', text: 'The \u201CWhat\u2019s new\u201D list now shows the 5 most recent entries; \u201CShow more\u201D expands the rest, and \u201CSee full changelog\u201D opens the complete history.' },
     { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
     { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
@@ -79,7 +80,6 @@
     { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
     { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
-    { v: '18', text: 'About/Settings dialogs handle keyboard focus; the corner build tag no longer overlaps the board.' },
   ];
 
   // Owner sentinel for an empty/neutral cell.
@@ -106,6 +106,17 @@
       throw new Error('Need at least 2 players');
     }
 
+    // Which player moves first. Defaults to player 1. Lets the caller rotate
+    // the opening move across games (the UI alternates it after a completed
+    // game). Must be a valid player id (1..players); anything else falls back
+    // to 1 so a bad value can never produce an out-of-range current player.
+    var startingPlayer = opts.startingPlayer;
+    if (typeof startingPlayer !== 'number' || !isFinite(startingPlayer) ||
+        Math.floor(startingPlayer) !== startingPlayer ||
+        startingPlayer < 1 || startingPlayer > players) {
+      startingPlayer = 1;
+    }
+
     var cells = [];
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
@@ -118,7 +129,7 @@
       cols: cols,
       players: players,
       cells: cells,          // flat array, index = r * cols + c
-      current: 1,            // current player (1-based)
+      current: startingPlayer, // current player (1-based); first mover this game
       moveCount: 0,          // total points placed across the game
       // How many turns each player has taken (index 0 unused). A player only
       // becomes "in the game" once they have taken at least one turn, so no

@@ -29,7 +29,37 @@ the nearest user-facing entry.
 
 ---
 
-## v32 — "What's new" panel: progressive disclosure (5 → more → full)
+## v33 — Turn-taking: alternate who opens the next game
+
+Player-facing:
+
+- After a game **ends**, choosing **New Game** / **Play Again** now gives the
+  **first move to the other player** — turn-taking alternates across completed
+  games so the same player doesn't always open. The choice is **remembered**
+  across reloads.
+- Starting a New Game **mid-play** (abandoning an unfinished game) does **not**
+  flip the opener — only a completed game alternates it.
+- Resetting the win tally offers a checkbox, **"Also reset who starts first"**
+  (checked by default), so a fresh series can start with Player 1 again — or you
+  can uncheck it to keep the current alternation.
+- Applies the same way when a seat is an AI: if the opponent now opens and it's
+  an AI, it simply makes the first move.
+
+Background:
+
+- The engine's `createGame({ … startingPlayer })` gains an optional first-mover
+  (validated to `1..players`, default 1), so the opening player is a clean
+  engine input rather than something the UI patches afterwards — also useful for
+  the future board-size / player-count picker. A test covers the default,
+  explicit value, out-of-range/invalid fallback, and 3-player case.
+- The UI persists `startingPlayer` in prefs (schema **v6**, migrating older
+  records to the default 1). It rotates **once** per completed game, inside a
+  single `recordWinOnce()` guard shared by the two win-observation sites
+  (finalize + render safety net), so the flip happens exactly once regardless of
+  resolution mode. New Game / boot read the persisted value; the generic confirm
+  dialog grew an optional checkbox used by the tally reset.
+
+
 
 Player-facing:
 

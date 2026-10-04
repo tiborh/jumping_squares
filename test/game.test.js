@@ -662,6 +662,31 @@ console.log('loadState: reconstructs turnsTaken when missing/malformed');
      'winner set but turn-gate unmet (turnsTaken all zero) is rejected');
 })();
 
+console.log('starting player');
+(function () {
+  // Default: player 1 opens.
+  var def = G.createGame({ rows: 5, cols: 5, players: 2 });
+  ok(def.current === 1, 'default starting player is 1');
+
+  // Explicit valid starting player is honoured.
+  var p2 = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 2 });
+  ok(p2.current === 2, 'startingPlayer: 2 opens with player 2');
+
+  // Out-of-range / invalid values fall back to 1 (never produce a bad current).
+  var tooHigh = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 3 });
+  ok(tooHigh.current === 1, 'startingPlayer out of range (3) falls back to 1');
+  var zero = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 0 });
+  ok(zero.current === 1, 'startingPlayer 0 falls back to 1');
+  var frac = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 1.5 });
+  ok(frac.current === 1, 'non-integer startingPlayer falls back to 1');
+  var str = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: '2' });
+  ok(str.current === 1, 'non-number startingPlayer falls back to 1');
+
+  // Works for more players too (future-proofing the engine option).
+  var p3 = G.createGame({ rows: 5, cols: 5, players: 3, startingPlayer: 3 });
+  ok(p3.current === 3, 'startingPlayer: 3 valid with players: 3');
+})();
+
 console.log('version wiring');
 (function () {
   var fs = require('fs');

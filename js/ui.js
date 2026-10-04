@@ -55,7 +55,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 5; // v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 6; // v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -86,6 +86,12 @@
       // and the UI should surface a time hint — ideally from a one-time
       // in-browser calibration rather than hard-coded (machine-specific) numbers.
       sharkDepth: { 1: 3, 2: 3 },
+      // Which player makes the FIRST move of the NEXT game. The game alternates
+      // this after each COMPLETED game (so the player who went second last game
+      // opens the next one). Persisted so the alternation survives reloads.
+      // Defaults to 1; reset to 1 when the user resets the series (tally),
+      // unless they opt to keep it via the reset dialog's checkbox.
+      startingPlayer: 1,
     };
 
     function storageAvailable() {
@@ -160,6 +166,15 @@
           mem.sharkDepth[2] = sd;
         }
 
+        // startingPlayer: introduced in schema v6; absent in older records
+        // (keep the default, 1). Only adopt a valid 2-player seat (1 or 2);
+        // anything else falls back to the default so a bad value can't open a
+        // game out of range.
+        var sp = parsed.startingPlayer;
+        if (sp === 1 || sp === 2) {
+          mem.startingPlayer = sp;
+        }
+
         // Score: introduced in schema v2 and retained in v3. We read it when
         // parsed.v is 2 or 3 (up to PREFS_VERSION). A record written by a newer
         // build (parsed.v > PREFS_VERSION) may have a different score shape,
@@ -221,10 +236,30 @@
       // Reset the tally to 0:0 and stamp the pair it now belongs to. Called
       // when the user clicks the tally pill and confirms the reset (renaming a
       // player no longer touches the score — the two actions are decoupled).
-      resetScore: function (name1, name2) {
+      // `resetStarter` (default true) also resets who opens the next game back
+      // to player 1 — a fresh series conventionally starts with player 1; the
+      // reset dialog offers a checkbox to keep the current alternation instead.
+      resetScore: function (name1, name2, resetStarter) {
         mem.score.pair = { 1: name1 || '', 2: name2 || '' };
         mem.score.wins = { 1: 0, 2: 0 };
+        if (resetStarter !== false) mem.startingPlayer = 1;
         persist();
+      },
+      // --- starting player (first mover of the NEXT game) ---
+      getStartingPlayer: function () {
+        return (mem.startingPlayer === 2) ? 2 : 1;
+      },
+      setStartingPlayer: function (n) {
+        mem.startingPlayer = (n === 2) ? 2 : 1;
+        persist();
+      },
+      // Rotate the opening move to the OTHER player (2-player flip). Called once
+      // after a game completes, so the next game opens with the player who went
+      // second this time. Returns the new starting player.
+      rotateStartingPlayer: function () {
+        mem.startingPlayer = (mem.startingPlayer === 2) ? 1 : 2;
+        persist();
+        return mem.startingPlayer;
       },
       // --- auto-save preference ---
       getAutoSave: function () { return mem.autoSave !== false; },
@@ -822,10 +857,7 @@
     // This sits here because state.winner is set via finalizeAfterCascade in
     // every mode (instant, timed, and manual step), so a single guard covers
     // all paths. newGame() clears winRecorded for the next round.
-    if (state.winner !== G.EMPTY && !winRecorded) {
-      winRecorded = true;
-      prefs.addWin(state.winner);
-    }
+    recordWinOnce();
 
     var counts = G.ownershipCounts(state);
     var parts = [];
@@ -1008,6 +1040,19 @@
     }
   }
 
+  // Record this game's win EXACTLY ONCE (guarded by winRecorded). Besides the
+  // tally, it rotates the persisted starting player so the NEXT game opens with
+  // the player who went second this game (turn-taking alternates only after a
+  // COMPLETED game — this is the single place a completion is observed). Called
+  // from both finalizeTurn() (primary) and render() (safety net); the flag makes
+  // the second caller a no-op. newGame() clears winRecorded for the next round.
+  function recordWinOnce() {
+    if (state.winner === G.EMPTY || winRecorded) return;
+    winRecorded = true;
+    prefs.addWin(state.winner);
+    prefs.rotateStartingPlayer();
+  }
+
   // Finalise a turn (set winner or advance player) AND persist the now-settled
   // board. Used in place of a bare G.finalizeAfterCascade(state) at every site
   // where a move resolves (instant / timed / manual step, and the mid-cascade
@@ -1016,10 +1061,7 @@
   // both the terminal board and the updated score are persisted together.
   function finalizeTurn() {
     G.finalizeAfterCascade(state);
-    if (state.winner !== G.EMPTY && !winRecorded) {
-      winRecorded = true;
-      prefs.addWin(state.winner);
-    }
+    recordWinOnce();
     autoSaveIfOn();
   }
 
@@ -1269,7 +1311,14 @@
         endgameNew.removeAttribute('aria-hidden');
       }
     }
-    state = G.createGame({ rows: ROWS, cols: COLS, players: PLAYERS });
+    // Open the new board with the persisted starting player. After a COMPLETED
+    // game, recordWinOnce() has already rotated this to the player who went
+    // second, so the opponent now opens. A New Game started mid-play (no winner)
+    // leaves startingPlayer unchanged, so the same player opens as last time.
+    state = G.createGame({
+      rows: ROWS, cols: COLS, players: PLAYERS,
+      startingPlayer: prefs.getStartingPlayer(),
+    });
     buildGrid();
     sizeBoard();
     render();
@@ -1315,9 +1364,17 @@
     tallyBtn.addEventListener('click', function () {
       var msg = 'Reset the win tally to 0 : 0 for ' +
         playerName(1) + ' and ' + playerName(2) + '?';
-      confirmDialog(msg, function () {
-        prefs.resetScore(playerName(1), playerName(2));
+      // Offer to also reset who opens the next game back to Player 1 (checked by
+      // default — a fresh series conventionally starts with Player 1). Unchecking
+      // keeps the current turn-taking alternation.
+      confirmDialog(msg, function (alsoResetStarter) {
+        prefs.resetScore(playerName(1), playerName(2), alsoResetStarter);
         render();
+      }, {
+        checkbox: {
+          label: 'Also reset who starts first (back to ' + playerName(1) + ')',
+          checked: true,
+        },
       });
     });
   }
@@ -1602,22 +1659,42 @@
 
   // --- confirm dialog ------------------------------------------------------
   // A small in-app yes/no modal, used instead of window.confirm (which prefixes
-  // its text with the page origin — "file://…" when opened locally). Reuses the
-  // shared dialog focus manager (focus trap + restore). confirmDialog(message,
-  // onConfirm) shows the overlay with the given message; OK runs onConfirm and
-  // closes; Cancel / Escape / backdrop click just closes. Reusable for future
-  // confirmations (e.g. the Phase 2 "Reset" menu item).
+  // its text with the page origin — "file…" when opened locally). Reuses the
+  // shared dialog focus manager (focus trap + restore).
+  //
+  //   confirmDialog(message, onConfirm, options?)
+  //
+  // Shows the overlay with the given message; OK runs onConfirm and closes;
+  // Cancel / Escape / backdrop click just closes. An optional `options.checkbox`
+  // ({ label, checked }) reveals a checkbox below the message; its boolean state
+  // is passed to onConfirm(checked) on OK (false when no checkbox is used).
   var confirmOverlay = document.getElementById('confirm-overlay');
   var confirmCard = document.getElementById('confirm-card');
   var confirmMessage = document.getElementById('confirm-message');
   var confirmOk = document.getElementById('confirm-ok');
   var confirmCancel = document.getElementById('confirm-cancel');
+  var confirmOptionRow = document.getElementById('confirm-option-row');
+  var confirmOption = document.getElementById('confirm-option');
+  var confirmOptionLabel = document.getElementById('confirm-option-label');
   var confirmFocus = makeDialogFocusManager(confirmOverlay, confirmCard, 'confirm-cancel');
   var pendingConfirm = null; // the onConfirm callback for the open dialog
+  var confirmHasCheckbox = false; // whether the open dialog shows the checkbox
 
-  function openConfirm(message, onConfirm) {
+  function openConfirm(message, onConfirm, options) {
     confirmMessage.textContent = message;
     pendingConfirm = (typeof onConfirm === 'function') ? onConfirm : null;
+
+    var cb = options && options.checkbox;
+    confirmHasCheckbox = !!cb;
+    if (cb) {
+      confirmOptionLabel.textContent = cb.label || '';
+      confirmOption.checked = (cb.checked !== false); // default checked
+      confirmOptionRow.hidden = false;
+    } else {
+      confirmOptionRow.hidden = true;
+      confirmOption.checked = false;
+    }
+
     confirmOverlay.classList.add('show');
     confirmFocus.onOpen(); // focuses Cancel by default (safe default for a reset)
   }
@@ -1625,13 +1702,17 @@
     confirmOverlay.classList.remove('show');
     confirmFocus.onClose();
     pendingConfirm = null;
+    confirmHasCheckbox = false;
   }
-  function confirmDialog(message, onConfirm) { openConfirm(message, onConfirm); }
+  function confirmDialog(message, onConfirm, options) {
+    openConfirm(message, onConfirm, options);
+  }
 
   confirmOk.addEventListener('click', function () {
     var fn = pendingConfirm;
+    var checked = confirmHasCheckbox && confirmOption.checked;
     closeConfirm();      // close first so focus is restored before the action
-    if (fn) fn();
+    if (fn) fn(checked);
   });
   confirmCancel.addEventListener('click', closeConfirm);
   confirmOverlay.addEventListener('click', function (e) {
@@ -1850,13 +1931,22 @@
     // This UI is fixed at ROWS x COLS / PLAYERS; the engine validator stays
     // generous for a future board-size picker.
     var restored = boardStore.load(fitsDimensions);
-    if (!restored) return;
+    if (!restored) {
+      // No save to resume: open the fresh board with the PERSISTED starting
+      // player (turn-taking alternates across completed games and is remembered
+      // across reloads). The initial state created at the top of this module
+      // predates the prefs store, so set its first mover here now that prefs
+      // are available.
+      state.current = prefs.getStartingPlayer();
+      return;
+    }
     // Defence-in-depth: the pre-load predicate above already rejects mismatched
     // dimensions before rehydration, but re-check the rehydrated state too in
     // case the two ever diverge. Normally unreachable.
     if (restored.rows !== ROWS || restored.cols !== COLS ||
         restored.players !== PLAYERS) {
       boardStore.remove();
+      state.current = prefs.getStartingPlayer();
       return;
     }
     state = restored;
