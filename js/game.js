@@ -543,8 +543,14 @@
         if (t >= 1) sumTurns += tv;
       }
       if (okTurns) {
-        // Invariant: sum of individual player turns must match moveCount.
-        if (sumTurns !== obj.moveCount) okTurns = false;
+        var expectedBase = Math.floor(obj.moveCount / players);
+        var expectedRemainder = obj.moveCount % players;
+        if (turnsTaken[0] !== 0) okTurns = false;
+        for (var expectedP = 1; okTurns && expectedP <= players; expectedP++) {
+          var expected = expectedBase +
+            (expectedP <= expectedRemainder ? 1 : 0);
+          if (turnsTaken[expectedP] !== expected) okTurns = false;
+        }
 
         // Invariant: any player who owns cells MUST have taken at least one
         // turn (cells start neutral and only become owned when a player moves).
