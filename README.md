@@ -39,18 +39,22 @@ Rules:
   empty/neutral cells left. (A win is only declared once every player has taken
   at least one turn, so an opening cascade can't end the game prematurely.)
 
-Use **New Game** (top right) to restart. On a phone, the board auto-sizes to
-fill the viewport and re-fits on rotation.
+To restart, **click the tile-count readout** (e.g. `Player 1: 10, Player 2: 9`)
+in the top bar — it's a button (tooltip: *New Game*) and asks you to confirm
+before clearing the board. When a round ends, the end-of-round screen also
+offers a **New Game** button. On a phone, the board auto-sizes to fill the
+viewport and re-fits on rotation.
 
 **Player names & score.** Click a player's **name** (the turn indicator at the
 top) **on their turn** to rename them: type a name, then press **Enter** or
-**click away** to save, or **Esc** to cancel. A **win tally** for the current
-pair is shown next to the tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and
-prominently in the end-of-round dialog; it accumulates across rounds (New Game
-keeps the score). Both the names and the tally are **remembered in your
-browser** (see *Persistence* below). **Saving** a rename — whether by Enter or
-by clicking away — **resets the tally to 0:0** (the deliberate way to start a
-fresh series for a new pairing); **Esc** cancels and keeps the score.
+**click away** to save, or **Esc** to cancel. Renaming is **purely cosmetic** —
+it has no effect on the score. A **win tally** for the current pair is shown
+next to the tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and prominently in
+the end-of-round dialog; it accumulates across rounds (New Game keeps the
+score). Both the names and the tally are **remembered in your browser** (see
+*Persistence* below). To start a fresh series, **click the tally** (it's a
+button): you'll be asked to **confirm**, and on confirm the score resets to
+**0 : 0**.
 
 **Propagation speed (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
@@ -252,7 +256,8 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] Editable **player names** (click the turn indicator on your turn),
       remembered in the browser via a namespaced `localStorage` prefs module
 - [x] **Win tally** per name pair, shown in the status line and the
-      end-of-round dialog; accumulates across rounds; a rename resets it
+      end-of-round dialog; accumulates across rounds; reset it by clicking the
+      tally (with confirmation) — renaming a player is purely cosmetic
 - [x] **Auto-save & restore** (board persistence, Phase 1): the current game is
       saved to `localStorage` and restored seamlessly on reload / reopened tab;
       a **Settings → Persistence** panel toggles auto-save and clears saved

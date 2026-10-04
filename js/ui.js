@@ -30,13 +30,13 @@
   var boardWrap = document.getElementById('board-wrap');
   var turnDot = document.getElementById('turn-dot');
   var turnLabel = document.getElementById('turn-label');
-  var statusEl = document.getElementById('status');
+  var statusCountsEl = document.getElementById('status-counts');
+  var tallyBtn = document.getElementById('tally-btn');
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
   var winnerScoreEl = document.getElementById('winner-score');
   var endgameBar = document.getElementById('endgame-bar');
   var endgameNew = document.getElementById('endgame-new');
-  var topbarNewGame = document.getElementById('new-game');
   var stepBtn = document.getElementById('step-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
@@ -648,18 +648,19 @@
     for (var p = 1; p <= state.players; p++) {
       parts.push(playerName(p) + ': ' + counts[p]);
     }
-    // Append the running tally, e.g. "Alice: 10, Bob: 9   (1 - 0)".
-    statusEl.textContent = parts.join(', ') + '   ' + scoreLabel();
+    // Tile counts render into a pushable button that doubles as the New Game
+    // control (clicking it asks "New game?" with confirmation). It is disabled
+    // once the game is over — then the end-game bar's New Game button is the
+    // sole restart path, so there's exactly one New-Game affordance per state.
+    // The running tally is a separate button (resets the score, with confirm).
+    statusCountsEl.textContent = parts.join(', ');
+    statusCountsEl.disabled = (state.winner !== G.EMPTY);
+    tallyBtn.textContent = scoreLabel();
 
     if (state.winner !== G.EMPTY) {
       // Layer 2: the standalone New button is always shown when the game is
       // over (both live wins and restored finished games).
       endgameBar.classList.add('show');
-      // The top-bar New Game is redundant once the game is over (the endgame
-      // bar provides it), and leaving it visible would mean the standalone
-      // button is not truly the "sole" call-to-action. Hide it while the
-      // endgame bar is shown; it returns on New Game / Play Again.
-      if (topbarNewGame) topbarNewGame.hidden = true;
       // Layer 3: the "X wins!" modal is shown only for a LIVE win, never when a
       // finished game is merely restored from storage (suppressWinnerModal).
       if (suppressWinnerModal) {
@@ -699,7 +700,6 @@
         }
         winnerFocus.onClose();
       }
-      if (topbarNewGame) topbarNewGame.hidden = false;
     }
   }
 
@@ -761,11 +761,11 @@
         var clean = sanitizeName(input.value);
         var def = defaultPlayerName(n);
         prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
-        // Any rename COMMIT resets the win tally to 0:0 for the (new) pair —
-        // the documented, button-less way to reset the score. This fires on
-        // Enter/blur regardless of whether the value actually changed; Esc
-        // (cancel) takes the other branch and leaves the score intact.
-        prefs.resetScore(playerName(1), playerName(2));
+        // Renaming is now PURELY cosmetic: it has no side effect on the win
+        // tally. The tally is reset only via its own control (click the tally
+        // pill in the status line, which asks for confirmation). This keeps
+        // "change a name" and "start a fresh series" as separate, deliberate
+        // actions.
       }
       render(); // rebuilds the label text (and affordance) from current state
     }
@@ -1000,20 +1000,47 @@
       winnerFocus.onClose();
     } else if (fromEndgame) {
       // The standalone endgame button is now hidden by render(); move focus to
-      // the newly visible top-bar New Game button (or the first board cell)
-      // so keyboard focus is not stranded on a hidden element.
-      if (topbarNewGame && !topbarNewGame.hidden && topbarNewGame.focus) {
-        topbarNewGame.focus();
-      } else if (cellEls && cellEls[0] && cellEls[0].focus) {
+      // the first board cell so keyboard focus is not stranded on a hidden
+      // element (the top-bar New Game button no longer exists).
+      if (cellEls && cellEls[0] && cellEls[0].focus) {
         cellEls[0].focus();
       }
     }
   }
 
-  topbarNewGame.addEventListener('click', newGame);
   document.getElementById('play-again').addEventListener('click', newGame);
   endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
+
+  // --- new game (click the tile-count pill) --------------------------------
+  // The tile-count readout doubles as the New Game control during play. It asks
+  // for confirmation first so a stray tap doesn't abandon a game mid-play. It is
+  // disabled once the game is over (render() sets .disabled), since the end-game
+  // bar then provides the New Game button.
+  if (statusCountsEl) {
+    statusCountsEl.addEventListener('click', function () {
+      if (statusCountsEl.disabled) return;
+      confirmDialog('Start a new game? The current board will be cleared.',
+        newGame);
+    });
+  }
+
+  // --- win tally reset (click the tally pill) ------------------------------
+  // The win tally is its own pushable control. Resetting it is now a deliberate,
+  // separate action from renaming a player (rename is purely cosmetic). Clicking
+  // asks for confirmation first, since the series score is otherwise sticky
+  // across rounds. On confirm, the tally goes to 0:0, stamped with the current
+  // pair of names.
+  if (tallyBtn) {
+    tallyBtn.addEventListener('click', function () {
+      var msg = 'Reset the win tally to 0 : 0 for ' +
+        playerName(1) + ' and ' + playerName(2) + '?';
+      confirmDialog(msg, function () {
+        prefs.resetScore(playerName(1), playerName(2));
+        render();
+      });
+    });
+  }
 
   // --- settings ------------------------------------------------------------
   // Increment 1: menu shell + propagation-speed slider. The value is stored in
@@ -1199,6 +1226,49 @@
   // Keep the panel honest every time Settings opens (the save state can change
   // between openings as the game is played).
   syncPersistenceUI();
+
+  // --- confirm dialog ------------------------------------------------------
+  // A small in-app yes/no modal, used instead of window.confirm (which prefixes
+  // its text with the page origin — "file://…" when opened locally). Reuses the
+  // shared dialog focus manager (focus trap + restore). confirmDialog(message,
+  // onConfirm) shows the overlay with the given message; OK runs onConfirm and
+  // closes; Cancel / Escape / backdrop click just closes. Reusable for future
+  // confirmations (e.g. the Phase 2 "Reset" menu item).
+  var confirmOverlay = document.getElementById('confirm-overlay');
+  var confirmCard = document.getElementById('confirm-card');
+  var confirmMessage = document.getElementById('confirm-message');
+  var confirmOk = document.getElementById('confirm-ok');
+  var confirmCancel = document.getElementById('confirm-cancel');
+  var confirmFocus = makeDialogFocusManager(confirmOverlay, confirmCard, 'confirm-cancel');
+  var pendingConfirm = null; // the onConfirm callback for the open dialog
+
+  function openConfirm(message, onConfirm) {
+    confirmMessage.textContent = message;
+    pendingConfirm = (typeof onConfirm === 'function') ? onConfirm : null;
+    confirmOverlay.classList.add('show');
+    confirmFocus.onOpen(); // focuses Cancel by default (safe default for a reset)
+  }
+  function closeConfirm() {
+    confirmOverlay.classList.remove('show');
+    confirmFocus.onClose();
+    pendingConfirm = null;
+  }
+  function confirmDialog(message, onConfirm) { openConfirm(message, onConfirm); }
+
+  confirmOk.addEventListener('click', function () {
+    var fn = pendingConfirm;
+    closeConfirm();      // close first so focus is restored before the action
+    if (fn) fn();
+  });
+  confirmCancel.addEventListener('click', closeConfirm);
+  confirmOverlay.addEventListener('click', function (e) {
+    if (e.target === confirmOverlay) closeConfirm(); // backdrop click = cancel
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && confirmOverlay.classList.contains('show')) {
+      closeConfirm();
+    }
+  });
 
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game

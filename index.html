@@ -102,6 +102,68 @@
     #status {
       font-size: clamp(12px, 3vw, 16px);
       opacity: 0.85;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    /* The tile-count readout doubles as the New Game control (clicking it asks
+       "New game?" with confirmation). Styled as a subtle pushable pill, like
+       the tally, but tuned for its longer text. Disabled once the game is over
+       — then the end-game bar's New Game button is the sole restart path. */
+    #status-counts {
+      font: inherit;
+      color: inherit;
+      background: #262b34;
+      border: 1px solid #3a4150;
+      border-radius: 999px;
+      padding: 2px 10px;
+      line-height: 1.3;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 120ms ease, border-color 120ms ease;
+    }
+    #status-counts:hover {
+      background: #2f3540;
+      border-color: #4a5160;
+    }
+    #status-counts:active { background: #3a4150; }
+    #status-counts:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    #status-counts:disabled {
+      cursor: default;
+      background: transparent;
+      border-color: transparent;
+      opacity: 1;
+    }
+
+    /* The win tally rendered as a pushable control: a subtle pill that invites
+       a click (it resets the tally, with confirmation). Styled to read as
+       interactive — bordered, tabular digits, pointer cursor — without
+       shouting. */
+    #tally-btn {
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      color: #9fd0ff;
+      background: #262b34;
+      border: 1px solid #3a4150;
+      border-radius: 999px;
+      padding: 2px 10px;
+      line-height: 1.3;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 120ms ease, border-color 120ms ease;
+    }
+    #tally-btn:hover {
+      background: #2f3540;
+      border-color: #4a5160;
+    }
+    #tally-btn:active { background: #3a4150; }
+    #tally-btn:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
     }
 
     /* Small, low-contrast build tag pinned to the bottom-left corner. Visible
@@ -535,6 +597,65 @@
     /* --- About overlay ------------------------------------------------------
        Reuses the Settings overlay/card visual language. Reached only via the
        discreet build tag in the bottom-left corner. */
+    /* --- Confirm dialog -----------------------------------------------------
+       A small in-app confirmation modal (reused wherever a yes/no is needed,
+       e.g. resetting the win tally). Replaces window.confirm, which prefixes
+       its text with the page origin ("file://…" locally). Same card language as
+       the other dialogs; sits above them (z-index) so it can confirm actions
+       initiated from within another dialog later. */
+    #confirm-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 35;
+    }
+    #confirm-overlay.show { display: flex; }
+    #confirm-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 400px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #confirm-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 22px);
+    }
+    #confirm-card p {
+      margin: 0;
+      font-size: clamp(13px, 3.4vw, 16px);
+      line-height: 1.45;
+      opacity: 0.9;
+    }
+    #confirm-card .confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    /* The confirming (destructive) action is emphasised; Cancel stays quiet. */
+    #confirm-ok {
+      font-weight: 700;
+      background: #b23a3f;
+      border-color: #d2585d;
+    }
+    #confirm-ok:hover { background: #c7444a; }
+    #confirm-ok:focus-visible,
+    #confirm-cancel:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+
     #about-overlay {
       position: fixed;
       inset: 0;
@@ -717,10 +838,16 @@
         <span class="turn-dot" id="turn-dot"></span>
         <span id="turn-label">Player 1</span>
       </div>
-      <div id="status"></div>
+      <div id="status">
+        <button id="status-counts" type="button"
+                title="New Game"
+                aria-label="Player tile counts; activate to start a new game"></button>
+        <button id="tally-btn" type="button"
+                title="Reset the win tally"
+                aria-label="Win tally; activate to reset it"></button>
+      </div>
       <button id="step-btn" title="Advance one cascade step" hidden>&gt;</button>
       <button id="settings-btn" title="Settings">⚙ Settings</button>
-      <button id="new-game">New Game</button>
     </div>
     <div id="board-wrap">
       <div id="board" role="grid" aria-label="Jumping Squares board"></div>
@@ -799,6 +926,17 @@
     </div>
   </div>
 
+  <div id="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <div id="confirm-card">
+      <h2 id="confirm-title">Confirm</h2>
+      <p id="confirm-message"></p>
+      <div class="confirm-actions">
+        <button id="confirm-cancel" type="button">Cancel</button>
+        <button id="confirm-ok" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="about-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
     <div id="about-card">
       <div class="about-head">
@@ -853,7 +991,7 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=25"></script>
-  <script src="js/ui.js?v=25"></script>
+  <script src="js/game.js?v=26"></script>
+  <script src="js/ui.js?v=26"></script>
 </body>
 </html>
