@@ -29,7 +29,32 @@ the nearest user-facing entry.
 
 ---
 
-## v31 — The after-flash was a timing race (really fixed now)
+## v32 — "What's new" panel: progressive disclosure (5 → more → full)
+
+Player-facing:
+
+- The **About → What's new** panel now reveals its entries progressively:
+  - It opens showing the **5 most recent** entries.
+  - A **"Show N more"** link expands the rest of the recent list.
+  - A **"See full changelog"** link at the end opens the complete history
+    (`CHANGELOG.md`), which keeps everything — including entries trimmed from
+    the in-app list.
+
+Background:
+
+- The in-app list is a **capped excerpt**: the engine `CHANGELOG` array now
+  stores at most `WHATSNEW_MAX` (**12**) entries. There is no reason to ship
+  entries the panel can never show inline, so the oldest were trimmed from
+  `js/game.js` (they remain in this file). A test asserts
+  `CHANGELOG.length <= WHATSNEW_MAX`, so the array can't silently grow past the
+  cap again.
+- `renderWhatsNew()` renders 5 entries collapsed and re-renders on demand: the
+  "Show more" button sets an expanded flag and rebuilds the list (revealing up
+  to the stored 12); the panel always reopens collapsed. The full-changelog
+  link is appended once the inline list is fully expanded (or when nothing was
+  hidden), keeping a single clear "next step" at the bottom.
+
+
 
 Player-facing:
 
