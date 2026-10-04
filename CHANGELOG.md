@@ -29,6 +29,64 @@ the nearest user-facing entry.
 
 ---
 
+## v25 — Auto-save & restore (board persistence, Phase 1)
+
+Player-facing:
+
+- Your current game is now **saved in this browser** and **restored
+  automatically** after a reload or a reopened tab, so an accidental refresh or
+  tab close no longer loses the board. It restores seamlessly — straight back
+  to the position you left, with no prompt.
+- A new **Persistence** section in **⚙ Settings** gives you control:
+  - **Auto-save game** — an on/off switch (**on by default**). Turning it off
+    stops saving new moves; any game already saved stays and will still restore
+    next time. A short note appears in that case so the behaviour isn't a
+    surprise.
+  - **Remove saved data** — clears the saved game. It's enabled only when there
+    is saved data that isn't being continuously overwritten by an active
+    auto-save (i.e. when auto-save is off and a save exists).
+- Nothing leaves your browser — there is no server; the save lives in
+  `localStorage`, like the player names and win tally.
+- The end-of-game controls were reworked into layers: a restored **finished**
+  game shows the board and a single **New Game** button (the winner is read
+  from the all-one-colour board and the name shown top-left) rather than the
+  full win dialog; a **live** win still shows the prominent **Play Again**
+  dialog. The top-bar New Game is hidden while the end-game bar is shown so
+  there's exactly one call-to-action.
+
+Background:
+
+- The board is saved under its **own** `localStorage` key
+  (`jumping_squares:save`), separate from the cosmetic prefs
+  (`jumping_squares:prefs`) — the board changes every move while prefs rarely
+  do, so separating them avoids rewriting the prefs blob per move and lets
+  "remove saved data" clear the board independently of names/score. The
+  auto-save **toggle** itself is a preference, stored in the prefs key, so the
+  choice survives even when no board is saved.
+- Saves use a small self-describing wrapper (`format`, `formatVersion`,
+  `engineVersion`, `savedAt`, `state`) with a `migrate()` seam, so a future
+  schema change can convert old saves forward (validate *after* converting).
+- A new engine primitive, `loadState()`, is the single strict, side-effect-free
+  validator that turns an untrusted object into a clean state or `null`. It is
+  deliberately generous about size (ready for a future board-size picker); the
+  **UI** separately rejects, *before* rehydration, any save that doesn't match
+  the fixed 5×5 / 2-player board it can render (so an oversized or many-player
+  save can't trigger a huge allocation). It also enforces the game's own
+  invariants on load: owner/value coupling, the winner rule *including* the
+  turn-gate (via `checkWinner`), a **settled-state-only** contract (reject
+  boards still mid-cascade, except the legitimate sole-owner perpetual-overflow
+  terminal), and rejection of physically-terminal-but-undeclared boards that
+  would otherwise restore permanently stuck.
+- Scope note: mid-cascade snapshots are intentionally **not** persisted — only
+  the settled end-state of a move. The deterministic engine can reproduce a
+  cascade from a seed, so a future "save with trace" (move history / replay)
+  is a cleaner home for capturing cascades than per-frame dumps.
+- Corrupt or incompatible saves are discarded defensively: the offending value
+  is logged to the console **sanitised** (length-capped, control characters
+  stripped) and removed, then the game boots fresh.
+
+---
+
 ## v24 — Win tally (per name pair)
 
 Player-facing:
