@@ -92,7 +92,9 @@ node test/game.test.js
 Exit code is `0` when all assertions pass, `1` otherwise (CI-friendly).
 The suite covers capacities, legal-move rules, single overflow, capture,
 chain-reaction cascades, win detection, state-snapshot independence,
-stepped-cascade equivalence (the stepped path matches the instant result), and
+stepped-cascade equivalence (the stepped path matches the instant result),
+save validation and rehydration (`loadState`: bounds, cell/owner invariants,
+the winner + turn-gate rule, settled-state and point-conservation checks), and
 version-tag consistency (see below).
 
 ## Persistence
@@ -257,7 +259,7 @@ Status of the project and planned work. Done items reflect the current build.
       data; an engine-side `loadState` validator guards untrusted saves
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (76 assertions, no dependencies)
+- [x] Node test harness (128 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
