@@ -170,8 +170,9 @@
         mem.score.wins[n] = (mem.score.wins[n] || 0) + 1;
         persist();
       },
-      // Reset the tally to 0:0 and stamp the pair it now belongs to. Called on
-      // any rename COMMIT (the documented, button-less way to reset the score).
+      // Reset the tally to 0:0 and stamp the pair it now belongs to. Called
+      // when the user clicks the tally pill and confirms the reset (renaming a
+      // player no longer touches the score — the two actions are decoupled).
       resetScore: function (name1, name2) {
         mem.score.pair = { 1: name1 || '', 2: name2 || '' };
         mem.score.wins = { 1: 0, 2: 0 };

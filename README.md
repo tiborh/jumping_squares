@@ -39,6 +39,11 @@ Rules:
   empty/neutral cells left. (A win is only declared once every player has taken
   at least one turn, so an opening cascade can't end the game prematurely.)
 
+**Want to play well?** See [`docs/strategy-notes.md`](docs/strategy-notes.md)
+for documented tactics (take corners then edges, win the local "arms race",
+guard your near-full chains) and how machine play differs from human play —
+with sources.
+
 To restart, **click the tile-count readout** (e.g. `Player 1: 10, Player 2: 9`)
 in the top bar — it's a button (tooltip: *New Game*) and asks you to confirm
 before clearing the board. When a round ends, the end-of-round screen also
@@ -272,18 +277,19 @@ Status of the project and planned work. Done items reflect the current build.
 - [ ] Board-size and player-count picker in the UI (engine already supports it)
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
 - [x] Animated cascades — settable speed + manual step mode (see Done above)
-- [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS)
+- [ ] AI opponent using `cloneState()` for lookahead (minimax / MCTS) — see
+      [`docs/strategy-notes.md`](docs/strategy-notes.md) for evaluation ideas
 - [ ] Undo / replay via per-move snapshots
 - [ ] **Persistence Phase 2** — explicit **Save As… / Load** to a file (export
-      the board as JSON, import it back), with the top-bar **New Game** replaced
-      by a **Menu** (New Game / Save As… / Load / Reset-with-confirmation). Useful
+      the board as JSON, import it back), introducing a **Menu** (New Game /
+      Save As… / Load / Reset-with-confirmation) in the top bar. Useful
       for bug reports and testing, not just play. A later **"load with trace"**
       option could capture a cascade by replaying from the saved start state
       (the engine is deterministic), rather than storing mid-cascade frames;
       saving the settings in the file lets a reporter force **› Step** mode to
       walk the cascade. (Phase 1 — auto-save/restore — is done above.)
 - [ ] Optional sound and haptic feedback on mobile
-- [ ] Icon buttons for Settings / New Game to save top-bar space on narrow
+- [ ] Icon buttons for Settings / Step to save top-bar space on narrow
       screens (portrait phones get crowded once more controls are added)
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
 - [x] Deploy as a GitHub Pages site

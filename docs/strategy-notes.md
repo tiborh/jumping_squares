@@ -1,0 +1,133 @@
+<!--
+  SPDX-FileCopyrightText: 2025 - 2026 tiborh
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# Strategy notes
+
+Research notes on how **Jumping Squares** (and the wider *critical-mass /
+chain-reaction* family it belongs to — see the README's *History* and *Related
+games* sections) is played well, by people and by machines. This is **not** a
+rulebook (the rules are in the README); it collects publicly documented
+strategy, with sources, so future work — especially the planned **AI opponent**
+— has a grounded starting point.
+
+A standing caveat, stated up front because it shapes everything below: this is a
+**deterministic, perfect-information game with no element of chance** [3][5], yet
+it is famously *swingy*. The obvious heuristic — "whoever has the most orbs is
+winning" — is **misleading**: a position that looks won for one player can flip
+entirely on a single cascade [1]. Good play is about *cascade potential and
+capture safety*, not material count.
+
+## Human strategy (positional heuristics)
+
+People cannot read deep chain reactions in their heads, so human strategy is a
+set of **positional rules of thumb**. The most authoritative list is KDE's
+**KJumpingCube Handbook**, "Strategies and Tips" [2]; the points below paraphrase
+it (and the common community advice that agrees with it):
+
+- **Take the corners first, then the edges.** Corner cells have capacity 2 and
+  edge cells 3 (vs 4 for interior), so they reach overflow — and start
+  capturing — in the fewest moves [2]. Low-capacity cells are the cheapest
+  "engines".
+- **Win the local arms race, or don't enter it.** If one of your cells sits
+  next to an opponent's, stay *one ahead* by increasing before they do. If you
+  are already *equal or behind* next to them, **stop adding** — you cannot win
+  that exchange and you are only building a cell they will capture [2].
+- **Increase-and-capture, but watch the counter-cascade.** Look for moves that
+  overflow into and capture enemy cells, but check whether the opponent can
+  reply with a *larger* chain reaction that captures more back [2].
+- **Keep your distance in the opening.** Don't play right beside the opponent
+  early; drop back a cell or two, or play on the **diagonal** from them —
+  diagonal cells are not neighbours, so there is no immediate capture risk [2].
+- **Guard your near-full chains; hunt theirs.** Long runs of cells that are one
+  short of overflow are powerful but fragile. Protect your own from a triggering
+  cascade; target the opponent's once they come within reach of your territory
+  [2].
+
+## Machine strategy (search + evaluation)
+
+Machines play the *same* game toward the *same* optimum, but reach good moves a
+different way: they **simulate cascades forward** and pick the move with the
+best evaluated result — exactly the calculation humans can't do by hand.
+
+- **Search.** The standard approach for this family is **minimax with
+  alpha-beta pruning**, or **Monte-Carlo Tree Search (MCTS)**. The UC Berkeley
+  CS 61B "Jump61" project is a well-known teaching implementation using minimax
+  [4]; many public implementations and an ITB study use the same families [6].
+- **Evaluation function.** Search needs a way to score a non-terminal board.
+  Documented options range from the purely quantitative — **total orb count**
+  vs **number of owned cells** [6] — to richer heuristics. The **Brilliant**
+  wiki gives a representative expert heuristic [1], in essence:
+  - won board `+10000`, lost board `-10000`;
+  - call a cell **critical** when it is one orb short of exploding;
+  - **penalise** your orbs adjacent to an *enemy* critical cell (they are
+    capturable), scaled by that cell's capacity (corners most dangerous);
+  - **reward** orbs with no adjacent enemy-critical cell — extra for edge/corner
+    placement and for your own critical cells;
+  - `+1` per owned orb; and a bonus for **contiguous blocks of your own critical
+    cells** (chains that can cascade together).
+
+Notice that this evaluation is essentially the **human tips turned into
+numbers**: corner/edge value, capture safety, and chain potential.
+
+## Is the winning strategy different for a machine vs a human?
+
+**In principle, no; in practice, very.** Because the game is deterministic with
+perfect information [3][5], there is a single game-theoretic optimum both would
+ideally follow. The difference is *how each reaches good moves*:
+
+| | Human | Machine |
+|---|---|---|
+| Primary tool | Positional **heuristics** (corners→edges, arms-race discipline, chain safety) | **Forward search** (minimax / MCTS) over an evaluation function |
+| Strength | Fast, robust pattern judgement | Deep, exact cascade calculation |
+| Weakness | Can't simulate multi-step cascades mentally | Only as good as its evaluation + search depth |
+| Typical move style | Conservative, positional (reduce swinginess) | Will play **counter-intuitive, cascade-dependent** moves that look wrong until the chain resolves (exploit swinginess) |
+
+So the heuristics humans *use as rules* are the same knowledge a machine
+*encodes in its evaluation function* and then verifies by search. A strong
+engine's edge is depth of cascade lookahead; a human's tools are the
+rules-of-thumb that approximate it. KJumpingCube reflects this unity in one
+engine: its computer player has **adjustable skill levels** and can even hand a
+human **hints** from the same evaluation it would use to play [2][3].
+
+## Relevance to this project's AI (future work)
+
+The engine is already shaped for this (see the README *Extending it* section):
+
+- `cloneState()` gives a cheap, independent snapshot to explore candidate lines
+  without mutating the live game — the substrate for minimax/MCTS lookahead.
+- `applyMove()` (and the stepped `placeDot` / `stepOverflowsOnce` /
+  `finalizeAfterCascade`) deterministically resolves a move, so simulated
+  play-outs reproduce real cascades exactly.
+- A first evaluation function could start from the simplest documented options
+  (**owned-cell count** or **orb count** [6]) and grow toward the Brilliant
+  capture-safety / chain heuristic [1]. Given the swinginess caveat, lean on
+  **search depth** over material-only scoring.
+
+## References
+
+1. *Chain Reaction game* — Brilliant Math & Science Wiki. Rules plus an
+   explicit expert **heuristic evaluation** (critical cells, capture-safety,
+   chain blocks); notes that "most orbs" is a misleading heuristic.
+   <https://brilliant.org/wiki/chain-reaction-game/>
+2. *The KJumpingCube Handbook* — "Game Rules, Strategies and Tips". The primary
+   human-strategy source for this clone's direct ancestor (corners→edges, the
+   arms-race rule, opening distance, guarding chains).
+   <https://docs.kde.org/stable_kf6/en/kjumpingcube/kjumpingcube/rules_and_tips.html>
+3. *The KJumpingCube Handbook* — rules note that it is a pure-strategy game with
+   no chance, with configurable computer players, skill levels, and hints.
+   <https://docs.kde.org/stable_kf6/en/kjumpingcube/kjumpingcube/>
+4. UC Berkeley **CS 61B** — Project "Jump61", a KJumpingCube-based assignment
+   specifying a minimax AI; a good second rules/AI reference.
+   <https://inst.eecs.berkeley.edu/~cs61b/fa21/materials/proj/proj2/>
+5. *The KJumpingCube Handbook* — "How to Play" (overflow/cascade description).
+   <https://docs.kde.org/stable_kf6/en/kjumpingcube/kjumpingcube/howto.html>
+6. Example academic/implementation treatments using **minimax / alpha-beta**
+   and comparing quantitative evaluations (**orb count** vs **owned cells**),
+   e.g. an ITB *Strategi Algoritma* paper on a minimax Chain Reaction agent, and
+   numerous open-source minimax/MCTS implementations of the mechanic.
+
+*Sources retrieved 2026. KDE material is published by the KDE community; the
+Brilliant wiki page notes it is an archived (no longer maintained) resource but
+remains a useful strategy reference.*
