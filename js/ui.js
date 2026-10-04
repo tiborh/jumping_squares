@@ -71,9 +71,16 @@
       // off is remembered even when there is no saved board. See the Persistence
       // section in Settings.
       autoSave: true,
-      // Who controls each player: 'human' (default), 'random', or 'tutor'.
-      // Persisted so the chosen match-up survives reloads.
+      // Who controls each player: 'human' (default), 'random', 'tutor', or
+      // 'shark'. Persisted so the chosen match-up survives reloads.
       playerType: { 1: 'human', 2: 'human' },
+      // Shark search depth (difficulty): 2=Easy, 3=Medium (default), 4=Hard.
+      // NOTE: per-move time is CPU-DEPENDENT and grows ~ area^depth. On the
+      // current fixed 5x5 board all depths are fast (<~100 ms). When larger
+      // boards arrive (board-size picker), higher depths get expensive and the
+      // UI should surface a time hint — ideally from a one-time in-browser
+      // calibration rather than hard-coded (machine-specific) numbers.
+      sharkDepth: 3,
     };
 
     function storageAvailable() {
@@ -126,6 +133,14 @@
             var t = parsed.playerType[n];
             if (typeof t === 'string' && valid[t]) mem.playerType[n] = t;
           });
+        }
+
+        // sharkDepth: introduced in schema v4 alongside player types. Accept
+        // only an integer in the supported range (2..4); else keep the default.
+        var sd = parsed.sharkDepth;
+        if (typeof sd === 'number' && isFinite(sd) &&
+            Math.floor(sd) === sd && sd >= 2 && sd <= 4) {
+          mem.sharkDepth = sd;
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -208,6 +223,16 @@
       setPlayerType: function (n, t) {
         mem.playerType[n] = (t === 'random' || t === 'tutor' || t === 'shark')
           ? t : 'human';
+        persist();
+      },
+      // --- Shark difficulty (search depth) ---
+      getSharkDepth: function () {
+        var d = mem.sharkDepth;
+        return (d === 2 || d === 3 || d === 4) ? d : 3;
+      },
+      setSharkDepth: function (d) {
+        d = parseInt(d, 10);
+        mem.sharkDepth = (d === 2 || d === 3 || d === 4) ? d : 3;
         persist();
       },
     };
@@ -1025,19 +1050,22 @@
   var aiAgents = {};        // cache: type -> agent instance
   var aiTimer = null;       // pending "AI is about to move" timeout
   var AI_THINK_MS = 350;    // small pause so AI (esp. AI-vs-AI) is watchable
-  var SHARK_DEPTH = 3;      // Shark search depth (near-instant per move on 5x5)
 
   function agentFor(type) {
     if (type !== 'random' && type !== 'tutor' && type !== 'shark') return null;
     if (!AGENTS) return null;
+    if (type === 'shark') {
+      // Keyed by depth so changing the difficulty rebuilds with the new depth.
+      // makeShark may be absent in an older cached agents.js — guard it.
+      if (!AGENTS.makeShark) return null;
+      var depth = prefs.getSharkDepth();
+      var key = 'shark@' + depth;
+      if (!aiAgents[key]) aiAgents[key] = AGENTS.makeShark(G, { depth: depth });
+      return aiAgents[key];
+    }
     if (!aiAgents[type]) {
-      if (type === 'tutor') aiAgents[type] = AGENTS.makeTutor(G);
-      else if (type === 'shark') {
-        // makeShark is only in builds whose agents.js has it; guard so an older
-        // cached agents.js can't throw (falls back to no agent -> treated human).
-        aiAgents[type] = AGENTS.makeShark
-          ? AGENTS.makeShark(G, { depth: SHARK_DEPTH }) : null;
-      } else aiAgents[type] = AGENTS.makeRandom(G);
+      aiAgents[type] = (type === 'tutor')
+        ? AGENTS.makeTutor(G) : AGENTS.makeRandom(G);
     }
     return aiAgents[type];
   }
@@ -1341,6 +1369,23 @@
   // Reflect the stored player types in the selects. If the agents module is
   // missing (script not loaded), fall back to Human and disable the selects so
   // the UI can't offer AI it can't run.
+  var sharkLevelRow = document.getElementById('shark-level-row');
+  var sharkLevelSel = document.getElementById('shark-level');
+
+  function anyShark() {
+    return prefs.getPlayerType(1) === 'shark' || prefs.getPlayerType(2) === 'shark';
+  }
+
+  // The Shark difficulty control is only relevant when a Shark is in play, so
+  // show it only then. It is also hidden if the agents module can't provide
+  // Shark (older/absent agents.js).
+  function syncSharkLevelUI() {
+    if (!sharkLevelRow) return;
+    var show = !!AGENTS && !!AGENTS.makeShark && anyShark();
+    sharkLevelRow.hidden = !show;
+    if (sharkLevelSel) sharkLevelSel.value = String(prefs.getSharkDepth());
+  }
+
   function syncPlayerTypeUI() {
     var sels = { 1: p1TypeSel, 2: p2TypeSel };
     [1, 2].forEach(function (n) {
@@ -1349,10 +1394,12 @@
       if (!AGENTS) { sel.value = 'human'; sel.disabled = true; return; }
       sel.value = prefs.getPlayerType(n);
     });
+    syncSharkLevelUI();
   }
 
   function onPlayerTypeChange(n, sel) {
     prefs.setPlayerType(n, sel.value);
+    syncSharkLevelUI(); // show/hide the Shark difficulty row as needed
     // Re-render so the turn label (which shows the agent name for an AI seat)
     // and the rename affordance update; render() also re-evaluates whether the
     // CURRENT player is now an AI and, if so, schedules its move.
@@ -1364,6 +1411,15 @@
   }
   if (p2TypeSel) {
     p2TypeSel.addEventListener('change', function () { onPlayerTypeChange(2, this); });
+  }
+  if (sharkLevelSel) {
+    sharkLevelSel.addEventListener('change', function () {
+      prefs.setSharkDepth(this.value);
+      // agentFor() keys its Shark cache by depth, so the next Shark move (this
+      // game or next) uses the new difficulty automatically. Re-render in case
+      // a Shark is to move now (it will be re-fetched at the new depth).
+      render();
+    });
   }
   syncPlayerTypeUI();
 
