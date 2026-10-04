@@ -173,9 +173,164 @@
     };
   }
 
+  // ---- Shark agent (minimax + alpha-beta, machine-style) ------------------
+  //
+  // The strong, "machine-style" opponent: it SEARCHES several plies deep over
+  // the real cascade resolution (cloneState + applyMove) and picks the move
+  // leading to the best evaluated position, so it finds the counter-intuitive,
+  // cascade-dependent moves a human can't compute (see docs/strategy-notes.md).
+  // Search DEPTH is the difficulty knob.
+  //
+  // The game is 2-player, deterministic, perfect-information, so plain minimax
+  // with alpha-beta pruning applies. The evaluation is from the maximising
+  // (root) player's perspective and encodes the documented heuristic: terminal
+  // win/loss dominate; otherwise own-cell advantage, capture safety (penalise
+  // own cells adjacent to an enemy critical cell), and own critical/chain bonus.
+
+  function makeShark(G, opts) {
+    opts = opts || {};
+    var rng = opts.rng || defaultRng;
+    var maxDepth = (typeof opts.depth === 'number' && opts.depth >= 1)
+      ? Math.floor(opts.depth) : 3;
+
+    var WIN = 1000000;
+
+    // Static evaluation of a (non-root-move) board from `me`'s perspective.
+    function evaluate(state, me, opp) {
+      var w = state.winner;
+      if (w === me) return WIN;
+      if (w !== G.EMPTY && w !== me) return -WIN;
+      // Non-terminal, or terminal-by-sole-owner without a declared winner.
+      var sole = G.soleOwner(state);
+      if (sole === me) return WIN - 1;
+      if (sole !== G.EMPTY && sole !== me) return -(WIN - 1);
+
+      var score = 0;
+      var counts = G.ownershipCounts(state);
+      score += 10 * (counts[me] - counts[opp]); // material advantage
+
+      for (var i = 0; i < state.cells.length; i++) {
+        var cell = state.cells[i];
+        if (cell.owner === G.EMPTY) continue;
+        var r = Math.floor(i / state.cols);
+        var c = i % state.cols;
+        var cap = G.capacity(state, r, c);
+        var critical = (cell.value === cap);
+        if (cell.owner === me) {
+          if (critical) {
+            score += 2; // loaded, ready to erupt
+            // Capture-safety: a critical cell next to an enemy critical cell is
+            // vulnerable to being taken by the opponent's eruption first.
+            var nbrs = G.neighbours(state, r, c);
+            for (var n = 0; n < nbrs.length; n++) {
+              var j = nbrs[n];
+              var jr = Math.floor(j / state.cols), jc = j % state.cols;
+              if (state.cells[j].owner === opp &&
+                  state.cells[j].value === G.capacity(state, jr, jc)) {
+                score -= 5;
+              }
+            }
+          }
+        } else { // opponent cell
+          if (critical) score -= 2;
+        }
+      }
+      return score;
+    }
+
+    // Negamax-style alpha-beta. Returns the best score for the player to move
+    // (state.current) at this node, from `root`'s perspective is handled by the
+    // sign convention: we always evaluate for state.current and negate on
+    // recursion. `root` is the maximising player at the top.
+    function search(state, depth, alpha, beta, root) {
+      var toMove = state.current;
+      var opp = (toMove % state.players) + 1;
+
+      if (state.winner !== G.EMPTY || G.soleOwner(state) !== G.EMPTY ||
+          depth === 0) {
+        // Evaluate from the side-to-move's perspective (negamax convention).
+        return evaluate(state, toMove, opp);
+      }
+
+      var moves = orderedMoves(G, state, toMove);
+      if (!moves.length) return evaluate(state, toMove, opp);
+
+      var best = -Infinity;
+      for (var k = 0; k < moves.length; k++) {
+        var child = G.cloneState(state);
+        G.applyMove(child, toMove, moves[k].r, moves[k].c);
+        var val;
+        if (child.current === toMove || child.winner === toMove) {
+          // Turn did NOT pass to the opponent (a win ends the game, or — not
+          // possible here but defensive — the same player moves again): don't
+          // negate, same perspective.
+          val = search(child, depth - 1, alpha, beta, root);
+        } else {
+          val = -search(child, depth - 1, -beta, -alpha, root);
+        }
+        if (val > best) best = val;
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break; // beta cut-off
+      }
+      return best;
+    }
+
+    // Move ordering to help alpha-beta: capturing moves and low-capacity cells
+    // (corners/edges) first — the usually-strong moves, so cut-offs happen
+    // sooner. Cheap heuristic ordering, not a full evaluation.
+    function orderedMoves(G, state, player) {
+      var moves = legalMoves(G, state, player);
+      var opp = (player % state.players) + 1;
+      function rank(m) {
+        var r = m.r, c = m.c;
+        var cap = G.capacity(state, r, c);
+        var sc = (4 - cap) * 2; // corner (cap2)->+4, edge->+2, interior->0
+        // Bonus if placing here would reach capacity (erupt) and a neighbour is
+        // an opponent cell (likely capture).
+        var i = r * state.cols + c;
+        if (state.cells[i].value + 1 > cap) {
+          var nbrs = G.neighbours(state, r, c);
+          for (var n = 0; n < nbrs.length; n++) {
+            if (state.cells[nbrs[n]].owner === opp) { sc += 5; break; }
+          }
+        }
+        return sc;
+      }
+      moves.sort(function (a, b) { return rank(b) - rank(a); });
+      return moves;
+    }
+
+    return {
+      name: 'Shark',
+      depth: maxDepth,
+      chooseMove: function (state) {
+        var me = state.current;
+        var opp = (me % state.players) + 1;
+        var moves = orderedMoves(G, state, me);
+        if (!moves.length) return null;
+        // Root: pick the move with the best searched value; ties broken randomly.
+        var scored = moves.map(function (m) {
+          var child = G.cloneState(state);
+          G.applyMove(child, me, m.r, m.c);
+          var val;
+          if (child.winner === me) {
+            val = WIN;
+          } else if (child.current === me) {
+            val = search(child, maxDepth - 1, -Infinity, Infinity, me);
+          } else {
+            val = -search(child, maxDepth - 1, -Infinity, Infinity, me);
+          }
+          return { move: m, val: val };
+        });
+        return argmax(scored, function (s) { return s.val; }, rng).move;
+      },
+    };
+  }
+
   return {
     legalMoves: legalMoves,
     makeRandom: makeRandom,
     makeTutor: makeTutor,
+    makeShark: makeShark,
   };
 });

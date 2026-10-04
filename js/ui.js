@@ -121,7 +121,7 @@
         // playerType: introduced in schema v4; absent in older records (keep
         // the default, all 'human'). Only adopt known values per seat.
         if (parsed.playerType && typeof parsed.playerType === 'object') {
-          var valid = { human: 1, random: 1, tutor: 1 };
+          var valid = { human: 1, random: 1, tutor: 1, shark: 1 };
           [1, 2].forEach(function (n) {
             var t = parsed.playerType[n];
             if (typeof t === 'string' && valid[t]) mem.playerType[n] = t;
@@ -200,13 +200,14 @@
         mem.autoSave = !!on;
         persist();
       },
-      // --- player types (human / random / tutor) ---
+      // --- player types (human / random / tutor / shark) ---
       getPlayerType: function (n) {
         var t = mem.playerType[n];
-        return (t === 'random' || t === 'tutor') ? t : 'human';
+        return (t === 'random' || t === 'tutor' || t === 'shark') ? t : 'human';
       },
       setPlayerType: function (n, t) {
-        mem.playerType[n] = (t === 'random' || t === 'tutor') ? t : 'human';
+        mem.playerType[n] = (t === 'random' || t === 'tutor' || t === 'shark')
+          ? t : 'human';
         persist();
       },
     };
@@ -462,6 +463,7 @@
     var type = prefs.getPlayerType(n);
     if (type === 'random') return 'Random (AI)';
     if (type === 'tutor') return 'Tutor (AI)';
+    if (type === 'shark') return 'Shark (AI)';
     var custom = sanitizeName(prefs.getPlayerName(n));
     return custom || defaultPlayerName(n);
   }
@@ -1023,13 +1025,19 @@
   var aiAgents = {};        // cache: type -> agent instance
   var aiTimer = null;       // pending "AI is about to move" timeout
   var AI_THINK_MS = 350;    // small pause so AI (esp. AI-vs-AI) is watchable
+  var SHARK_DEPTH = 3;      // Shark search depth (near-instant per move on 5x5)
 
   function agentFor(type) {
-    if (type !== 'random' && type !== 'tutor') return null;
+    if (type !== 'random' && type !== 'tutor' && type !== 'shark') return null;
     if (!AGENTS) return null;
     if (!aiAgents[type]) {
-      aiAgents[type] = (type === 'tutor')
-        ? AGENTS.makeTutor(G) : AGENTS.makeRandom(G);
+      if (type === 'tutor') aiAgents[type] = AGENTS.makeTutor(G);
+      else if (type === 'shark') {
+        // makeShark is only in builds whose agents.js has it; guard so an older
+        // cached agents.js can't throw (falls back to no agent -> treated human).
+        aiAgents[type] = AGENTS.makeShark
+          ? AGENTS.makeShark(G, { depth: SHARK_DEPTH }) : null;
+      } else aiAgents[type] = AGENTS.makeRandom(G);
     }
     return aiAgents[type];
   }

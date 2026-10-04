@@ -946,6 +946,7 @@
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
             <option value="tutor">Tutor (AI)</option>
+            <option value="shark">Shark (AI)</option>
           </select>
         </div>
         <div class="player-row">
@@ -955,13 +956,15 @@
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
             <option value="tutor">Tutor (AI)</option>
+            <option value="shark">Shark (AI)</option>
           </select>
         </div>
         <div class="setting-hint">
           Choose who controls each player. <strong>Random</strong> plays any
           legal move; <strong>Tutor</strong> plays a simple human-style
-          strategy (good for learning). AI moves use the propagation speed
-          above. A stronger AI (<strong>Shark</strong>) will join later.
+          strategy (good for learning); <strong>Shark</strong> searches ahead
+          and plays strongly (it exploits cascades a human can't easily read).
+          AI moves use the propagation speed above.
         </div>
       </div>
 
@@ -1062,8 +1065,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=27"></script>
-  <script src="js/agents.js?v=27"></script>
-  <script src="js/ui.js?v=27"></script>
+  <script src="js/game.js?v=28"></script>
+  <script src="js/agents.js?v=28"></script>
+  <script src="js/ui.js?v=28"></script>
 </body>
 </html>

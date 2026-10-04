@@ -92,13 +92,15 @@ function report(label, nameA, nameB, res) {
 (function main() {
   var N = parseInt(process.argv[2], 10) || 200;
   var SEED = parseInt(process.argv[3], 10) || 12345;
+  var SHARK_DEPTH = parseInt(process.argv[4], 10) || 3;
   var base = makeRng(SEED);
 
   var mkRandom = function (rng) { return A.makeRandom(G, { rng: rng }); };
   var mkTutor = function (rng) { return A.makeTutor(G, { rng: rng }); };
+  var mkShark = function (rng) { return A.makeShark(G, { rng: rng, depth: SHARK_DEPTH }); };
 
   console.log('Jumping Squares — agent-vs-agent (5x5, 2 players), N=' + N +
-    ', seed=' + SEED);
+    ', seed=' + SEED + ', sharkDepth=' + SHARK_DEPTH);
   console.log('');
 
   console.log('Sanity: Random vs Random (expect roughly balanced; any skew is');
@@ -115,4 +117,23 @@ function report(label, nameA, nameB, res) {
   console.log('Tutor vs Tutor (self-play; expect roughly balanced):');
   report('Tutor vs Tutor', 'Tutor-A', 'Tutor-B',
     matchup(mkTutor, mkTutor, N, base));
+  console.log('');
+
+  // Shark searches depth-first, so it is much slower than the 1-ply agents;
+  // use fewer games for its matchups to keep the harness snappy.
+  var SN = Math.max(20, Math.round(N / 4));
+
+  console.log('Shark vs Random (expect Shark to dominate), N=' + SN + ':');
+  report('Shark vs Random', 'Shark', 'Random',
+    matchup(mkShark, mkRandom, SN, base));
+  console.log('');
+
+  console.log('Shark vs Tutor (expect Shark to beat the 1-ply heuristic), N=' + SN + ':');
+  report('Shark vs Tutor', 'Shark', 'Tutor',
+    matchup(mkShark, mkTutor, SN, base));
+  console.log('');
+
+  console.log('Shark vs Shark (self-play; expect roughly balanced), N=' + SN + ':');
+  report('Shark vs Shark', 'Shark-A', 'Shark-B',
+    matchup(mkShark, mkShark, SN, base));
 })();
