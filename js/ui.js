@@ -55,7 +55,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 4; // v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 5; // v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -72,15 +72,20 @@
       // section in Settings.
       autoSave: true,
       // Who controls each player: 'human' (default), 'random', 'tutor', or
-      // 'shark'. Persisted so the chosen match-up survives reloads.
-      playerType: { 1: 'human', 2: 'human' },
-      // Shark search depth (difficulty): 2=Easy, 3=Medium (default), 4=Hard.
-      // NOTE: per-move time is CPU-DEPENDENT and grows ~ area^depth. On the
-      // current fixed 5x5 board all depths are fast (<~100 ms). When larger
-      // boards arrive (board-size picker), higher depths get expensive and the
-      // UI should surface a time hint — ideally from a one-time in-browser
-      // calibration rather than hard-coded (machine-specific) numbers.
-      sharkDepth: 3,
+      // 'shark'. Persisted so the chosen match-up survives reloads. Player 2
+      // defaults to the Tutor AI so a brand-new user (no saved game, no stored
+      // prefs) immediately has an opponent to play against — easier onboarding
+      // than two human seats on a single device. Any stored playerType in prefs
+      // overrides this default on load.
+      playerType: { 1: 'human', 2: 'tutor' },
+      // Shark search depth (difficulty), PER SEAT: 2=Easy, 3=Medium (default),
+      // 4=Hard. Per-seat so when BOTH players are Shark each can have its own
+      // difficulty. NOTE: per-move time is CPU-DEPENDENT and grows ~ area^depth.
+      // On the current fixed 5x5 board all depths are fast (<~100 ms). When
+      // larger boards arrive (board-size picker), higher depths get expensive
+      // and the UI should surface a time hint — ideally from a one-time
+      // in-browser calibration rather than hard-coded (machine-specific) numbers.
+      sharkDepth: { 1: 3, 2: 3 },
     };
 
     function storageAvailable() {
@@ -135,12 +140,24 @@
           });
         }
 
-        // sharkDepth: introduced in schema v4 alongside player types. Accept
-        // only an integer in the supported range (2..4); else keep the default.
+        // sharkDepth: per-seat since v5. Accept the current object form
+        // ({1:d,2:d}) and MIGRATE the pre-v5 single-number form (one depth for
+        // whichever Shark was playing) by applying it to BOTH seats. In either
+        // case only an integer in the supported range (2..4) is adopted per
+        // seat; anything else keeps that seat's default.
+        var validDepth = function (d) {
+          return typeof d === 'number' && isFinite(d) &&
+                 Math.floor(d) === d && d >= 2 && d <= 4;
+        };
         var sd = parsed.sharkDepth;
-        if (typeof sd === 'number' && isFinite(sd) &&
-            Math.floor(sd) === sd && sd >= 2 && sd <= 4) {
-          mem.sharkDepth = sd;
+        if (sd && typeof sd === 'object') {
+          [1, 2].forEach(function (n) {
+            if (validDepth(sd[n])) mem.sharkDepth[n] = sd[n];
+          });
+        } else if (validDepth(sd)) {
+          // pre-v5 single value: apply to both seats.
+          mem.sharkDepth[1] = sd;
+          mem.sharkDepth[2] = sd;
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -225,14 +242,14 @@
           ? t : 'human';
         persist();
       },
-      // --- Shark difficulty (search depth) ---
-      getSharkDepth: function () {
-        var d = mem.sharkDepth;
+      // --- Shark difficulty (search depth), per seat ---
+      getSharkDepth: function (n) {
+        var d = mem.sharkDepth[n];
         return (d === 2 || d === 3 || d === 4) ? d : 3;
       },
-      setSharkDepth: function (d) {
+      setSharkDepth: function (n, d) {
         d = parseInt(d, 10);
-        mem.sharkDepth = (d === 2 || d === 3 || d === 4) ? d : 3;
+        mem.sharkDepth[n] = (d === 2 || d === 3 || d === 4) ? d : 3;
         persist();
       },
     };
@@ -517,6 +534,10 @@
         cellEls.push(el);
       }
     }
+    // The grid DOM is brand new, so there is no meaningful "previous render" to
+    // diff against. Clear the snapshot so the FIRST render after a (re)build
+    // paints without flashing every cell (e.g. on New Game).
+    prevRender = null;
   }
 
   // --- responsive sizing: largest square that fits the wrap ----------------
@@ -636,6 +657,72 @@
 
   var winnerFocus = makeDialogFocusManager(overlay, overlay, 'play-again');
 
+  // --- placement / propagation flash --------------------------------------
+  // prevRender holds the previous render's per-cell {value, owner} so render()
+  // can detect which cells changed and pulse them. null until the first render
+  // completes (so the initial board paint doesn't flash every cell).
+  var prevRender = null;
+
+  function snapshotRender() {
+    var snap = new Array(state.cells.length);
+    for (var i = 0; i < state.cells.length; i++) {
+      snap[i] = { value: state.cells[i].value, owner: state.cells[i].owner };
+    }
+    prevRender = snap;
+  }
+
+  // Pulse a cell to signal a just-changed value/owner. The square always pulses
+  // (flash-cell); the dots pulse too (flash-dot) UNLESS the cell is overloaded
+  // (its big numeral is signal enough — no dot-flash on overflow, per the UX
+  // request). Re-triggering: remove the classes and force a reflow before
+  // re-adding, so a cell that changes on consecutive cascade generations pulses
+  // again each time rather than the CSS animation being a no-op.
+  //
+  // Cleanup is driven by the real `animationend` event (plus a slightly-longer
+  // timer as a belt-and-braces fallback for cases where animationend may not
+  // fire — e.g. the element is detached, or the tab was backgrounded). Both the
+  // listener and the timer are stashed on the element so a re-flash cancels the
+  // previous ones cleanly. Earlier versions removed the classes on a bare
+  // setTimeout tuned to the CSS duration; that produced an INTERMITTENT stray
+  // "after-flash" because the timer and the animation's final frame raced, and
+  // whichever landed first was non-deterministic. animationend removes the race.
+  function cancelFlashCleanup(el) {
+    if (el._flashTimer) { clearTimeout(el._flashTimer); el._flashTimer = null; }
+    if (el._flashEnd) {
+      el.removeEventListener('animationend', el._flashEnd);
+      el._flashEnd = null;
+    }
+  }
+
+  function flashCell(el, overloaded) {
+    cancelFlashCleanup(el);
+    el.classList.remove('flash-cell', 'flash-dot');
+    // Force reflow so removing + re-adding restarts the CSS animation.
+    void el.offsetWidth;
+    el.classList.add('flash-cell');
+    if (!overloaded) el.classList.add('flash-dot');
+
+    var finish = function () {
+      cancelFlashCleanup(el);
+      el.classList.remove('flash-cell', 'flash-dot');
+    };
+    el._flashEnd = finish;
+    el.addEventListener('animationend', finish);
+    // Fallback: a bit longer than the CSS duration so it only fires if
+    // animationend somehow didn't. Not tuned to EXACTLY match the animation
+    // (that's precisely what caused the race before).
+    el._flashTimer = window.setTimeout(finish, FLASH_MS + 120);
+  }
+
+  // Immediately remove any flash state from a cell (and cancel its pending
+  // cleanup). Called for every cell that did NOT change on a given render.
+  function clearFlash(el) {
+    cancelFlashCleanup(el);
+    el.classList.remove('flash-cell', 'flash-dot');
+  }
+
+  var FLASH_MS = 420; // the CSS flash animation duration
+
   function render() {
     // Compute the shadow preview for the next generation (step mode only).
     var shadow = stepping.active ? nextStepShadow() : null;
@@ -660,9 +747,49 @@
       var cc = i % state.cols;
       var cap = G.capacity(state, cr, cc);
       el.classList.remove('overloaded');
-      if (cell.value > cap) el.classList.add('overloaded');
-      el.innerHTML = pipMarkup(cell.value, cap);
+      var overloaded = cell.value > cap;
+      if (overloaded) el.classList.add('overloaded');
+
+      // Did this cell's VALUE/OWNER change since the previous render? Computed
+      // BEFORE touching innerHTML so we can (a) decide the flash and (b) skip
+      // the innerHTML rebuild entirely for unchanged cells.
+      var prev = prevRender ? prevRender[i] : null;
+      var changed = prevRender &&
+        (!prev || prev.value !== cell.value || prev.owner !== cell.owner);
+
+      // Rebuild the pip/numeral markup ONLY when the value changed (or on the
+      // very first render, when prevRender is null). This is the crux of the
+      // intermittent "after-flash" fix: previously EVERY render rebuilt EVERY
+      // cell's innerHTML, so a cell that had just flashed got brand-new .pip
+      // nodes on the next render; if its flash-dot class hadn't been stripped
+      // yet (a timing race against the cleanup), the CSS animation re-ran on
+      // those fresh nodes and showed a stray pulse after the cascade settled.
+      // By leaving unchanged cells' DOM untouched, there are simply no new
+      // nodes to re-animate — the race can't occur.
+      var valueChanged = !prev || prev.value !== cell.value;
+      if (valueChanged) {
+        el.innerHTML = pipMarkup(cell.value, cap);
+      }
+
+      // Placement / propagation flash. A cell whose value or owner changed
+      // pulses so a placed dot — and the wave of changes during a cascade — is
+      // easy to spot. Two layers:
+      //   - the SQUARE pulses a ring (always, on any change);
+      //   - the new DOTS pulse too, EXCEPT on an overloaded cell, whose large
+      //     numeral is signal enough (per the UX request, no dot-flash there).
+      // Suppressed during manual step mode, where the shadow preview already
+      // directs the eye and an extra flash would be noisy. Cells that did NOT
+      // change get their flash state explicitly cleared, so nothing lingers.
+      if (changed && !stepping.active) {
+        flashCell(el, overloaded);
+      } else {
+        clearFlash(el);
+      }
     }
+
+    // Snapshot this render's cell values/owners for next-render change
+    // detection (used by the placement/propagation flash above).
+    snapshotRender();
 
     // Step button: visible while a manual cascade is in progress; enabled only
     // when another generation remains.
@@ -1013,11 +1140,19 @@
     if (animToken !== playToken) return; // new game cancelled this animation
     if (!cascadeSettled()) {
       G.stepOverflowsOnce(state);
-      render();
       if (!cascadeSettled()) {
+        // More generations to come: render THIS step (flashing its changes) and
+        // schedule the next.
+        render();
         animSchedule();
         return;
       }
+      // This step SETTLED the cascade. Do NOT render here: fall through to the
+      // single post-finalize render below. Rendering twice in the same tick
+      // (once here, once after finalize) would make the second render see "no
+      // change vs the just-taken snapshot" and clear this final step's flash —
+      // a spurious loss of the last pulse. One render keeps the last step's
+      // flash intact AND reflects the finalized turn.
     }
     // Cascade complete or one player owns the whole board.
     finalizeTurn();
@@ -1051,15 +1186,19 @@
   var aiTimer = null;       // pending "AI is about to move" timeout
   var AI_THINK_MS = 350;    // small pause so AI (esp. AI-vs-AI) is watchable
 
-  function agentFor(type) {
+  // Resolve the agent instance for a seat. `seat` is the player number (1/2),
+  // needed because Shark difficulty (depth) is now PER SEAT: when both players
+  // are Shark they can run at different difficulties. The cache is keyed by
+  // seat+depth for sharks so each seat's difficulty gets its own instance and
+  // changing one doesn't rebuild the other.
+  function agentFor(type, seat) {
     if (type !== 'random' && type !== 'tutor' && type !== 'shark') return null;
     if (!AGENTS) return null;
     if (type === 'shark') {
-      // Keyed by depth so changing the difficulty rebuilds with the new depth.
       // makeShark may be absent in an older cached agents.js — guard it.
       if (!AGENTS.makeShark) return null;
-      var depth = prefs.getSharkDepth();
-      var key = 'shark@' + depth;
+      var depth = prefs.getSharkDepth(seat);
+      var key = 'shark@' + seat + '@' + depth;
       if (!aiAgents[key]) aiAgents[key] = AGENTS.makeShark(G, { depth: depth });
       return aiAgents[key];
     }
@@ -1073,7 +1212,7 @@
   // Is the player currently to move an AI? (false if agents module absent.)
   function isAITurn() {
     if (state.winner !== G.EMPTY) return false;
-    return agentFor(prefs.getPlayerType(state.current)) !== null;
+    return agentFor(prefs.getPlayerType(state.current), state.current) !== null;
   }
 
   function cancelPendingAI() {
@@ -1086,17 +1225,29 @@
     if (busy || stepping.active || paused) return; // let the current action finish
     if (!isAITurn()) return;
     var tokenAtSchedule = playToken;
+    // Pace between AI moves. A move that cascades already animates at the chosen
+    // propagation delay, but a move with NO cascade (a plain placement) has no
+    // such pause — so an AI-vs-AI match of mostly-non-cascading moves would race
+    // by with only the small think-time between turns, making the delay slider
+    // feel like it does nothing. Honour the slider by waiting at least the
+    // chosen propagation delay before the next AI move (bounded below by the
+    // base think-time so even "Instant" stays watchable). In manual > Step mode
+    // (delayMs === null) there is no timed pacing, so use the base think-time.
+    var pace = AI_THINK_MS;
+    if (!settings.stepMode && typeof settings.delayMs === 'number') {
+      pace = Math.max(AI_THINK_MS, settings.delayMs);
+    }
     aiTimer = setTimeout(function () {
       aiTimer = null;
       if (playToken !== tokenAtSchedule) return; // New Game cancelled us
       if (busy || stepping.active || paused || !isAITurn()) return;
-      var agent = agentFor(prefs.getPlayerType(state.current));
+      var agent = agentFor(prefs.getPlayerType(state.current), state.current);
       if (!agent) return;
       var mv = agent.chooseMove(state);
       if (!mv) return; // no legal move (shouldn't happen before a winner)
       if (settings.stepMode) startStepMode(mv.r, mv.c);
       else playMoveAnimated(mv.r, mv.c, settings.delayMs);
-    }, AI_THINK_MS);
+    }, pace);
   }
 
   // --- new game ------------------------------------------------------------
@@ -1369,21 +1520,44 @@
   // Reflect the stored player types in the selects. If the agents module is
   // missing (script not loaded), fall back to Human and disable the selects so
   // the UI can't offer AI it can't run.
-  var sharkLevelRow = document.getElementById('shark-level-row');
-  var sharkLevelSel = document.getElementById('shark-level');
+  // Per-seat Shark difficulty controls. Each row is shown only when that seat
+  // is a Shark, so: one Shark -> one row; both Sharks -> two rows (each with its
+  // own difficulty). References gathered per seat for symmetric handling.
+  var sharkRows = {
+    1: {
+      row: document.getElementById('shark-level-row-1'),
+      sel: document.getElementById('shark-level-1'),
+      label: document.getElementById('shark-level-label-1'),
+    },
+    2: {
+      row: document.getElementById('shark-level-row-2'),
+      sel: document.getElementById('shark-level-2'),
+      label: document.getElementById('shark-level-label-2'),
+    },
+  };
 
-  function anyShark() {
-    return prefs.getPlayerType(1) === 'shark' || prefs.getPlayerType(2) === 'shark';
-  }
+  function isShark(n) { return prefs.getPlayerType(n) === 'shark'; }
+  function anyShark() { return isShark(1) || isShark(2); }
 
-  // The Shark difficulty control is only relevant when a Shark is in play, so
-  // show it only then. It is also hidden if the agents module can't provide
-  // Shark (older/absent agents.js).
+  // Show a difficulty row for each seat that is a Shark (and only when the
+  // agents module can actually provide Shark). When BOTH seats are Shark, the
+  // label names the player so the two rows are distinguishable; with a single
+  // Shark the generic "Shark difficulty" reads cleanest.
   function syncSharkLevelUI() {
-    if (!sharkLevelRow) return;
-    var show = !!AGENTS && !!AGENTS.makeShark && anyShark();
-    sharkLevelRow.hidden = !show;
-    if (sharkLevelSel) sharkLevelSel.value = String(prefs.getSharkDepth());
+    var canShark = !!AGENTS && !!AGENTS.makeShark;
+    var both = isShark(1) && isShark(2);
+    [1, 2].forEach(function (n) {
+      var r = sharkRows[n];
+      if (!r.row) return;
+      var show = canShark && isShark(n);
+      r.row.hidden = !show;
+      if (r.sel) r.sel.value = String(prefs.getSharkDepth(n));
+      if (r.label) {
+        r.label.textContent = both
+          ? (playerName(n) + ' difficulty')
+          : 'Shark difficulty';
+      }
+    });
   }
 
   function syncPlayerTypeUI() {
@@ -1412,15 +1586,18 @@
   if (p2TypeSel) {
     p2TypeSel.addEventListener('change', function () { onPlayerTypeChange(2, this); });
   }
-  if (sharkLevelSel) {
-    sharkLevelSel.addEventListener('change', function () {
-      prefs.setSharkDepth(this.value);
-      // agentFor() keys its Shark cache by depth, so the next Shark move (this
-      // game or next) uses the new difficulty automatically. Re-render in case
-      // a Shark is to move now (it will be re-fetched at the new depth).
+  [1, 2].forEach(function (n) {
+    var sel = sharkRows[n].sel;
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      prefs.setSharkDepth(n, this.value);
+      // agentFor() keys its Shark cache by seat+depth, so this seat's next Shark
+      // move (this game or next) uses the new difficulty automatically, without
+      // disturbing the other seat's Shark. Re-render in case this Shark is to
+      // move now (it will be re-fetched at the new depth).
       render();
     });
-  }
+  });
   syncPlayerTypeUI();
 
   // --- confirm dialog ------------------------------------------------------

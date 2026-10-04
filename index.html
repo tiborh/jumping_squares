@@ -261,6 +261,45 @@
     .cell.playable:hover { filter: brightness(1.12); }
     .cell.bump { transform: scale(0.92); }
 
+    /* --- Placement / propagation flash -------------------------------------
+       When a dot is placed, and as a cascade spreads, each cell whose value or
+       owner just changed pulses to draw the eye.
+         - .flash-cell: a ring that pulses AROUND the square (always on change).
+         - .flash-dot : the pips briefly flare (NOT on overloaded cells — their
+                        big numeral is signal enough).
+       The ring is drawn on a dedicated ::before so it composes with the step-
+       mode shadow ::after and the overloaded numeral without conflict. */
+    .cell.flash-cell::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      border: 2px solid rgba(255,255,255,0.95);
+      box-shadow: 0 0 10px 2px rgba(255,255,255,0.55);
+      pointer-events: none;
+      animation: cellFlash 420ms ease-out 1;
+    }
+    @keyframes cellFlash {
+      0%   { opacity: 0; transform: scale(0.92); }
+      30%  { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(1.04); }
+    }
+    .cell.flash-dot .pip {
+      animation: dotFlash 420ms ease-out 1;
+    }
+    @keyframes dotFlash {
+      0%   { transform: scale(0.4); opacity: 0.3; }
+      35%  { transform: scale(1.25); opacity: 1;
+             box-shadow: 0 0 8px 3px rgba(255,255,255,0.9); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    /* Respect users who prefer reduced motion: keep the colour/state change but
+       skip the animated pulse. */
+    @media (prefers-reduced-motion: reduce) {
+      .cell.flash-cell::before,
+      .cell.flash-dot .pip { animation: none; }
+    }
+
     /* Shadow preview (step mode): a cell that WILL change on the next step is
        marked with a pulsing ring + the incoming owner's tint, so the player
        can see where the cascade is about to spread before committing it. */
@@ -930,7 +969,7 @@
 
       <div class="setting">
         <div class="setting-label">
-          <label for="delay-range">Propagation speed</label>
+          <label for="delay-range">Propagation delay</label>
           <span class="setting-value" id="delay-value">Instant</span>
         </div>
         <!-- 12 stops: index 0..10 => 0..1000ms (100ms steps), index 11 => STEP mode. -->
@@ -941,9 +980,10 @@
           <span>&gt; Step</span>
         </div>
         <div class="setting-hint" id="delay-hint">
-          How fast a cascade spreads, step by step. Higher = slower (easier to
-          follow). At the far end (<strong>&gt; Step</strong>) you advance each
-          step manually with a <strong>&gt;</strong> button.
+          The pause between cascade steps as a cascade spreads. Higher =
+          longer delay (slower, easier to follow). At the far end
+          (<strong>&gt; Step</strong>) you advance each step manually with a
+          <strong>&gt;</strong> button.
         </div>
       </div>
 
@@ -971,10 +1011,19 @@
             <option value="shark">Shark (AI)</option>
           </select>
         </div>
-        <div class="player-row shark-level-row" id="shark-level-row" hidden>
+        <div class="player-row shark-level-row" id="shark-level-row-1" hidden>
           <span class="player-dot shark" aria-hidden="true">🦈</span>
-          <label for="shark-level">Shark difficulty</label>
-          <select id="shark-level" aria-label="Shark difficulty">
+          <label for="shark-level-1" id="shark-level-label-1">Shark difficulty</label>
+          <select id="shark-level-1" aria-label="Player 1 Shark difficulty">
+            <option value="2">Easy</option>
+            <option value="3">Medium</option>
+            <option value="4">Hard</option>
+          </select>
+        </div>
+        <div class="player-row shark-level-row" id="shark-level-row-2" hidden>
+          <span class="player-dot shark" aria-hidden="true">🦈</span>
+          <label for="shark-level-2" id="shark-level-label-2">Shark difficulty</label>
+          <select id="shark-level-2" aria-label="Player 2 Shark difficulty">
             <option value="2">Easy</option>
             <option value="3">Medium</option>
             <option value="4">Hard</option>
@@ -986,8 +1035,8 @@
           strategy (good for learning); <strong>Shark</strong> searches ahead
           and plays strongly (it exploits cascades a human can't easily read).
           Shark difficulty sets how many moves it looks ahead — higher is
-          stronger (and thinks a little longer). AI moves use the propagation
-          speed above.
+          stronger (and thinks a little longer), and is set per Shark player.
+          AI moves use the propagation delay above.
         </div>
       </div>
 
@@ -1088,8 +1137,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=28"></script>
-  <script src="js/agents.js?v=28"></script>
-  <script src="js/ui.js?v=28"></script>
+  <script src="js/game.js?v=31"></script>
+  <script src="js/agents.js?v=31"></script>
+  <script src="js/ui.js?v=31"></script>
 </body>
 </html>

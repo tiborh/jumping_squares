@@ -29,7 +29,110 @@ the nearest user-facing entry.
 
 ---
 
-## v25 — Auto-save & restore (board persistence, Phase 1)
+## v31 — The after-flash was a timing race (really fixed now)
+
+Player-facing:
+
+- The stray **"after-flash"** that still showed up *sometimes* (not every time,
+  with no obvious pattern) is gone. The intermittency was the tell: it was a
+  timing race, not a logic error.
+
+Background:
+
+- v30 cleared flash classes on unchanged cells and stopped double-rendering the
+  final generation, which removed the *deterministic* after-flash. But a second,
+  **non-deterministic** path remained:
+  - `render()` rebuilt **every** cell's `innerHTML` on **every** render, so a
+    cell that had just flashed received brand-new `.pip` nodes on the next
+    render.
+  - The flash classes were removed by a `setTimeout` tuned to exactly match the
+    CSS animation duration (420 ms). Whether that timer fired *before* or
+    *after* the animation's final frame — and before or after the next render's
+    `innerHTML` rebuild — depended on frame scheduling and timer drift. When it
+    lost the race, the lingering `flash-dot` class re-ran the pip animation on
+    the freshly-created nodes: a stray pulse, appearing only on some turns.
+- Two changes close the race for good:
+  1. **Only rebuild a cell's `innerHTML` when its value actually changed.**
+     Unchanged cells keep their existing DOM, so there are no new nodes for a
+     stale class to re-animate. (Owner-only changes just restyle via the
+     `p1`/`p2` class; the pip/numeral markup is value-derived, so it needn't be
+     rebuilt.)
+  2. **End each flash on the real `animationend` event**, not a duration-guessing
+     timer (a longer timer remains only as a fallback for detached/backgrounded
+     cases). The browser now tells us exactly when the animation finished.
+- Also: `buildGrid()` resets the previous-render snapshot, so the first render
+  after a New Game paints without flashing leftover diffs.
+
+
+
+Player-facing:
+
+- Fixed a **stray "after-flash"**: after a propagation chain settled, some
+  squares would briefly pulse a second time. The flash now ends cleanly with the
+  cascade.
+- The **propagation delay** now also **paces AI-vs-AI** play. Previously two
+  computer players raced through non-cascading moves with only a tiny think-gap
+  between them, so the delay slider seemed to do nothing in AI-vs-AI; now raising
+  the delay slows their move cadence to a watchable pace.
+
+Background:
+
+- Root cause of the after-flash: the dot pulse is a CSS animation on the `.pip`
+  nodes, but every `render()` rebuilds a cell's `innerHTML` (new `.pip` nodes).
+  A `flash-dot` class left on the cell from an earlier generation would re-run
+  the animation on those freshly-created pips once the cascade had settled. Two
+  changes fix it: (1) every render now explicitly **clears** the flash classes
+  on cells that did *not* change this generation (so no class survives into the
+  next `innerHTML` rebuild), with a per-cell cleanup timer that is cancelled
+  before re-use; and (2) the animated driver no longer **double-renders** the
+  final generation (it previously rendered the settling step and then again
+  after finalising the turn, in the same tick — the second render saw "no
+  change" and would otherwise have cleared the last step's legitimate flash).
+- AI pacing: `maybeTriggerAI()` now waits `max(AI_THINK_MS, settings.delayMs)`
+  before the next AI move (base think-time keeps even "Instant" watchable; in
+  manual **› Step** mode there is no timed pacing, so the base think-time is
+  used). A move that *does* cascade already animated at the chosen delay; this
+  only adds the same pacing to plain, non-cascading placements.
+
+
+
+Player-facing:
+
+- **Placement / propagation flash.** Placing a dot now briefly pulses the
+  **square** and its **dots**, and the pulse **follows the cascade** as it
+  spreads from cell to cell — so what just changed is easy to see. On an
+  **overloaded** cell (the one showing a big number, about to split) only the
+  square pulses, not the dots: the numeral is signal enough. The effect honours
+  `prefers-reduced-motion` (the colour/state still changes; the animation is
+  skipped).
+- **Tutor by default for new players.** A brand-new user (no saved game and no
+  stored preferences) now starts with **Player 2 set to the Tutor AI**, so
+  there's an opponent to play against straight away. Returning users keep
+  whatever they had set.
+- **Per-player Shark difficulty.** When **both** players are Shark, each now has
+  its **own** difficulty selector (so you can pit, say, Easy against Hard). With
+  a single Shark it reads as one "Shark difficulty" control as before.
+- **"Propagation delay".** The Settings slider is renamed from *Propagation
+  speed* to **Propagation delay** — clearer that a **higher** number means a
+  **longer** pause between cascade steps (slower, easier to follow).
+
+Background:
+
+- The flash is driven in `render()` by diffing each cell against a snapshot of
+  the previous render (`prevRender`); changed cells get transient `flash-cell`
+  (a pulsing ring on a `::before`) and, unless overloaded, `flash-dot` (the pips
+  flare). The animation is re-triggered on consecutive generations by removing
+  the classes and forcing a reflow before re-adding. It is suppressed in manual
+  **› Step** mode, where the shadow preview already guides the eye.
+- Shark difficulty moved from a single prefs value to a **per-seat** map;
+  `prefs` schema bumped to **v5**, migrating a pre-v5 single depth onto both
+  seats. `agentFor()` is now seat-aware and caches Shark instances by
+  seat+depth, so changing one seat's difficulty never disturbs the other.
+- The Tutor default is just the seat-2 default in the in-memory `prefs` record;
+  any stored `playerType` still overrides it on load, so the change only affects
+  users with no prefs yet.
+
+
 
 Player-facing:
 

@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '28';
+  var VERSION = '31';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -62,6 +62,9 @@
   // Keep it short (the panel shows the most recent handful). The newest entry's
   // version must not exceed VERSION — a test guards against drift.
   var CHANGELOG = [
+    { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
+    { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
+    { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },
     { v: '28', text: 'New AI opponent \u2014 Shark: it searches moves ahead and plays strongly, exploiting cascades. Pick it per player under Settings \u2192 Players, and set its difficulty (Easy / Medium / Hard).' },
     { v: '27', text: 'Play against the computer: under Settings \u2192 Players, set either player to Random or Tutor (a simple human-style AI). AI moves use your propagation speed. A stronger AI is planned.', experimental: true },
     { v: '26', text: 'Top-bar tidy-up: the win tally is now a button (click to reset to 0 : 0, with confirmation), and the tile-count readout starts a New Game (also with confirmation). Renaming a player no longer resets the tally. Confirmations use an in-app dialog.' },
