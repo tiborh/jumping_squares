@@ -291,7 +291,12 @@ Status of the project and planned work. Done items reflect the current build.
 
 **Planned / ideas (not yet implemented):**
 
-- [ ] Board-size and player-count picker in the UI (engine already supports it)
+- [ ] Board-size and player-count picker in the UI (engine already supports it).
+      On larger boards, Shark's higher difficulties get slow and timing is
+      device-dependent, so this needs a **per-device calibration** + time hint
+      for Shark difficulty — see
+      [`docs/strategy-notes.md`](docs/strategy-notes.md) (*Shark performance,
+      difficulty, and device calibration*).
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
 - [x] Animated cascades — settable speed + manual step mode (see Done above)
 - [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**
