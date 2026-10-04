@@ -1029,12 +1029,10 @@
     tallyBtn.addEventListener('click', function () {
       var msg = 'Reset the win tally to 0 : 0 for ' +
         playerName(1) + ' and ' + playerName(2) + '?';
-      var confirmFn = (typeof window.confirm === 'function')
-        ? window.confirm : function () { return true; };
-      if (confirmFn(msg)) {
+      confirmDialog(msg, function () {
         prefs.resetScore(playerName(1), playerName(2));
         render();
-      }
+      });
     });
   }
 
@@ -1222,6 +1220,49 @@
   // Keep the panel honest every time Settings opens (the save state can change
   // between openings as the game is played).
   syncPersistenceUI();
+
+  // --- confirm dialog ------------------------------------------------------
+  // A small in-app yes/no modal, used instead of window.confirm (which prefixes
+  // its text with the page origin — "file://…" when opened locally). Reuses the
+  // shared dialog focus manager (focus trap + restore). confirmDialog(message,
+  // onConfirm) shows the overlay with the given message; OK runs onConfirm and
+  // closes; Cancel / Escape / backdrop click just closes. Reusable for future
+  // confirmations (e.g. the Phase 2 "Reset" menu item).
+  var confirmOverlay = document.getElementById('confirm-overlay');
+  var confirmCard = document.getElementById('confirm-card');
+  var confirmMessage = document.getElementById('confirm-message');
+  var confirmOk = document.getElementById('confirm-ok');
+  var confirmCancel = document.getElementById('confirm-cancel');
+  var confirmFocus = makeDialogFocusManager(confirmOverlay, confirmCard, 'confirm-cancel');
+  var pendingConfirm = null; // the onConfirm callback for the open dialog
+
+  function openConfirm(message, onConfirm) {
+    confirmMessage.textContent = message;
+    pendingConfirm = (typeof onConfirm === 'function') ? onConfirm : null;
+    confirmOverlay.classList.add('show');
+    confirmFocus.onOpen(); // focuses Cancel by default (safe default for a reset)
+  }
+  function closeConfirm() {
+    confirmOverlay.classList.remove('show');
+    confirmFocus.onClose();
+    pendingConfirm = null;
+  }
+  function confirmDialog(message, onConfirm) { openConfirm(message, onConfirm); }
+
+  confirmOk.addEventListener('click', function () {
+    var fn = pendingConfirm;
+    closeConfirm();      // close first so focus is restored before the action
+    if (fn) fn();
+  });
+  confirmCancel.addEventListener('click', closeConfirm);
+  confirmOverlay.addEventListener('click', function (e) {
+    if (e.target === confirmOverlay) closeConfirm(); // backdrop click = cancel
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && confirmOverlay.classList.contains('show')) {
+      closeConfirm();
+    }
+  });
 
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game
