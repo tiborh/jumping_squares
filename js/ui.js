@@ -1594,7 +1594,6 @@
   };
 
   function isShark(n) { return prefs.getPlayerType(n) === 'shark'; }
-  function anyShark() { return isShark(1) || isShark(2); }
 
   // Show a difficulty row for each seat that is a Shark (and only when the
   // agents module can actually provide Shark). When BOTH seats are Shark, the

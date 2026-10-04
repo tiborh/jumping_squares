@@ -16,7 +16,13 @@ For any change (code, docs, config):
    branch off the latest `main`, e.g. `feat/<topic>`, `fix/<topic>`,
    `docs/<topic>`, `chore/<topic>`.
 2. Commit the work on that branch (ask before committing per the usual rule;
-   keep the copyright-year hook enabled — do not use `--no-verify`).
+   keep the copyright-year hook enabled — do not use `--no-verify`). Commits
+   **must be signed** — the protected `main` ruleset requires verified
+   signatures, and `CONTRIBUTING.md` documents that `commit.gpgsign true` is set
+   globally so signing happens automatically. If a push is declined with
+   *"Commits must have verified signatures"*, the commit is unsigned: re-sign
+   with `git commit --amend --no-edit -S` (or fix signing config per
+   `CONTRIBUTING.md`) and push again.
 3. Push the branch with upstream tracking: `git push -u origin <branch>`.
 4. Open a pull request targeting `main` with `gh pr create` (concise title
    < 70 chars; body: summary, what was tested, anything blocked). Report the PR

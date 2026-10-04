@@ -685,6 +685,59 @@ console.log('starting player');
   // Works for more players too (future-proofing the engine option).
   var p3 = G.createGame({ rows: 5, cols: 5, players: 3, startingPlayer: 3 });
   ok(p3.current === 3, 'startingPlayer: 3 valid with players: 3');
+
+  // --- save/validate round-trip for a non-player-1 opener (regression) -----
+  // A game opened by player 2 must survive cloneState -> loadState. This is the
+  // exact path the UI auto-save uses; before loadState knew about the opener it
+  // rejected these as soon as they were saved, discarding the board on reload.
+
+  // Fresh player-2 board (0 moves): the auto-save right after New Game.
+  var fresh2 = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 2 });
+  ok(G.loadState(G.cloneState(fresh2)) !== null,
+     'fresh player-2-opening board round-trips through loadState');
+
+  // After player 2 opens and player 1 replies: current should be back to 2.
+  var mid2 = G.createGame({ rows: 5, cols: 5, players: 2, startingPlayer: 2 });
+  G.applyMove(mid2, 2, 0, 0); // p2 opens a corner
+  G.applyMove(mid2, 1, 4, 4); // p1 replies in another corner
+  ok(mid2.current === 2, 'after p2 then p1, it is p2 to move again');
+  var reloaded2 = G.loadState(G.cloneState(mid2));
+  ok(reloaded2 !== null, 'in-progress player-2-opening game round-trips');
+  ok(reloaded2 && reloaded2.startingPlayer === 2,
+     'restored state preserves startingPlayer = 2');
+  ok(reloaded2 && reloaded2.current === 2,
+     'restored state preserves current = 2');
+
+  // A save that CLAIMS the wrong opener is rejected: here 1 move was made and
+  // current is 1, which is only consistent with opener 2 (moverOf(1)=1), not
+  // opener 1 (which would expect current 2 after one move).
+  var oneMove = G.cloneState(mid2);
+  oneMove.moveCount = 1;
+  oneMove.turnsTaken = [0, 0, 1]; // only p2 has moved
+  // Rebuild cells to match a single p2 dot so point-total == moveCount.
+  oneMove.cells = oneMove.cells.map(function () { return { owner: 0, value: 0 }; });
+  oneMove.cells[0] = { owner: 2, value: 1 };
+  oneMove.current = 1;          // p1 to move after p2's single opener
+  oneMove.winner = 0;
+  oneMove.startingPlayer = 2;   // consistent -> accepted
+  ok(G.loadState(oneMove) !== null,
+     'one-move p2-opening save (current=1) accepted with startingPlayer=2');
+  var wrongOpener = G.cloneState(oneMove);
+  wrongOpener.startingPlayer = 1; // inconsistent: opener 1 would expect current=2
+  ok(G.loadState(wrongOpener) === null,
+     'same board claiming startingPlayer=1 is rejected (turn-order mismatch)');
+
+  // Legacy save WITHOUT startingPlayer is treated as player-1-opened.
+  var legacy = G.cloneState(G.createGame({ rows: 5, cols: 5, players: 2 }));
+  delete legacy.startingPlayer;
+  var legacyLoaded = G.loadState(legacy);
+  ok(legacyLoaded !== null && legacyLoaded.startingPlayer === 1,
+     'legacy save without startingPlayer defaults to opener 1');
+
+  // Out-of-range startingPlayer in a save is rejected.
+  var badSP = G.cloneState(fresh2);
+  badSP.startingPlayer = 3; // only 2 players
+  ok(G.loadState(badSP) === null, 'save with out-of-range startingPlayer rejected');
 })();
 
 console.log('version wiring');
