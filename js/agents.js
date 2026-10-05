@@ -73,13 +73,92 @@
   function makeRandom(G, opts) {
     opts = opts || {};
     var rng = opts.rng || defaultRng;
+    // Difficulty level: 'easy' (default) or 'medium'. Both are the "chaos"
+    // family — positionally blind, clearly distinct from Tutor (heuristic on
+    // EVERY move):
+    //   Easy   : PURE random — any legal move, uniformly. The gentle beginner.
+    //   Medium : random MOST of the time, but when the opponent could capture
+    //            one of my cells on their very next move AND I have a capturing
+    //            reply, strike first ("hit back"), taking the capture that
+    //            removes the most opponent cells (ties random). Otherwise random.
+    // Why not an "always strike to conquer" level: agent-vs-agent testing showed
+    // greedily grabbing every capture is actually WEAKER than only hitting back
+    // when threatened (~45% vs ~55%) — this game is swingy, so firing cascades
+    // early tends to hand the opponent a bigger counter. Reactive hit-back, by
+    // contrast, beats pure random decisively (~85%). So the two levels are
+    // pure-random (Easy) and reactive-hit-back (Medium); the conquer idea was
+    // dropped as counterproductive. (The ranking metric among hits barely moved
+    // the needle in testing, so the simple "cells captured" tiebreak is used.)
+    // Unknown level values fall back to easy.
+    var level = (opts.level === 'medium') ? 'medium' : 'easy';
     return {
       name: 'Random',
+      level: level,
       chooseMove: function (state) {
-        var moves = legalMoves(G, state);
-        return moves.length ? pickRandom(moves, rng) : null;
+        return chooseRandomMove(G, state, level, rng);
       },
     };
+  }
+
+  // How many opponent cells a candidate move captures at the SETTLED end state
+  // (net): oppCount(before) - oppCount(after). 0 if the move captures nothing.
+  // Resolved via the engine's instant applyMove on a clone.
+  function captureCount(G, state, player, r, c) {
+    var opp = (player % state.players) + 1;
+    var before = G.ownershipCounts(state)[opp];
+    var clone = G.cloneState(state);
+    if (!G.applyMove(clone, player, r, c)) return 0;
+    return Math.max(0, before - G.ownershipCounts(clone)[opp]);
+  }
+
+  // Candidate capturing moves for `me`, each tagged with its capture count.
+  function capturingMoves(G, state, me, moves) {
+    var out = [];
+    for (var k = 0; k < moves.length; k++) {
+      var n = captureCount(G, state, me, moves[k].r, moves[k].c);
+      if (n > 0) out.push({ move: moves[k], captures: n });
+    }
+    return out;
+  }
+
+  // Pick the capturing move that takes the most opponent cells; ties random.
+  function bestHit(hits, rng) {
+    return argmax(hits, function (h) { return h.captures; }, rng).move;
+  }
+
+  // Does the opponent have an immediate capturing reply against `me` from this
+  // position? The "immediate danger" trigger for Easy's hit-back reflex.
+  function opponentCanCaptureNow(G, state, me, opp) {
+    var myNow = G.ownershipCounts(state)[me];
+    // Build an opponent-to-move view: legalMoves()/canPlay() gate on `current`,
+    // so enumerate AND simulate against a clone whose current is the opponent.
+    var oppView = G.cloneState(state);
+    oppView.current = opp;
+    var oppMoves = legalMoves(G, oppView, opp);
+    for (var k = 0; k < oppMoves.length; k++) {
+      var cl = G.cloneState(oppView);
+      if (!G.applyMove(cl, opp, oppMoves[k].r, oppMoves[k].c)) continue;
+      if (myNow - G.ownershipCounts(cl)[me] > 0) return true;
+    }
+    return false;
+  }
+
+  function chooseRandomMove(G, state, level, rng) {
+    var me = state.current;
+    var opp = (me % state.players) + 1;
+    var moves = legalMoves(G, state, me);
+    if (!moves.length) return null;
+
+    // Medium: reactive hit-back. Only when the opponent could capture one of my
+    // cells on their very next move do we look for a capturing reply and strike
+    // the one that takes the most opponent cells. Not threatened -> play random.
+    if (level === 'medium' && opponentCanCaptureNow(G, state, me, opp)) {
+      var hits = capturingMoves(G, state, me, moves);
+      if (hits.length) return bestHit(hits, rng);
+    }
+
+    // Easy (always) and Medium-when-unthreatened: chaos.
+    return pickRandom(moves, rng);
   }
 
   // ---- Tutor agent (1-ply, human-style heuristic) -------------------------
@@ -112,13 +191,16 @@
   // next move, cascade fully resolved) — not a search; that is Shark's job.
   function opponentBestImmediateCapture(G, state, me, opp) {
     var myNow = G.ownershipCounts(state)[me];
-    var oppMoves = legalMoves(G, state, opp);
+    // Enumerate AND simulate opponent moves against an opponent-to-move clone,
+    // because legalMoves()/canPlay()/applyMove() all gate on `current`. (The
+    // Tutor calls this on the post-move board where current is already the
+    // opponent, but doing it explicitly keeps the helper correct in isolation.)
+    var oppView = G.cloneState(state);
+    oppView.current = opp;
+    var oppMoves = legalMoves(G, oppView, opp);
     var worst = 0; // largest number of my cells a single opp reply removes
     for (var k = 0; k < oppMoves.length; k++) {
-      var clone = G.cloneState(state);
-      // The opponent is the side to move in this hypothetical; applyMove uses
-      // the passed player id, so force it to the opponent regardless of
-      // state.current (which, after our move, may be the opponent anyway).
+      var clone = G.cloneState(oppView);
       if (!G.applyMove(clone, opp, oppMoves[k].r, oppMoves[k].c)) continue;
       var myAfter = G.ownershipCounts(clone)[me];
       var lost = myNow - myAfter; // cells of ours the opponent took (net)

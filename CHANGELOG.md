@@ -29,6 +29,52 @@ the nearest user-facing entry.
 
 ---
 
+## v38 — Random difficulty: Easy + new Medium level (and a Tutor defence fix)
+
+Player-facing:
+
+- **Random now has two difficulty levels** (set per Random player under
+  **Settings → Players**):
+  - **Easy** — pure random: any legal move. The gentle beginner / chaos
+    opponent. Still the **default**.
+  - **Medium** — mostly random, but **hits back**: when the opponent could
+    capture one of its cells on their very next move, it strikes first, taking
+    the capture that removes the most opponent cells. Otherwise it plays random.
+  - When both players are Random, each difficulty row is labelled by seat.
+- **Bug fix:** the Tutor's defensive check (added in v37) wasn't firing in some
+  positions — it now works as intended.
+
+Background:
+
+- This started as a richer three-level idea (Easy = random + hit-back; Medium =
+  follow arms races; Hard = strike to conquer, ranked by chain metrics).
+  Agent-vs-agent testing (`test/agents.harness.js`) collapsed it to two levels
+  for honest reasons:
+  - A ranking metric among candidate captures (chain length / opponent cells
+    erupted / opponent cells captured) made only a **noise-level** difference
+    (~53% at best), so the elaborate per-level metrics were dropped.
+  - "Follow the arms race but never conquer" was **behaviourally** distinct but
+    **win-neutral** vs plain reactive play.
+  - Crucially, "**always strike to conquer**" turned out to be *weaker* than
+    "only hit back when threatened" (~45% vs ~55%): this game is swingy, so
+    firing cascades greedily tends to hand the opponent a bigger counter. The
+    documented strategy note that "grab the most orbs" is a misleading heuristic
+    [1] shows up directly in self-play.
+  - Reactive hit-back, by contrast, beats pure random **~85%** — a real,
+    correctly-ordered rung. So the shipped levels are **Easy = pure random** and
+    **Medium = reactive hit-back**; the conquer idea was dropped as
+    counterproductive.
+- The defence fix: the opponent-reply probe (shared by Tutor-Medium and
+  Random-Medium) enumerated/simulated the opponent's moves on a board whose
+  `current` was still the mover, so `canPlay()`/`applyMove()` rejected them
+  (turn-gated) and the probe silently returned "no threat". It now runs against
+  an opponent-to-move clone. Tutor-Medium happened to call it on the
+  already-advanced post-move board so it mostly worked there; Random-Medium's
+  hit-back relied on the pre-move board and was fully broken until this fix.
+- Harness (N=200): Random-Medium beats Random-Easy ~**87%**; Random-Medium vs
+  Tutor-Easy ~**34% / 66%** — Random stays below the heuristic family, keeping
+  the "three styles" picture (chaos / heuristic / search).
+
 ## v37 — Tutor difficulty: Easy + new Medium level
 
 Player-facing:

@@ -55,7 +55,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 7; // v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 8; // v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -90,6 +90,10 @@
       // the default so a first opponent stays beatable/learnable) or 'medium'
       // (adds a defensive opponent-reply lookahead — a step toward Shark).
       tutorLevel: { 1: 'easy', 2: 'easy' },
+      // Random difficulty PER SEAT: 'easy' (default — mostly chaos, but hits
+      // back when immediately threatened) or 'medium' (strikes to conquer any
+      // capture it sees). Still positionally blind — the "chaos" family.
+      randomLevel: { 1: 'easy', 2: 'easy' },
       // Which player makes the FIRST move of the NEXT game. The game alternates
       // this after each COMPLETED game (so the player who went second last game
       // opens the next one). Persisted so the alternation survives reloads.
@@ -185,6 +189,15 @@
           [1, 2].forEach(function (n) {
             var lv = parsed.tutorLevel[n];
             if (lv === 'easy' || lv === 'medium') mem.tutorLevel[n] = lv;
+          });
+        }
+
+        // randomLevel: per-seat since v8; absent in older records (keep the
+        // default, 'easy'). Only adopt known values per seat.
+        if (parsed.randomLevel && typeof parsed.randomLevel === 'object') {
+          [1, 2].forEach(function (n) {
+            var rlv = parsed.randomLevel[n];
+            if (rlv === 'easy' || rlv === 'medium') mem.randomLevel[n] = rlv;
           });
         }
 
@@ -296,6 +309,14 @@
       },
       setTutorLevel: function (n, lv) {
         mem.tutorLevel[n] = (lv === 'medium') ? 'medium' : 'easy';
+        persist();
+      },
+      // --- Random difficulty (easy / medium), per seat ---
+      getRandomLevel: function (n) {
+        return (mem.randomLevel[n] === 'medium') ? 'medium' : 'easy';
+      },
+      setRandomLevel: function (n, lv) {
+        mem.randomLevel[n] = (lv === 'medium') ? 'medium' : 'easy';
         persist();
       },
       // --- Shark difficulty (search depth), per seat ---
@@ -1274,6 +1295,13 @@
       if (!aiAgents[tkey]) aiAgents[tkey] = AGENTS.makeTutor(G, { level: level });
       return aiAgents[tkey];
     }
+    if (type === 'random') {
+      // Per-seat Random difficulty (easy / medium), keyed by seat+level.
+      var rlevel = prefs.getRandomLevel(seat);
+      var rkey = 'random@' + seat + '@' + rlevel;
+      if (!aiAgents[rkey]) aiAgents[rkey] = AGENTS.makeRandom(G, { level: rlevel });
+      return aiAgents[rkey];
+    }
     if (!aiAgents[type]) {
       aiAgents[type] = AGENTS.makeRandom(G);
     }
@@ -1686,6 +1714,40 @@
     });
   }
 
+  // Per-seat Random difficulty controls, mirroring the Tutor/Shark rows.
+  var randomRows = {
+    1: {
+      row: document.getElementById('random-level-row-1'),
+      sel: document.getElementById('random-level-1'),
+      label: document.getElementById('random-level-label-1'),
+    },
+    2: {
+      row: document.getElementById('random-level-row-2'),
+      sel: document.getElementById('random-level-2'),
+      label: document.getElementById('random-level-label-2'),
+    },
+  };
+
+  function isRandom(n) { return prefs.getPlayerType(n) === 'random'; }
+
+  function syncRandomLevelUI() {
+    var canRandom = !!AGENTS && !!AGENTS.makeRandom;
+    var both = isRandom(1) && isRandom(2);
+    [1, 2].forEach(function (n) {
+      var r = randomRows[n];
+      if (!r.row) return;
+      var show = canRandom && isRandom(n);
+      r.row.hidden = !show;
+      if (r.sel) r.sel.value = prefs.getRandomLevel(n);
+      if (r.label) {
+        // Both seats Random -> name the SEAT so the two rows are distinguishable.
+        r.label.textContent = both
+          ? ('Player ' + n + ' difficulty')
+          : 'Random difficulty';
+      }
+    });
+  }
+
   function syncPlayerTypeUI() {
     var sels = { 1: p1TypeSel, 2: p2TypeSel };
     [1, 2].forEach(function (n) {
@@ -1696,12 +1758,14 @@
     });
     syncSharkLevelUI();
     syncTutorLevelUI();
+    syncRandomLevelUI();
   }
 
   function onPlayerTypeChange(n, sel) {
     prefs.setPlayerType(n, sel.value);
     syncSharkLevelUI(); // show/hide the Shark difficulty row as needed
     syncTutorLevelUI(); // show/hide the Tutor difficulty row as needed
+    syncRandomLevelUI(); // show/hide the Random difficulty row as needed
     // Re-render so the turn label (which shows the agent name for an AI seat)
     // and the rename affordance update; render() also re-evaluates whether the
     // CURRENT player is now an AI and, if so, schedules its move.
@@ -1734,6 +1798,17 @@
       // agentFor() keys its Tutor cache by seat+level, so this seat's next Tutor
       // move uses the new level automatically, without disturbing the other
       // seat's Tutor. Re-render in case this Tutor is to move now.
+      render();
+    });
+  });
+  [1, 2].forEach(function (n) {
+    var sel = randomRows[n].sel;
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      prefs.setRandomLevel(n, this.value);
+      // agentFor() keys its Random cache by seat+level, so this seat's next
+      // Random move uses the new level automatically. Re-render in case this
+      // Random is to move now.
       render();
     });
   });

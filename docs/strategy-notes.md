@@ -98,7 +98,7 @@ rather than three rungs of a single strength scale:
 
 | Agent | Style | How it chooses |
 |---|---|---|
-| **Random** | Chaos / sparring dummy | Any legal move, uniformly. |
+| **Random** | Chaos / sparring dummy | **Easy** plays any legal move, uniformly. **Medium** is mostly random but *hits back*: when the opponent could capture one of its cells next move, it strikes the best available capture first (otherwise random). Still positionally blind. |
 | **Tutor** | Positional **heuristic** (human-style) | Scores each move by a one-ply evaluation of the resulting board. **Easy** uses the documented positional tips (corners→edges, mild chain/capture terms). **Medium** adds a bounded *one-opponent-reply lookahead* — it defends cells under local threat and refuses to hand over an immediate capturing cascade. |
 | **Shark** | **Forward search** (machine-style) | Minimax + alpha-beta to a configurable depth (**Easy 2 / Medium 3 / Hard 4**) over the real cascade resolution. Finds counter-intuitive, cascade-dependent lines a human can't compute by eye. |
 
@@ -128,6 +128,19 @@ different kinds of opposition — not as a single monotonic difficulty dial.
 Someone climbing in difficulty might reasonably go Tutor-Easy → Shark-Easy →
 Tutor-Medium → Shark-Medium → Shark-Hard, but the heuristic and search families
 are not meant to interleave perfectly.
+
+**A counter-intuitive calibration finding (why Random has no "conquer" level).**
+When designing Random's levels, an "always strike to conquer — grab every
+capture you can" agent tested *weaker* than one that only strikes **reactively**
+(hits back only when the opponent could capture it next move): roughly **45% vs
+55%** in self-play. The reason is the game's **swinginess** — firing a cascade
+greedily usually loads the board in a way that hands the opponent an even larger
+counter-cascade. Reactive hit-back, which erupts only to avoid being captured,
+beats pure random ~**85%**. This is the same lesson as the classic "whoever has
+the most orbs is winning" being a *misleading* heuristic [1]: raw aggression and
+material-grabbing are poor proxies for winning here. So Random ships as
+**Easy = pure random** and **Medium = reactive hit-back**; the greedy-conquer
+idea was measured and dropped.
 
 ## Relevance to this project's AI (future work)
 
