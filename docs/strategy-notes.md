@@ -91,6 +91,44 @@ rules-of-thumb that approximate it. KJumpingCube reflects this unity in one
 engine: its computer player has **adjustable skill levels** and can even hand a
 human **hints** from the same evaluation it would use to play [2][3].
 
+## The three machine players are *styles*, not a strict strength ladder
+
+The shipped AI offers three agents, each a different *way of choosing a move*
+rather than three rungs of a single strength scale:
+
+| Agent | Style | How it chooses |
+|---|---|---|
+| **Random** | Chaos / sparring dummy | Any legal move, uniformly. |
+| **Tutor** | Positional **heuristic** (human-style) | Scores each move by a one-ply evaluation of the resulting board. **Easy** uses the documented positional tips (corners→edges, mild chain/capture terms). **Medium** adds a bounded *one-opponent-reply lookahead* — it defends cells under local threat and refuses to hand over an immediate capturing cascade. |
+| **Shark** | **Forward search** (machine-style) | Minimax + alpha-beta to a configurable depth (**Easy 2 / Medium 3 / Hard 4**) over the real cascade resolution. Finds counter-intuitive, cascade-dependent lines a human can't compute by eye. |
+
+Because these are different *tools*, their strengths **overlap rather than form
+a clean line** — and that is by design, not a defect.
+
+**Documented overlap: Tutor-Medium is stronger than Shark-Easy.** In
+agent-vs-agent testing (`test/agents.harness.js`, first move alternated, wins
+tallied by agent):
+
+| Matchup | Result (≈, N=300, 3 seeds) |
+|---|---|
+| Tutor-Medium vs Shark-Easy (depth 2) | **Tutor-Medium ~68–71%** |
+| Tutor-Medium vs Shark-Medium (depth 3) | Shark ~60% |
+| Shark-Easy vs Tutor-Easy | Shark ~70–90% |
+
+So the rough ordering is **Tutor-Easy < Shark-Easy < Tutor-Medium <
+Shark-Medium ≤ Shark-Hard** — i.e. **Tutor-Medium slots *above* the weakest
+Shark**, not below it. Why: Shark-Easy only looks two plies ahead with a static
+evaluation that lacks Tutor-Medium's explicit *"don't expose a capturable
+cluster"* rule, so at shallow depth it walks into exactly the giveaway Medium is
+built to avoid; Shark needs depth 3 before its search reliably punishes Medium.
+
+This is **intended and left as-is**: the three agents are offered as distinct
+playing *styles* (random, heuristic, deep search), so a player can experience
+different kinds of opposition — not as a single monotonic difficulty dial.
+Someone climbing in difficulty might reasonably go Tutor-Easy → Shark-Easy →
+Tutor-Medium → Shark-Medium → Shark-Hard, but the heuristic and search families
+are not meant to interleave perfectly.
+
 ## Relevance to this project's AI (future work)
 
 The engine is already shaped for this (see the README *Extending it* section):
