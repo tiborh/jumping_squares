@@ -29,6 +29,42 @@ the nearest user-facing entry.
 
 ---
 
+## v39 — Tutor Medium reworked: contest the 1-cell radius (kill the fortress)
+
+Player-facing:
+
+- **Tutor Medium** no longer falls for the classic exploit — approaching a Tutor
+  corner/edge diagonally and quietly out-building it to surround and capture.
+  Medium now **watches the cells touching its own pieces (edge- and
+  vertex-sharing)** and contests local races:
+  - **Edge-adjacent build-up** — if an opponent cell orthogonally next to a
+    Tutor cell draws level, Medium **reinforces** its own cell to stay ahead in
+    the race (matching 2–2, 3–3…), and captures by eruption when it can.
+  - **Diagonal (vertex) approach** — the starter-guide trick is to build *just
+    outside* a corner's blast range, diagonally. Medium recognises the intent
+    and **claims the edge cell between its piece and the intruder**, extending
+    its influence down the open side rather than letting the pincer form.
+  - Otherwise it plays like **Easy** (corners → edges).
+
+Background:
+
+- This **replaces** the v37/v38 Medium heuristic (a one-opponent-reply capture-
+  exposure penalty). Playtesting showed that penalty didn't stop the fortress:
+  the threat matures over *several* of the opponent's moves, so a 1-ply
+  exposure check reacts too late. The new design is explicitly **1-cell-radius
+  reactive**, matching how the Tutor is meant to "think" (local, readable — not
+  a search; that is Shark). Turn priority: eruption-capture → edge-race reinforce
+  → diagonal in-between claim → Easy build; last-resort capture over feeding a
+  doomed cell is covered by Easy's own terms.
+- The in-between-cell choice follows a specific rule: never plant edge-adjacent
+  to a *different* enemy edge piece; prefer the side that extends influence (own
+  piece close on one side, open space — no opponent within 3 — on the other).
+- Deterministic tests assert each behaviour (Case A reinforce, Case B in-between,
+  eruption-capture) with an Easy-vs-Medium contrast; a scripted "approach"
+  opponent confirms Medium retains more territory and wins more often than Easy
+  against it. (Honest caveat: being 1-radius, Medium still won't out-read a
+  patient multi-move siege — that is Shark's job.)
+
 ## v38 — Random difficulty: Easy + new Medium level (and a Tutor defence fix)
 
 Player-facing:

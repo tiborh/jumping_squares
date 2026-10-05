@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '38';
+  var VERSION = '39';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '39', text: 'Tutor Medium reworked so the \u201Capproach a corner and out-build it\u201D trick no longer works: it now watches the cells touching its own pieces and contests local races \u2014 matching an adjacent build-up, and claiming the edge cell between its piece and a diagonal intruder to extend its influence.' },
     { v: '38', text: 'Random now has two levels (Settings \u2192 Players, per Random): Easy (pure random \u2014 the gentle beginner) and Medium (mostly random, but hits back when the opponent is about to capture one of its cells). Also fixes the Tutor\u2019s defence check, which wasn\u2019t firing in some positions.' },
     { v: '37', text: 'Tutor now has two levels (Settings \u2192 Players, per Tutor): Easy (the original gentle opponent, the default) and Medium \u2014 Medium defends its position and won\u2019t hand you an easy chain-reaction, narrowing the gap toward Shark. When both players are the same AI, each difficulty row is labelled by seat (Player 1 / Player 2).' },
     { v: '35', text: 'Follow-up to the Player-2 save fix: a freshly started Player-2-opening game is now also saved correctly on first load (an edge case could still discard it). Internal: more save/restore tests and changelog tidy-ups.' },
@@ -79,7 +80,6 @@
     { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },
     { v: '28', text: 'New AI opponent \u2014 Shark: it searches moves ahead and plays strongly, exploiting cascades. Pick it per player under Settings \u2192 Players, and set its difficulty (Easy / Medium / Hard).' },
     { v: '27', text: 'Play against the computer: under Settings \u2192 Players, set either player to Random or Tutor (a simple human-style AI). AI moves use your propagation speed. A stronger AI is planned.', experimental: true },
-    { v: '26', text: 'Top-bar tidy-up: the win tally is now a button (click to reset to 0 : 0, with confirmation), and the tile-count readout starts a New Game (also with confirmation). Renaming a player no longer resets the tally. Confirmations use an in-app dialog.' },
   ];
 
   // Owner sentinel for an empty/neutral cell.

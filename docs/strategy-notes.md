@@ -99,7 +99,7 @@ rather than three rungs of a single strength scale:
 | Agent | Style | How it chooses |
 |---|---|---|
 | **Random** | Chaos / sparring dummy | **Easy** plays any legal move, uniformly. **Medium** is mostly random but *hits back*: when the opponent could capture one of its cells next move, it strikes the best available capture first (otherwise random). Still positionally blind. |
-| **Tutor** | Positional **heuristic** (human-style) | Scores each move by a one-ply evaluation of the resulting board. **Easy** uses the documented positional tips (corners→edges, mild chain/capture terms). **Medium** adds a bounded *one-opponent-reply lookahead* — it defends cells under local threat and refuses to hand over an immediate capturing cascade. |
+| **Tutor** | Positional **heuristic** (human-style) | **Easy** scores each move by a one-ply positional evaluation (corners→edges, mild chain/capture terms). **Medium** is Easy plus **1-cell-radius reactive play**: it watches the cells touching its own pieces (edge *and* vertex) and contests local arms races — reinforcing an edge cell an opponent is drawing level with, and claiming the edge cell between its piece and a *diagonal* intruder to extend influence — so the "approach a corner and out-build it" fortress no longer works. Still radius-1 only (no search). |
 | **Shark** | **Forward search** (machine-style) | Minimax + alpha-beta to a configurable depth (**Easy 2 / Medium 3 / Hard 4**) over the real cascade resolution. Finds counter-intuitive, cascade-dependent lines a human can't compute by eye. |
 
 Because these are different *tools*, their strengths **overlap rather than form
