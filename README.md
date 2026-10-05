@@ -50,6 +50,14 @@ before clearing the board. When a round ends, the end-of-round screen also
 offers a **New Game** button. On a phone, the board auto-sizes to fill the
 viewport and re-fits on rotation.
 
+**Turn-taking across games.** After a game **ends**, the next game (via New Game
+or Play Again) gives the **first move to the other player** — the opener
+alternates across completed games so the same side doesn't always start. The
+choice is remembered in your browser. Starting a New Game **mid-play**
+(abandoning an unfinished game) does *not* flip the opener. Resetting the win
+tally (below) can also reset the opener to Player 1 — a checkbox in the reset
+dialog, on by default.
+
 **Player names & score.** Click a player's **name** (the turn indicator at the
 top) **on their turn** to rename them: type a name, then press **Enter** or
 **click away** to save, or **Esc** to cancel. Renaming is **purely cosmetic** —
@@ -61,7 +69,7 @@ score). Both the names and the tally are **remembered in your browser** (see
 button): you'll be asked to **confirm**, and on confirm the score resets to
 **0 : 0**.
 
-**Propagation speed (Settings).** Click **⚙ Settings** to control how a cascade
+**Propagation delay (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
 
 - **Instant** — the whole cascade resolves immediately.
@@ -73,22 +81,40 @@ resolves, via a slider:
   is previewed as a **shadow** on the cells it will change, so you can see where
   the wave is about to go before committing it.
 
+The slider is labelled **delay** (not speed) because a *higher* number means a
+*longer* pause between steps — i.e. slower, easier to follow.
+
 Opening **Settings** while a cascade is animating **pauses** it (the board
-freezes); it resumes when you close the dialog. Changing the speed mid-cascade
+freezes); it resumes when you close the dialog. Changing the delay mid-cascade
 applies from that point on.
 
 **Players — play against the computer (Settings).** Under **⚙ Settings →
-Players**, set either player (or both) to an AI:
+Players**, set either player (or both) to an AI. Each AI has its own
+**difficulty** (set per player; when both seats are the same AI, the two
+difficulty rows are labelled by seat):
 
-- **Random** — plays any legal move (a gentle sparring partner).
-- **Tutor** — a simple, human-style strategy (take corners then edges, win the
-  local arms race, guard your chains); good for *learning* the game.
+- **Random** — mostly chaotic, a gentle sparring partner.
+  - *Easy* — plays any legal move, uniformly.
+  - *Medium* — mostly random, but **hits back**: when you're about to capture
+    one of its cells next move, it strikes first instead.
+- **Tutor** — a human-style strategy (take corners then edges, win the local
+  arms race, guard your chains); good for *learning* the game.
+  - *Easy* — the gentle, purely positional version (the default). A good first
+    opponent to learn to beat.
+  - *Medium* — stronger: it avoids leaving a cell you could capture next turn,
+    and **watches the squares next to its own pieces** to contest local races
+    (matching an adjacent build-up, and claiming the edge cell between its piece
+    and a diagonal intruder) — so you can't quietly surround and out-build it.
 - **Shark** — searches several moves ahead and plays strongly, exploiting
   cascades that are hard to read by eye. Its **difficulty** (Easy / Medium /
-  Hard) sets how far it looks ahead — the control appears under Players
-  whenever a Shark is selected.
+  Hard) sets how far it looks ahead.
 
-AI moves use the chosen **propagation speed**, so you can watch their cascades;
+The three AIs are distinct *styles* (chaos / heuristic / search) rather than a
+single strength ladder — their strengths overlap (e.g. Tutor-Medium can beat
+Easy Shark). See [`docs/strategy-notes.md`](docs/strategy-notes.md) for the
+measured match-ups and how each AI "thinks".
+
+AI moves use the chosen **propagation delay**, so you can watch their cascades;
 two AIs play each other automatically. You can open **Settings** at any time
 mid-game to change who controls a player (it pauses play while open). See
 [`docs/strategy-notes.md`](docs/strategy-notes.md) for how the Tutor's
@@ -99,8 +125,10 @@ heuristics and the Shark's search relate to human vs. machine play.
 ```
 index.html          # UI shell + responsive board styling (open this to play)
 js/game.js          # Pure game logic (no DOM) — rules, overflow, win check
+js/agents.js        # AI opponents (Random / Tutor / Shark), DOM-free
 js/ui.js            # DOM renderer + input wiring
 test/game.test.js   # Node rule-verification harness (no dependencies)
+test/agents.harness.js  # Agent-vs-agent win-rate harness (stats, not pass/fail)
 ```
 
 The game logic in `js/game.js` is intentionally **DOM-free** and dual-exported
@@ -120,8 +148,11 @@ The suite covers capacities, legal-move rules, single overflow, capture,
 chain-reaction cascades, win detection, state-snapshot independence,
 stepped-cascade equivalence (the stepped path matches the instant result),
 save validation and rehydration (`loadState`: bounds, cell/owner invariants,
-the winner + turn-gate rule, settled-state and point-conservation checks), and
-version-tag consistency (see below).
+the winner + turn-gate rule, settled-state and point-conservation checks,
+including non-player-1 openers), the configurable **starting player**, the
+**AI difficulty levels** (Random and Tutor Easy/Medium behaviours), and
+version-tag consistency (see below). Agent *strength* is measured separately by
+`test/agents.harness.js` (win-rate stats, not pass/fail).
 
 ## Persistence
 
@@ -159,7 +190,7 @@ How it works and its boundaries:
   as text.
 
 Implementation note: this lives in a tiny preferences module in `js/ui.js`,
-written so other settings (e.g. the propagation speed) can be persisted the
+written so other settings (e.g. the propagation delay) can be persisted the
 same way later.
 
 ## Development setup: copyright-year hook
@@ -254,7 +285,7 @@ The architecture keeps rules and rendering separate to make extensions easy:
 - **Animations** *(implemented)* — the engine exposes incremental cascade
   stepping (`placeDot`, `hasOverflow`, `stepOverflowsOnce`,
   `finalizeAfterCascade`) so the UI can resolve a cascade one generation at a
-  time; this powers the settable propagation speed and the manual **› Step**
+  time; this powers the settable propagation delay and the manual **› Step**
   mode. `applyMove` still resolves instantly in one call.
 - **Undo / replay** — snapshot with `cloneState()` before each move.
 
@@ -272,7 +303,7 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] Correct win rule for this variant: win only by owning the **entire**
       board (no opponent cells **and** no neutral cells)
 - [x] Fair opening: no win can be declared before every player has moved
-- [x] Settable **propagation speed** (Settings): instant, 100–1000 ms animated
+- [x] Settable **propagation delay** (Settings): instant, 100–1000 ms animated
       cascades (default 500 ms), and a manual **› Step** mode with a `>` button
       and a shadow preview of the next step
 - [x] Editable **player names** (click the turn indicator on your turn),
@@ -280,13 +311,18 @@ Status of the project and planned work. Done items reflect the current build.
 - [x] **Win tally** per name pair, shown in the status line and the
       end-of-round dialog; accumulates across rounds; reset it by clicking the
       tally (with confirmation) — renaming a player is purely cosmetic
+- [x] **Turn-taking across games**: after a completed game the opener
+      alternates to the other player (remembered in the browser); the tally
+      reset can also reset the opener (checkbox, on by default)
+- [x] **Placement / propagation flash**: a placed dot pulses its square and
+      dots, and the pulse follows the cascade (honours `prefers-reduced-motion`)
 - [x] **Auto-save & restore** (board persistence, Phase 1): the current game is
       saved to `localStorage` and restored seamlessly on reload / reopened tab;
       a **Settings → Persistence** panel toggles auto-save and clears saved
       data; an engine-side `loadState` validator guards untrusted saves
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (128 assertions, no dependencies)
+- [x] Node test harness (172 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
@@ -299,9 +335,11 @@ Status of the project and planned work. Done items reflect the current build.
       difficulty, and device calibration*).
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
 - [x] Animated cascades — settable speed + manual step mode (see Done above)
-- [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**
-      (1-ply heuristic), and **Shark** (minimax + alpha-beta, Easy/Medium/Hard
-      depth), selectable per player under Settings → Players. See
+- [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**,
+      and **Shark**, each **per-player and per-difficulty**: Random (Easy pure /
+      Medium reactive-hit-back), Tutor (Easy positional / Medium adds
+      1-cell-radius race-contesting), Shark (minimax + alpha-beta, Easy/Medium/
+      Hard depth). Selectable per player under Settings → Players. See
       [`docs/strategy-notes.md`](docs/strategy-notes.md) and
       `test/agents.harness.js` (agent-vs-agent runner).
 - [ ] Undo / replay via per-move snapshots
@@ -362,7 +400,7 @@ notes before implementation; nothing below is built yet.
   (dice-face arrangement), reinforcing the casting metaphor.
 - In **adder mode**, the current pip rendering applies.
 
-**4. Distribution speed (settable).** *(Implemented — see "Propagation speed"
+**4. Distribution speed (settable).** *(Implemented — see "Propagation delay"
 under How to play.)* How fast an overflow/cascade resolves:
 
 - **Instantaneous** — resolve the whole cascade immediately.
