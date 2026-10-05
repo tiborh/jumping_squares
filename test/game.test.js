@@ -738,6 +738,37 @@ console.log('starting player');
   var badSP = G.cloneState(fresh2);
   badSP.startingPlayer = 3; // only 2 players
   ok(G.loadState(badSP) === null, 'save with out-of-range startingPlayer rejected');
+
+  // --- TERMINAL (finished) non-player-1 opener ------------------------------
+  // A finished board that was OPENED BY PLAYER 2 must validate against the
+  // opener-relative turn-order too. With startingPlayer=2 and moveCount=4 the
+  // moves go p2,p1,p2,p1, so the last (winning) move was player 1:
+  //   moverOf(3) = ((2-1+3) % 2) + 1 = 1  → winner must be 1, current == winner.
+  var finP2 = {
+    rows: 2, cols: 2, players: 2,
+    startingPlayer: 2, current: 1, moveCount: 4, winner: 1,
+    turnsTaken: [0, 2, 2], // p1 and p2 each took 2 turns
+    cells: [
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+      { owner: 1, value: 1 }, { owner: 1, value: 1 },
+    ],
+  };
+  ok(G.loadState(finP2) !== null,
+     'finished board opened by player 2 (winner 1) round-trips');
+
+  // The SAME finished board claiming opener 1 is rejected: with opener 1 the
+  // last mover of 4 moves is player 2 (moverOf(3)=2), so winner 1 is inconsistent.
+  var finP2WrongOpener = JSON.parse(JSON.stringify(finP2));
+  finP2WrongOpener.startingPlayer = 1;
+  ok(G.loadState(finP2WrongOpener) === null,
+     'finished p2-opening board claiming opener 1 is rejected');
+
+  // A finished p2-opening save with a turnsTaken that doesn't match the opener
+  // distribution is rejected (turn-gate can't be proven).
+  var finP2BadTurns = JSON.parse(JSON.stringify(finP2));
+  finP2BadTurns.turnsTaken = [0, 3, 1]; // sum 4 but wrong split for p2,p1,p2,p1
+  ok(G.loadState(finP2BadTurns) === null,
+     'finished p2-opening board with mismatched turnsTaken is rejected');
 })();
 
 console.log('version wiring');
