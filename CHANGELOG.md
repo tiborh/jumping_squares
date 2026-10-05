@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v36 — Tutor difficulty: Easy + new Medium level
+## v37 — Tutor difficulty: Easy + new Medium level
 
 Player-facing:
 
@@ -68,6 +68,10 @@ Background:
   test proves Medium avoids a higher-magnitude capture exposure that Easy (which
   only applies a flat "adjacent to an enemy critical cell" penalty) treats as
   equal and walks into part of the time.
+- When both seats are the same AI, the per-seat difficulty rows are labelled by
+  **seat** ("Player 1 / Player 2 difficulty") rather than the agent name — since
+  both would otherwise read the identical "Tutor (AI) / Shark (AI) difficulty".
+  (Applied to the Shark rows too, which had the same ambiguity.)
 
 ## v35 — Follow-up: fresh Player-2 board also saves on first load
 

@@ -1638,8 +1638,12 @@
       r.row.hidden = !show;
       if (r.sel) r.sel.value = String(prefs.getSharkDepth(n));
       if (r.label) {
+        // When BOTH seats are Shark, playerName() returns the same literal
+        // "Shark (AI)" for each, so name the SEAT ("Player N") to keep the two
+        // difficulty rows distinguishable; with a single Shark the generic
+        // "Shark difficulty" reads cleanest.
         r.label.textContent = both
-          ? (playerName(n) + ' difficulty')
+          ? ('Player ' + n + ' difficulty')
           : 'Shark difficulty';
       }
     });
@@ -1673,8 +1677,10 @@
       r.row.hidden = !show;
       if (r.sel) r.sel.value = prefs.getTutorLevel(n);
       if (r.label) {
+        // Both seats Tutor -> playerName() is "Tutor (AI)" for each, so name the
+        // SEAT ("Player N") so the two rows are distinguishable.
         r.label.textContent = both
-          ? (playerName(n) + ' difficulty')
+          ? ('Player ' + n + ' difficulty')
           : 'Tutor difficulty';
       }
     });
