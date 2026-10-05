@@ -870,6 +870,110 @@ console.log('tutor difficulty (easy / medium)');
      'Medium Tutor returns a legal move');
 })();
 
+console.log('random difficulty (easy / medium)');
+(function () {
+  function makeRng(seed) {
+    var s = (seed >>> 0) || 1;
+    return function () {
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Level API: default easy; explicit medium; unknown -> easy.
+  ok(A.makeRandom(G).level === 'easy', 'Random defaults to level "easy"');
+  ok(A.makeRandom(G, { level: 'medium' }).level === 'medium',
+     'Random honours level "medium"');
+  ok(A.makeRandom(G, { level: 'nonsense' }).level === 'easy',
+     'Random falls back to "easy" for an unknown level');
+
+  function oppCanCapture(state, me, opp) {
+    var n = G.ownershipCounts(state)[me];
+    var oppView = G.cloneState(state);
+    oppView.current = opp;
+    for (var r = 0; r < oppView.rows; r++) {
+      for (var c = 0; c < oppView.cols; c++) {
+        if (!G.canPlay(oppView, opp, r, c)) continue;
+        var cl = G.cloneState(oppView);
+        G.applyMove(cl, opp, r, c);
+        if (n - G.ownershipCounts(cl)[me] > 0) return true;
+      }
+    }
+    return false;
+  }
+
+  // --- When NOT threatened, NEITHER level strikes (both play random) --------
+  // 3x3: P1 (to move) has a critical corner (0,0) next to a P2 cell at (0,1);
+  // playing (0,0) would erupt and capture it. But the opponent has NO immediate
+  // capture against P1, so under option-1 behaviour BOTH levels just play
+  // random here (Easy never reacts; Medium only hits back when threatened).
+  function craftMedium() {
+    var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+    s.cells[0].owner = 1; s.cells[0].value = 2; // (0,0) P1 critical eruptor
+    s.cells[1].owner = 2; s.cells[1].value = 1; // (0,1) P2 capturable
+    s.moveCount = 3; s.current = 1; s.turnsTaken = [0, 2, 1];
+    return s;
+  }
+  var cm = craftMedium();
+  ok(oppCanCapture(cm, 1, 2) === false,
+     'fixture: opponent cannot capture P1 immediately (nobody threatened)');
+  (function () {
+    var cl = G.cloneState(craftMedium());
+    var before = G.ownershipCounts(cl)[2];
+    G.applyMove(cl, 1, 0, 0);
+    ok(before - G.ownershipCounts(cl)[2] === 1,
+       'fixture: playing (0,0) captures one opponent cell');
+  })();
+  var easyStruck = 0, medStruck = 0, N = 100;
+  for (var seed = 1; seed <= N; seed++) {
+    var e = A.makeRandom(G, { rng: makeRng(seed), level: 'easy' }).chooseMove(craftMedium());
+    var m = A.makeRandom(G, { rng: makeRng(seed), level: 'medium' }).chooseMove(craftMedium());
+    if (e.r === 0 && e.c === 0) easyStruck++;
+    if (m.r === 0 && m.c === 0) medStruck++;
+  }
+  ok(medStruck < N,
+     'Medium does NOT strike when unthreatened (plays random) (' + medStruck + '/' + N + ')');
+  ok(easyStruck < N,
+     'Easy does NOT strike when unthreatened (plays random) (' + easyStruck + '/' + N + ')');
+
+  // --- When threatened: MEDIUM hits back; EASY stays pure random ------------
+  // Mutual-critical adjacency: P1 corner (0,0) critical AND the adjacent P2
+  // edge cell (0,1) critical (so the opponent could erupt-capture P1 next
+  // move). Medium must erupt (0,0) first to capture (hit back); Easy, being
+  // pure random, does NOT react — it only lands on (0,0) by chance.
+  function craftThreat() {
+    var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+    s.cells[0].owner = 1; s.cells[0].value = 2; // (0,0) P1 critical corner
+    s.cells[1].owner = 2; s.cells[1].value = 3; // (0,1) P2 critical edge (cap 3) -> can erupt
+    s.moveCount = 5; s.current = 1; s.turnsTaken = [0, 2, 3];
+    return s;
+  }
+  var ct = craftThreat();
+  ok(oppCanCapture(ct, 1, 2) === true,
+     'fixture: opponent CAN capture P1 immediately (Medium should hit back)');
+  var medHitBack = 0, easyReacted = 0;
+  for (var seed2 = 1; seed2 <= N; seed2++) {
+    var mm = A.makeRandom(G, { rng: makeRng(seed2), level: 'medium' }).chooseMove(craftThreat());
+    var eeR = A.makeRandom(G, { rng: makeRng(seed2), level: 'easy' }).chooseMove(craftThreat());
+    if (mm.r === 0 && mm.c === 0) medHitBack++;
+    if (eeR.r === 0 && eeR.c === 0) easyReacted++;
+  }
+  ok(medHitBack === N, 'Medium always hits back when threatened (' + medHitBack + '/' + N + ')');
+  ok(easyReacted < N, 'Easy (pure random) does not reliably react (' + easyReacted + '/' + N + ')');
+
+  // Both levels return legal moves on a normal position.
+  var normal = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(normal, 1, 0, 0);
+  var rvE = A.makeRandom(G).chooseMove(normal);
+  var rvM = A.makeRandom(G, { level: 'medium' }).chooseMove(normal);
+  ok(rvE && G.canPlay(normal, normal.current, rvE.r, rvE.c),
+     'Easy Random returns a legal move');
+  ok(rvM && G.canPlay(normal, normal.current, rvM.r, rvM.c),
+     'Medium Random returns a legal move');
+})();
+
 console.log('version wiring');
 (function () {
   var fs = require('fs');

@@ -584,9 +584,11 @@
     /* The Shark difficulty row is shown only when a Shark player is selected. */
     .setting-players .shark-level-row[hidden] { display: none; }
     .setting-players .tutor-level-row[hidden] { display: none; }
-    /* The shark/tutor markers are glyphs, not colour dots: strip dot styling. */
+    .setting-players .random-level-row[hidden] { display: none; }
+    /* The shark/tutor/random markers are glyphs, not colour dots: strip dot styling. */
     .setting-players .player-dot.shark,
-    .setting-players .player-dot.tutor {
+    .setting-players .player-dot.tutor,
+    .setting-players .player-dot.random {
       background: none;
       box-shadow: none;
       border-radius: 0;
@@ -1071,6 +1073,22 @@
             <option value="shark">Shark (AI)</option>
           </select>
         </div>
+        <div class="player-row random-level-row" id="random-level-row-1" hidden>
+          <span class="player-dot random" aria-hidden="true">🎲</span>
+          <label for="random-level-1" id="random-level-label-1">Random difficulty</label>
+          <select id="random-level-1" aria-label="Player 1 Random difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+          </select>
+        </div>
+        <div class="player-row random-level-row" id="random-level-row-2" hidden>
+          <span class="player-dot random" aria-hidden="true">🎲</span>
+          <label for="random-level-2" id="random-level-label-2">Random difficulty</label>
+          <select id="random-level-2" aria-label="Player 2 Random difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+          </select>
+        </div>
         <div class="player-row tutor-level-row" id="tutor-level-row-1" hidden>
           <span class="player-dot tutor" aria-hidden="true">🎓</span>
           <label for="tutor-level-1" id="tutor-level-label-1">Tutor difficulty</label>
@@ -1106,11 +1124,13 @@
           </select>
         </div>
         <div class="setting-hint">
-          Choose who controls each player. <strong>Random</strong> plays any
-          legal move; <strong>Tutor</strong> plays a simple human-style
+          Choose who controls each player. <strong>Random</strong> plays mostly
+          random moves (chaos); <strong>Tutor</strong> plays a simple human-style
           strategy (good for learning); <strong>Shark</strong> searches ahead
           and plays strongly (it exploits cascades a human can't easily read).
-          <strong>Tutor</strong> has an <em>Easy</em> level (a gentle first
+          <strong>Random</strong> has an <em>Easy</em> level (pure random) and a
+          <em>Medium</em> level (mostly random, but hits back when the opponent
+          is about to capture one of its cells). <strong>Tutor</strong> has an <em>Easy</em> level (a gentle first
           opponent) and a <em>Medium</em> level that defends its position and
           won't hand you an easy cascade. Shark difficulty sets how many moves
           it looks ahead — higher is stronger (and thinks a little longer).
@@ -1222,8 +1242,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=37"></script>
-  <script src="js/agents.js?v=37"></script>
-  <script src="js/ui.js?v=37"></script>
+  <script src="js/game.js?v=38"></script>
+  <script src="js/agents.js?v=38"></script>
+  <script src="js/ui.js?v=38"></script>
 </body>
 </html>

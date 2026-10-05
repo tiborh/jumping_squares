@@ -99,6 +99,7 @@ function report(label, nameA, nameB, res) {
   var mkTutor = function (rng) { return A.makeTutor(G, { rng: rng }); };
   var mkTutorMed = function (rng) { return A.makeTutor(G, { rng: rng, level: 'medium' }); };
   var mkShark = function (rng) { return A.makeShark(G, { rng: rng, depth: SHARK_DEPTH }); };
+  var mkRandomMed = function (rng) { return A.makeRandom(G, { rng: rng, level: 'medium' }); };
 
   console.log('Jumping Squares — agent-vs-agent (5x5, 2 players), N=' + N +
     ', seed=' + SEED + ', sharkDepth=' + SHARK_DEPTH);
@@ -113,6 +114,17 @@ function report(label, nameA, nameB, res) {
   console.log('Tutor vs Random (expect Tutor to win clearly):');
   report('Tutor vs Random', 'Tutor', 'Random',
     matchup(mkTutor, mkRandom, N, base));
+  console.log('');
+
+  console.log('Random levels (Medium should clearly beat Easy):');
+  report('Random-Medium vs Random-Easy', 'Rand-Med', 'Rand-Easy',
+    matchup(mkRandomMed, mkRandom, N, base));
+  console.log('');
+
+  console.log('Random-Medium vs Tutor-Easy (reactive chaos vs gentle positional;');
+  console.log('expect Tutor-Easy to win — Random stays below the heuristic family):');
+  report('Random-Medium vs Tutor-Easy', 'Rand-Med', 'Tutor-Easy',
+    matchup(mkRandomMed, mkTutor, N, base));
   console.log('');
 
   console.log('Tutor vs Tutor (self-play; expect roughly balanced):');
