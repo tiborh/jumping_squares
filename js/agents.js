@@ -127,7 +127,8 @@
   }
 
   // Does the opponent have an immediate capturing reply against `me` from this
-  // position? The "immediate danger" trigger for Easy's hit-back reflex.
+  // position? The "immediate danger" trigger for Medium's reactive hit-back
+  // (Easy never probes — it plays pure random).
   function opponentCanCaptureNow(G, state, me, opp) {
     var myNow = G.ownershipCounts(state)[me];
     // Build an opponent-to-move view: legalMoves()/canPlay() gate on `current`,

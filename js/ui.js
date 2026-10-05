@@ -90,9 +90,9 @@
       // the default so a first opponent stays beatable/learnable) or 'medium'
       // (adds a defensive opponent-reply lookahead — a step toward Shark).
       tutorLevel: { 1: 'easy', 2: 'easy' },
-      // Random difficulty PER SEAT: 'easy' (default — mostly chaos, but hits
-      // back when immediately threatened) or 'medium' (strikes to conquer any
-      // capture it sees). Still positionally blind — the "chaos" family.
+      // Random difficulty PER SEAT: 'easy' (default — pure random) or 'medium'
+      // (mostly random, but hits back when the opponent could capture one of
+      // its cells next move). Still positionally blind — the "chaos" family.
       randomLevel: { 1: 'easy', 2: 'easy' },
       // Which player makes the FIRST move of the NEXT game. The game alternates
       // this after each COMPLETED game (so the player who went second last game
