@@ -29,6 +29,49 @@ the nearest user-facing entry.
 
 ---
 
+## v39 — Tutor Medium: keep the winning defence, add anti-fortress contesting
+
+Player-facing:
+
+- **Tutor Medium** is now both a clearly stronger opponent than Easy *and* no
+  longer falls for the classic exploit (approaching a Tutor corner/edge
+  diagonally and quietly out-building it to surround and capture). It combines
+  two instincts:
+  - **Don't leave a cell hanging** (its main strength): it avoids moves that
+    would let you capture one of its cells on your very next turn — especially
+    in the crowded late game, where Easy keeps giving cells away.
+  - **Contest the 1-cell radius** (the anti-fortress part): it watches the cells
+    touching its own pieces (edge *and* diagonal) and keeps pace in local races
+    — reinforcing an edge cell you're drawing level with, and claiming the edge
+    cell between its piece and a diagonal intruder to extend its influence —
+    *as long as doing so doesn't expose one of its own cells*.
+  - Otherwise it plays like **Easy** (corners → edges).
+
+Background:
+
+- Dissecting the earlier Medium showed its ~85%-vs-Easy strength came almost
+  entirely from ONE term: *"don't make a move that leaves a cell capturable on
+  the opponent's next reply"* (it changed Easy's move in ~48% of positions, and
+  three-quarters of those were late-game saves). That term, however, is purely
+  reactive one-move-ahead, so it never saw the multi-move fortress being built.
+- v39 keeps that capture-avoidance term as the **dominant** influence and adds
+  the **1-cell-radius anti-fortress contesting as secondary**: Medium takes a
+  contesting move (edge-race reinforce; diagonal in-between claim; or an
+  eruption-capture) **only when that move is itself safe** (doesn't hand over an
+  immediate capture) or winning; otherwise it defers to the capture-avoidance-
+  weighted positional move. Measured head-to-head, this precedence keeps the
+  full strength (~**87–93%** vs Easy, ~**70%** vs Easy-Shark) *and* the fortress
+  fix (beats a scripted approach-exploit far more often than Easy). Making the
+  contesting move strictly override instead collapsed the strength to ~48% vs
+  Easy — so "defence first, contesting second" was chosen deliberately.
+- The in-between-cell choice: never plant edge-adjacent to a *different* enemy
+  edge piece; prefer the side that extends influence (own piece close on one
+  side, open space — no opponent within 3 — on the other).
+- Deterministic tests assert each contesting behaviour (Case A reinforce, Case B
+  in-between, eruption-capture) with an Easy-vs-Medium contrast. Honest caveat:
+  being 1-radius, Medium still won't out-read a *patient* multi-move siege —
+  that is Shark's job.
+
 ## v38 — Random difficulty: Easy + new Medium level (and a Tutor defence fix)
 
 Player-facing:

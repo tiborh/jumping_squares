@@ -183,28 +183,63 @@
     return state.cells[i].value === G.capacity(state, r, c);
   }
 
-  // How many of `me`'s cells can the opponent capture with their BEST single
-  // reply from `state` (place one dot + resolve the full cascade)? This is the
-  // bounded, 1-ply-opponent lookahead the Medium Tutor uses: it measures the
-  // immediate chain-reaction threat the opponent has against us RIGHT NOW. The
-  // result is the maximum net loss of our cells across all legal opponent moves
-  // (0 if they can't capture any). Deliberately shallow (just the opponent's
-  // next move, cascade fully resolved) — not a search; that is Shark's job.
+  // --- Tutor-Medium reactive helpers (1-cell-radius local play) ------------
+  //
+  // Medium is Easy PLUS awareness of the single-cell neighbourhood (edge- AND
+  // vertex-sharing) around its own pieces: it contests local "arms races" that
+  // a human sets up to out-build a Tutor corner/edge (the fortress exploit).
+  // It reasons ONLY within radius 1 — that is Tutor's defining characteristic
+  // (and its limit vs Shark). See docs/strategy-notes.md.
+
+  // The 8 surrounding cells (orthogonal + diagonal) of (r,c), in bounds.
+  function radius1(G, state, r, c) {
+    var out = [];
+    for (var dr = -1; dr <= 1; dr++) {
+      for (var dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        var rr = r + dr, cc = c + dc;
+        if (rr >= 0 && rr < state.rows && cc >= 0 && cc < state.cols) {
+          out.push({ r: rr, c: cc, diag: (dr !== 0 && dc !== 0) });
+        }
+      }
+    }
+    return out;
+  }
+
+  // Would placing one dot at (r,c) for `me` capture >=1 opponent cell AND do so
+  // by ERUPTING (the placed cell goes over capacity and cascades)? Medium only
+  // values an immediate capture when it comes from an eruption (its 1-radius
+  // "win the race at the moment of blast" idea), not a passive flip.
+  function captureByEruption(G, state, me, opp, r, c) {
+    var cap = G.capacity(state, r, c);
+    var i = r * state.cols + c;
+    if (state.cells[i].value + 1 <= cap) return 0; // placing wouldn't erupt
+    var before = G.ownershipCounts(state)[opp];
+    var clone = G.cloneState(state);
+    if (!G.applyMove(clone, me, r, c)) return 0;
+    return Math.max(0, before - G.ownershipCounts(clone)[opp]);
+  }
+
+  // Index helper.
+  function at(state, r, c) { return state.cells[r * state.cols + c]; }
+
+  // The v37 Tutor-Medium "winning term": how many of `me`'s cells could the
+  // opponent capture on their single best reply from `state` (place + resolve
+  // the cascade)? Evaluated on an opponent-to-move clone (canPlay/applyMove gate
+  // on `current`). This is a reactive, one-move-ahead "don't leave a cell
+  // hanging" measure — dissection showed it is what made v37 Medium beat Easy
+  // ~85% (it stops blundering capturable cells, especially in the saturated
+  // late game). Reused here so Medium keeps that strength.
   function opponentBestImmediateCapture(G, state, me, opp) {
+    var view = G.cloneState(state);
+    view.current = opp;
+    var oppMoves = legalMoves(G, view, opp);
     var myNow = G.ownershipCounts(state)[me];
-    // Enumerate AND simulate opponent moves against an opponent-to-move clone,
-    // because legalMoves()/canPlay()/applyMove() all gate on `current`. (The
-    // Tutor calls this on the post-move board where current is already the
-    // opponent, but doing it explicitly keeps the helper correct in isolation.)
-    var oppView = G.cloneState(state);
-    oppView.current = opp;
-    var oppMoves = legalMoves(G, oppView, opp);
-    var worst = 0; // largest number of my cells a single opp reply removes
+    var worst = 0;
     for (var k = 0; k < oppMoves.length; k++) {
-      var clone = G.cloneState(oppView);
-      if (!G.applyMove(clone, opp, oppMoves[k].r, oppMoves[k].c)) continue;
-      var myAfter = G.ownershipCounts(clone)[me];
-      var lost = myNow - myAfter; // cells of ours the opponent took (net)
+      var cl = G.cloneState(view);
+      if (!G.applyMove(cl, opp, oppMoves[k].r, oppMoves[k].c)) continue;
+      var lost = myNow - G.ownershipCounts(cl)[me];
       if (lost > worst) worst = lost;
     }
     return worst;
@@ -213,10 +248,11 @@
   function makeTutor(G, opts) {
     opts = opts || {};
     var rng = opts.rng || defaultRng;
-    // Difficulty level: 'easy' (the original 1-ply heuristic, a gentle first
-    // opponent) or 'medium' (adds a bounded opponent-reply lookahead so it
-    // defends its advantage and avoids handing over immediate cascades — a step
-    // toward Easy Shark, but still readable). Unknown values fall back to easy.
+    // Difficulty level: 'easy' (the original 1-ply positional heuristic, a
+    // gentle first opponent) or 'medium' (Easy PLUS 1-cell-radius reactive
+    // play: it watches the cells touching its own pieces and contests local
+    // arms races, so the "approach a corner and out-build it" fortress that
+    // beats Easy no longer works). Unknown values fall back to easy.
     var level = (opts.level === 'medium') ? 'medium' : 'easy';
 
     // Weights (hand-set; the agent-vs-agent harness is the knob for tuning).
@@ -227,45 +263,36 @@
       lowCapacity: 4,   // bonus for the PLACED cell having low capacity (corner>edge)
       ownCritical: 2,   // per own critical cell after the move
       adjEnemyCritical: 12, // penalty for the placed cell sitting next to enemy-critical
-      // --- Medium-only weights ---
-      // Penalty PER own cell the opponent could capture on their immediate
-      // reply after this move. Large, because giving away a cascade is exactly
-      // the losing pattern Medium is meant to avoid (and it dominates the small
-      // positional bonuses so Medium won't walk into a capturable position for a
-      // couple of corner points).
-      oppCapture: 14,
+      oppCapture: 14,   // (Medium) penalty per own cell the opponent could
+                        //  capture on their immediate reply — the v37 term.
     };
 
+    // Easy's positional one-ply evaluation. For MEDIUM it also subtracts the
+    // v37 capture-avoidance term, so the positional/fallback scoring already
+    // prefers moves that don't hand the opponent an immediate capture.
     function evaluateAfter(before, after, me, placedIdx) {
-      // Win short-circuit.
       if (after.winner === me) return W.win;
       if (after.winner !== G.EMPTY && after.winner !== me) return -W.win;
 
-      var opp = (me % after.players) + 1; // 2-player assumption for the spike
+      var opp = (me % after.players) + 1;
       var cb = G.ownershipCounts(before);
       var ca = G.ownershipCounts(after);
 
       var score = 0;
-      // Net own-cell swing (captures + new cell), and opponent cells removed.
       score += W.ownDelta * (ca[me] - cb[me]);
       score += W.capture * Math.max(0, cb[opp] - ca[opp]);
 
-      // Placed-cell position: corners (cap 2) beat edges (cap 3) beat interior.
       var pr = Math.floor(placedIdx / after.cols);
       var pc = placedIdx % after.cols;
       var cap = G.capacity(after, pr, pc);
-      score += W.lowCapacity * (4 - cap); // corner +8, edge +4, interior 0 (x weight)
+      score += W.lowCapacity * (4 - cap);
 
-      // Reward own critical cells (loaded, ready to erupt next turn).
       for (var i = 0; i < after.cells.length; i++) {
         if (after.cells[i].owner === me && isCritical(G, after, i)) {
           score += W.ownCritical;
         }
       }
 
-      // Penalise the placed cell being adjacent to an enemy critical cell (they
-      // could erupt and capture it). Evaluated on the BEFORE board (the threat
-      // that existed when we chose to place there).
       var nbrs = G.neighbours(before, pr, pc);
       for (var n = 0; n < nbrs.length; n++) {
         var j = nbrs[n];
@@ -274,22 +301,191 @@
         }
       }
 
-      // --- MEDIUM: defend the advantage / don't hand over a cascade ---------
-      // Look one opponent reply ahead on the RESULTING board and penalise how
-      // many of our cells their best single move could capture. This implements
-      // both requested rules at once:
-      //   (A) "defend a threatened edge/corner" — a move that reinforces a cell
-      //       under local threat lowers the opponent's best capture, so it
-      //       scores higher than leaving the cell exposed; and
-      //   (B) "don't give an immediate chain-reaction" — a move that leaves our
-      //       cells capturable by a single enemy eruption is penalised heavily.
-      // Skipped when the move already won (handled above) or when the board is
-      // decided.
+      // v37 capture-avoidance (Medium only): penalise leaving cells capturable
+      // on the opponent's immediate reply.
       if (level === 'medium' && after.winner === G.EMPTY) {
-        var threat = opponentBestImmediateCapture(G, after, me, opp);
-        score -= W.oppCapture * threat;
+        score -= W.oppCapture * opponentBestImmediateCapture(G, after, me, opp);
       }
       return score;
+    }
+
+    function easyMove(state, me) {
+      var moves = legalMoves(G, state, me);
+      if (!moves.length) return null;
+      return argmax(moves, function (m) {
+        var clone = G.cloneState(state);
+        var placedIdx = m.r * state.cols + m.c;
+        G.applyMove(clone, me, m.r, m.c);
+        return evaluateAfter(state, clone, me, placedIdx);
+      }, rng);
+    }
+
+    // Medium's 1-cell-radius reactive move, or null if there is nothing local
+    // to contest (then Medium falls back to easyMove). Priority order:
+    //   1. An eruption-capture available in the neighbourhood -> take the best.
+    //   2. Edge-adjacent enemy race -> reinforce my approached cell to stay >=.
+    //   3. Vertex-only (diagonal) enemy near my cell -> occupy the favourable
+    //      in-between edge cell to extend influence (per the rules below).
+    function mediumReactiveMove(state, me, opp) {
+      var cols = state.cols, rows = state.rows;
+
+      // --- 1. Eruption-capture: play my own neighbourhood cell whose placement
+      //        erupts and captures the most opponent cells. (Only eruption
+      //        captures count — Medium's "capture at the moment of blast".)
+      var bestCap = null, bestCapN = 0;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          if (!G.canPlay(state, me, r, c)) continue;
+          var n = captureByEruption(G, state, me, opp, r, c);
+          if (n > bestCapN) { bestCapN = n; bestCap = { r: r, c: c }; }
+        }
+      }
+      if (bestCap) return bestCap;
+
+      // Collect my cells and the enemy pieces touching them (radius 1).
+      var myCells = [];
+      for (var i = 0; i < state.cells.length; i++) {
+        if (state.cells[i].owner === me) {
+          myCells.push({ r: Math.floor(i / cols), c: i % cols });
+        }
+      }
+
+      // --- 2. Edge-adjacent race: an enemy cell orthogonally next to one of my
+      //        cells that I can still win by matching. "Match 2–2, 3–3…" means
+      //        only a WINNABLE race qualifies: the enemy must be level with, or
+      //        exactly one ahead of, my cell (a one-point catch-up) AND not
+      //        already critical. A critical or far-ahead enemy can erupt and
+      //        capture my cell next turn regardless, so reinforcing is wasted
+      //        (and the v37-primary safety gate would reject it anyway). Among
+      //        qualifying races, prefer the tightest (smallest gap).
+      var reinforce = null, reinforceGap = Infinity;
+      for (var a = 0; a < myCells.length; a++) {
+        var mr = myCells[a].r, mc = myCells[a].c;
+        var myCell = at(state, mr, mc);
+        var myCap = G.capacity(state, mr, mc);
+        if (myCell.value >= myCap) continue;         // already critical: nothing to add
+        if (!G.canPlay(state, me, mr, mc)) continue;
+        var orth = G.neighbours(state, mr, mc);
+        for (var o = 0; o < orth.length; o++) {
+          var ej = orth[o];
+          var ec = state.cells[ej];
+          if (ec.owner !== opp) continue;
+          var ejr = Math.floor(ej / cols), ejc = ej % cols;
+          if (ec.value === G.capacity(state, ejr, ejc)) continue; // enemy critical: race already lost
+          var gap = ec.value - myCell.value;         // >=0 level, 1 one-ahead
+          if (gap === 0 || gap === 1) {               // winnable one-point race
+            if (gap < reinforceGap) { reinforceGap = gap; reinforce = { r: mr, c: mc }; }
+          }
+        }
+      }
+      if (reinforce) return reinforce;
+
+      // --- 3. Vertex-only (diagonal) enemy near my cell: occupy the favourable
+      //        in-between EDGE cell. For my cell M and a diagonal enemy E, the
+      //        two cells orthogonally adjacent to BOTH are the candidates. Pick
+      //        per the agreed rule:
+      //          - never choose a candidate that is edge-adjacent to an enemy
+      //            edge piece (unfavourable: hands the opponent escalation);
+      //          - prefer the side that EXTENDS influence: the side whose
+      //            nearest own edge piece is MORE than two blanks away, and
+      //            which is open (no opponent within 3 along that line, all
+      //            blank). The tight-gap side (own piece within 2 blanks) is
+      //            already defended, so expand the other way.
+      //        If neither candidate qualifies, return null (ignore — fall back).
+      for (var b = 0; b < myCells.length; b++) {
+        var cr = myCells[b].r, cc = myCells[b].c;
+        var diagNbrs = radius1(G, state, cr, cc);
+        for (var d = 0; d < diagNbrs.length; d++) {
+          if (!diagNbrs[d].diag) continue;
+          var er = diagNbrs[d].r, ecidx = diagNbrs[d].c;
+          if (at(state, er, ecidx).owner !== opp) continue;
+          // candidate in-between cells = orthogonal neighbours of M that are
+          // also orthogonal neighbours of E.
+          var mOrth = G.neighbours(state, cr, cc);
+          var cand = [];
+          for (var k = 0; k < mOrth.length; k++) {
+            var cr2 = Math.floor(mOrth[k] / cols), cc2 = mOrth[k] % cols;
+            var isNbrOfE = (Math.abs(cr2 - er) + Math.abs(cc2 - ecidx)) === 1;
+            if (isNbrOfE && state.cells[mOrth[k]].owner === G.EMPTY &&
+                G.canPlay(state, me, cr2, cc2)) {
+              cand.push({ r: cr2, c: cc2 });
+            }
+          }
+          var pick = chooseInfluenceCell(state, me, opp, cand, er, ecidx);
+          if (pick) return pick;
+        }
+      }
+
+      return null; // nothing local to contest
+    }
+
+    // From candidate in-between edge cells, choose the one that extends
+    // influence and is not unfavourably placed next to an enemy edge piece.
+    // (trigR,trigC) is the DIAGONAL enemy piece we're responding to — it is
+    // orthogonally adjacent to the in-between cells BY CONSTRUCTION, so it must
+    // not count toward the "adjacent to another enemy" rejection.
+    function chooseInfluenceCell(state, me, opp, cand, trigR, trigC) {
+      var cols = state.cols;
+      var ok = [];
+      for (var i = 0; i < cand.length; i++) {
+        var r = cand[i].r, c = cand[i].c;
+        // Reject if edge-adjacent to a DIFFERENT enemy piece (not the trigger):
+        // that would be an unfavourable spot the opponent could escalate against.
+        var orth = G.neighbours(state, r, c);
+        var adjEnemy = false;
+        for (var o = 0; o < orth.length; o++) {
+          var jr = Math.floor(orth[o] / cols), jc = orth[o] % cols;
+          if (state.cells[orth[o]].owner === opp &&
+              !(jr === trigR && jc === trigC)) { adjEnemy = true; break; }
+        }
+        if (adjEnemy) continue;
+
+        // The candidate sits on a board edge; scan the TWO opposite directions
+        // ALONG that edge. The agreed rule: if one direction has our own edge
+        // piece close (within two blanks) that side is already defended, so we
+        // only want to place here when the OTHER direction is open space to
+        // extend into (no opponent within 3, all blank). A corner's in-between
+        // cell always has the corner close on one side, so this is the common
+        // "extend influence down the open edge" case.
+        var dirs = edgeScanDirs(state, r, c);
+        var qualifies = false;
+        for (var dI = 0; dI < dirs.length; dI++) {
+          var here = scanLine(state, me, opp, r, c, dirs[dI]);
+          if (!here.ownWithin2) continue;        // need own piece close THIS way
+          // opposite direction along the same edge must be open space
+          var opp2 = [-dirs[dI][0], -dirs[dI][1]];
+          var other = scanLine(state, me, opp, r, c, opp2);
+          if (other.openWithin3) { qualifies = true; break; }
+        }
+        if (qualifies) ok.push(cand[i]);
+      }
+      return ok.length ? pickRandom(ok, rng) : null;
+    }
+
+    // Which direction(s) to scan along the board edge from an edge cell. For a
+    // top/bottom-row cell scan left/right; for a left/right-column cell scan
+    // up/down. (A corner sits on two edges; both are scanned.)
+    function edgeScanDirs(state, r, c) {
+      var dirs = [];
+      if (r === 0 || r === state.rows - 1) { dirs.push([0, -1]); dirs.push([0, 1]); }
+      if (c === 0 || c === state.cols - 1) { dirs.push([-1, 0]); dirs.push([1, 0]); }
+      return dirs;
+    }
+
+    // Scan up to 3 cells along (dr,dc) from (r,c):
+    //   ownWithin2  : an own piece appears within two blank cells (distance <=3);
+    //   openWithin3 : the first up-to-3 cells are all empty (no opponent, and no
+    //                 own piece either — genuinely open space to expand into).
+    function scanLine(state, me, opp, r, c, dir) {
+      var ownWithin2 = false, openWithin3 = true;
+      for (var step = 1; step <= 3; step++) {
+        var rr = r + dir[0] * step, cc = c + dir[1] * step;
+        if (rr < 0 || rr >= state.rows || cc < 0 || cc >= state.cols) break;
+        var cell = at(state, rr, cc);
+        if (cell.owner === me) ownWithin2 = true;
+        if (cell.owner !== G.EMPTY) openWithin3 = false;
+      }
+      return { ownWithin2: ownWithin2, openWithin3: openWithin3 };
     }
 
     return {
@@ -297,19 +493,32 @@
       level: level,
       chooseMove: function (state) {
         var me = state.current;
+        var opp = (me % state.players) + 1;
         var moves = legalMoves(G, state, me);
         if (!moves.length) return null;
-        // Equal-scoring moves are broken randomly by argmax, which is the
-        // sensible fallback when the board is saturated and every option is
-        // comparably bad: Medium's defensive term makes all equally-exposed
-        // moves tie, and a random pick among them avoids a predictable, easily
-        // exploited response (the "revert to random among equally-bad" idea).
-        return argmax(moves, function (m) {
-          var clone = G.cloneState(state);
-          var placedIdx = m.r * state.cols + m.c;
-          G.applyMove(clone, me, m.r, m.c);
-          return evaluateAfter(state, clone, me, placedIdx);
-        }, rng);
+
+        if (level !== 'medium') return easyMove(state, me);
+
+        // Medium precedence (chosen empirically — see docs/strategy-notes.md):
+        // the v37 "don't leave a cell capturable" strength is DOMINANT, and the
+        // v39 anti-fortress contesting is SECONDARY. Concretely: take the local
+        // anti-fortress move ONLY when it is itself SAFE (doesn't hand the
+        // opponent an immediate capture) or outright winning; otherwise defer to
+        // the capture-avoidance-weighted positional move (easyMove, whose
+        // evaluation includes the v37 oppCapture penalty for Medium). Testing
+        // showed this keeps BOTH the ~90% edge over Easy / ~70% over Easy-Shark
+        // AND the fortress fix, whereas making the reactive move strictly
+        // override lost the strength (dropped to ~48% vs Easy).
+        var reactive = mediumReactiveMove(state, me, opp);
+        if (reactive) {
+          var cl = G.cloneState(state);
+          if (G.applyMove(cl, me, reactive.r, reactive.c) &&
+              (cl.winner === me ||
+               opponentBestImmediateCapture(G, cl, me, opp) === 0)) {
+            return reactive;
+          }
+        }
+        return easyMove(state, me);
       },
     };
   }
