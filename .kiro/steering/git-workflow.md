@@ -49,9 +49,14 @@ Merge **only when the user explicitly authorizes it**, and only after step 6
 gh pr merge <N> --squash --delete-branch --admin
 ```
 
-`--admin` bypasses **only** the human-review gate of the branch ruleset; every
-required status check must still pass. After merging, sync local `main`
-(`git checkout main && git pull --ff-only`) and confirm no PR is left open.
+`--admin` uses the owner's administrator bypass. GitHub admin bypass can
+override branch-protection requirements — potentially including required status
+checks, depending on the ruleset — so it is **not** a safe-by-construction
+guarantee that CI passed. Treat waiting for **all required checks to pass** as a
+hard workflow rule enforced by *us*, not by the command: only run this after
+step 6 (reviews addressed) **and** every required check is green. After merging,
+sync local `main` (`git checkout main && git pull --ff-only`) and confirm no PR
+is left open.
 
 ## Only push to `main` directly when
 
