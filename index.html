@@ -583,8 +583,10 @@
     .setting-players .player-dot.p2 { background: var(--p2); }
     /* The Shark difficulty row is shown only when a Shark player is selected. */
     .setting-players .shark-level-row[hidden] { display: none; }
-    /* The shark marker is a glyph, not a colour dot: strip the dot styling. */
-    .setting-players .player-dot.shark {
+    .setting-players .tutor-level-row[hidden] { display: none; }
+    /* The shark/tutor markers are glyphs, not colour dots: strip dot styling. */
+    .setting-players .player-dot.shark,
+    .setting-players .player-dot.tutor {
       background: none;
       box-shadow: none;
       border-radius: 0;
@@ -1069,6 +1071,22 @@
             <option value="shark">Shark (AI)</option>
           </select>
         </div>
+        <div class="player-row tutor-level-row" id="tutor-level-row-1" hidden>
+          <span class="player-dot tutor" aria-hidden="true">🎓</span>
+          <label for="tutor-level-1" id="tutor-level-label-1">Tutor difficulty</label>
+          <select id="tutor-level-1" aria-label="Player 1 Tutor difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+          </select>
+        </div>
+        <div class="player-row tutor-level-row" id="tutor-level-row-2" hidden>
+          <span class="player-dot tutor" aria-hidden="true">🎓</span>
+          <label for="tutor-level-2" id="tutor-level-label-2">Tutor difficulty</label>
+          <select id="tutor-level-2" aria-label="Player 2 Tutor difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+          </select>
+        </div>
         <div class="player-row shark-level-row" id="shark-level-row-1" hidden>
           <span class="player-dot shark" aria-hidden="true">🦈</span>
           <label for="shark-level-1" id="shark-level-label-1">Shark difficulty</label>
@@ -1092,9 +1110,11 @@
           legal move; <strong>Tutor</strong> plays a simple human-style
           strategy (good for learning); <strong>Shark</strong> searches ahead
           and plays strongly (it exploits cascades a human can't easily read).
-          Shark difficulty sets how many moves it looks ahead — higher is
-          stronger (and thinks a little longer), and is set per Shark player.
-          AI moves use the propagation delay above.
+          <strong>Tutor</strong> has an <em>Easy</em> level (a gentle first
+          opponent) and a <em>Medium</em> level that defends its position and
+          won't hand you an easy cascade. Shark difficulty sets how many moves
+          it looks ahead — higher is stronger (and thinks a little longer).
+          Both are set per AI player. AI moves use the propagation delay above.
         </div>
       </div>
 
@@ -1202,8 +1222,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=35"></script>
-  <script src="js/agents.js?v=35"></script>
-  <script src="js/ui.js?v=35"></script>
+  <script src="js/game.js?v=36"></script>
+  <script src="js/agents.js?v=36"></script>
+  <script src="js/ui.js?v=36"></script>
 </body>
 </html>

@@ -12,6 +12,7 @@
 'use strict';
 
 var G = require('../js/game.js');
+var A = require('../js/agents.js');
 
 var passed = 0;
 var failed = 0;
@@ -769,6 +770,104 @@ console.log('starting player');
   finP2BadTurns.turnsTaken = [0, 3, 1]; // sum 4 but wrong split for p2,p1,p2,p1
   ok(G.loadState(finP2BadTurns) === null,
      'finished p2-opening board with mismatched turnsTaken is rejected');
+})();
+
+console.log('tutor difficulty (easy / medium)');
+(function () {
+  // Small seedable RNG (mulberry32) so tie-breaks are deterministic in-test.
+  function makeRng(seed) {
+    var s = (seed >>> 0) || 1;
+    return function () {
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Level API: default easy; explicit medium; unknown -> easy.
+  ok(A.makeTutor(G).level === 'easy', 'Tutor defaults to level "easy"');
+  ok(A.makeTutor(G, { level: 'medium' }).level === 'medium',
+     'Tutor honours level "medium"');
+  ok(A.makeTutor(G, { level: 'nonsense' }).level === 'easy',
+     'Tutor falls back to "easy" for an unknown level');
+
+  // Opponent's best single-move capture of `me`'s cells from `state` (place +
+  // resolve cascade). Mirrors the engine-level quantity the Medium Tutor uses.
+  function oppBestCapture(state, me, opp) {
+    var myNow = G.ownershipCounts(state)[me];
+    var worst = 0;
+    for (var r = 0; r < state.rows; r++) {
+      for (var c = 0; c < state.cols; c++) {
+        if (!G.canPlay(state, opp, r, c)) continue;
+        var cl = G.cloneState(state);
+        G.applyMove(cl, opp, r, c);
+        var lost = myNow - G.ownershipCounts(cl)[me];
+        if (lost > worst) worst = lost;
+      }
+    }
+    return worst;
+  }
+
+  // Crafted 3x3 board where P1 (to move) has exactly three legal moves, ALL of
+  // them adjacent to a critical enemy cell (so Easy's flat "adjacent to enemy
+  // critical" penalty fires equally for all three — Easy cannot tell them
+  // apart on that axis). Their actual exposure differs, though:
+  //   (0,1) -> opponent can then capture 2 of P1's cells
+  //   (1,0) -> capture 1
+  //   (2,1) -> capture 1
+  // Medium's opponent-reply lookahead measures the MAGNITUDE, so it must avoid
+  // the 2-capture move; Easy, blind to magnitude, picks it part of the time.
+  // Indices: 0 1 2 / 3 4 5 / 6 7 8.
+  function craft() {
+    var s = G.createGame({ rows: 3, cols: 3, players: 2 });
+    for (var i = 0; i < 9; i++) { s.cells[i].owner = 2; s.cells[i].value = 1; }
+    s.cells[1].owner = 0; s.cells[1].value = 0; // (0,1) empty
+    s.cells[7].owner = 0; s.cells[7].value = 0; // (2,1) empty
+    s.cells[0].value = 2;                        // (0,0) critical corner (eruptor)
+    s.cells[3].owner = 1; s.cells[3].value = 1;  // (1,0) is P1's and also legal/empty-of-opp
+    s.cells[8].value = 2;                        // (2,2) critical corner (eruptor)
+    var mc = 0; for (var k = 0; k < 9; k++) mc += s.cells[k].value;
+    s.moveCount = mc; s.current = 1; s.turnsTaken = [0, 1, mc - 1];
+    return s;
+  }
+
+  // Sanity on the fixture: the three legal moves have the intended exposures.
+  var fix = craft();
+  function expoAfter(r, c) {
+    var cl = G.cloneState(craft());
+    G.applyMove(cl, 1, r, c);
+    return cl.winner === G.EMPTY ? oppBestCapture(cl, 1, 2) : -1;
+  }
+  ok(G.canPlay(fix, 1, 0, 1) && G.canPlay(fix, 1, 1, 0) && G.canPlay(fix, 1, 2, 1),
+     'fixture: the three intended P1 moves are legal');
+  ok(expoAfter(0, 1) === 2, 'fixture: (0,1) exposes a 2-cell capture');
+  ok(expoAfter(2, 1) === 1, 'fixture: (2,1) exposes only a 1-cell capture');
+
+  // Medium must NEVER pick the 2-capture move across many seeds; it should pick
+  // a strictly-less-exposed one. Easy, blind to magnitude, DOES pick it part of
+  // the time — this is what distinguishes the two levels.
+  var medHitsWorst = 0, easyHitsWorst = 0, N = 100;
+  for (var seed = 1; seed <= N; seed++) {
+    var med = A.makeTutor(G, { rng: makeRng(seed), level: 'medium' }).chooseMove(craft());
+    var easy = A.makeTutor(G, { rng: makeRng(seed) }).chooseMove(craft());
+    if (med.r === 0 && med.c === 1) medHitsWorst++;
+    if (easy.r === 0 && easy.c === 1) easyHitsWorst++;
+  }
+  ok(medHitsWorst === 0,
+     'Medium never chooses the highest-exposure move (' + medHitsWorst + '/' + N + ')');
+  ok(easyHitsWorst > 0,
+     'Easy sometimes chooses it (magnitude-blind) (' + easyHitsWorst + '/' + N + ')');
+
+  // Both levels always return a legal move on a normal position.
+  var normal = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(normal, 1, 0, 0); // some opening so it's P2's turn with a real board
+  var mvE = A.makeTutor(G).chooseMove(normal);
+  var mvM = A.makeTutor(G, { level: 'medium' }).chooseMove(normal);
+  ok(mvE && G.canPlay(normal, normal.current, mvE.r, mvE.c),
+     'Easy Tutor returns a legal move');
+  ok(mvM && G.canPlay(normal, normal.current, mvM.r, mvM.c),
+     'Medium Tutor returns a legal move');
 })();
 
 console.log('version wiring');

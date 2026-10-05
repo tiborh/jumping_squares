@@ -29,6 +29,46 @@ the nearest user-facing entry.
 
 ---
 
+## v36 — Tutor difficulty: Easy + new Medium level
+
+Player-facing:
+
+- **Tutor now has two difficulty levels** (set per Tutor player under
+  **Settings → Players**):
+  - **Easy** — the original gentle, 1-ply, human-style heuristic. Still the
+    **default**: a learnable, non-intimidating first opponent.
+  - **Medium** — adds two defensive ideas that close much of the gap toward
+    Easy Shark:
+    1. **Defend your advantage.** It reinforces cells under local threat instead
+       of blindly chasing corners/edges, so you can't quietly build a diagonal
+       "fortress" and pick it off while it ignores you.
+    2. **Don't hand over a chain-reaction.** It looks one opponent reply ahead
+       and avoids moves that let a single enemy eruption capture your cells —
+       the exact trap where loading all your cells to critical next to the
+       opponent's lets them cascade through you.
+  - When both players are Tutor, each has its own level selector (like Shark).
+
+Background:
+
+- `makeTutor(G, { level })` keeps Easy identical and adds, for Medium, a bounded
+  **1-ply opponent-reply lookahead**: after resolving the candidate move it
+  measures the opponent's best single-move capture of our cells (place + full
+  cascade) and subtracts a weighted penalty. This expresses both requested rules
+  at once — reinforcing a threatened cell lowers that measure (defence), and a
+  move that exposes a capturable cluster is penalised (no free cascade). It is
+  deliberately *not* a search (that's Shark); when the board is saturated and
+  options are equally bad, the existing random tie-break among top-scoring moves
+  is the fallback.
+- Harness evidence (`test/agents.harness.js`, N=200): Tutor-Medium beats
+  Tutor-Easy ~**87%**, beats Random ~**99%**, and loses to the default
+  depth-3 Shark ~**60%** — i.e. it sits cleanly between Easy and Shark, as
+  intended, without overshooting.
+- Per-seat Tutor level is persisted (prefs schema **v7**, migrating older
+  records to Easy); the UI mirrors the Shark difficulty rows. A deterministic
+  test proves Medium avoids a higher-magnitude capture exposure that Easy (which
+  only applies a flat "adjacent to an enemy critical cell" penalty) treats as
+  equal and walks into part of the time.
+
 ## v35 — Follow-up: fresh Player-2 board also saves on first load
 
 Player-facing:
