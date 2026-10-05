@@ -103,11 +103,40 @@
     return state.cells[i].value === G.capacity(state, r, c);
   }
 
+  // How many of `me`'s cells can the opponent capture with their BEST single
+  // reply from `state` (place one dot + resolve the full cascade)? This is the
+  // bounded, 1-ply-opponent lookahead the Medium Tutor uses: it measures the
+  // immediate chain-reaction threat the opponent has against us RIGHT NOW. The
+  // result is the maximum net loss of our cells across all legal opponent moves
+  // (0 if they can't capture any). Deliberately shallow (just the opponent's
+  // next move, cascade fully resolved) — not a search; that is Shark's job.
+  function opponentBestImmediateCapture(G, state, me, opp) {
+    var myNow = G.ownershipCounts(state)[me];
+    var oppMoves = legalMoves(G, state, opp);
+    var worst = 0; // largest number of my cells a single opp reply removes
+    for (var k = 0; k < oppMoves.length; k++) {
+      var clone = G.cloneState(state);
+      // The opponent is the side to move in this hypothetical; applyMove uses
+      // the passed player id, so force it to the opponent regardless of
+      // state.current (which, after our move, may be the opponent anyway).
+      if (!G.applyMove(clone, opp, oppMoves[k].r, oppMoves[k].c)) continue;
+      var myAfter = G.ownershipCounts(clone)[me];
+      var lost = myNow - myAfter; // cells of ours the opponent took (net)
+      if (lost > worst) worst = lost;
+    }
+    return worst;
+  }
+
   function makeTutor(G, opts) {
     opts = opts || {};
     var rng = opts.rng || defaultRng;
-    // Weights (hand-set for the spike; the agent-vs-agent harness is the knob
-    // for tuning these later).
+    // Difficulty level: 'easy' (the original 1-ply heuristic, a gentle first
+    // opponent) or 'medium' (adds a bounded opponent-reply lookahead so it
+    // defends its advantage and avoids handing over immediate cascades — a step
+    // toward Easy Shark, but still readable). Unknown values fall back to easy.
+    var level = (opts.level === 'medium') ? 'medium' : 'easy';
+
+    // Weights (hand-set; the agent-vs-agent harness is the knob for tuning).
     var W = {
       win: 100000,
       ownDelta: 10,     // per net cell gained vs before the move
@@ -115,6 +144,13 @@
       lowCapacity: 4,   // bonus for the PLACED cell having low capacity (corner>edge)
       ownCritical: 2,   // per own critical cell after the move
       adjEnemyCritical: 12, // penalty for the placed cell sitting next to enemy-critical
+      // --- Medium-only weights ---
+      // Penalty PER own cell the opponent could capture on their immediate
+      // reply after this move. Large, because giving away a cascade is exactly
+      // the losing pattern Medium is meant to avoid (and it dominates the small
+      // positional bonuses so Medium won't walk into a capturable position for a
+      // couple of corner points).
+      oppCapture: 14,
     };
 
     function evaluateAfter(before, after, me, placedIdx) {
@@ -154,15 +190,37 @@
           score -= W.adjEnemyCritical;
         }
       }
+
+      // --- MEDIUM: defend the advantage / don't hand over a cascade ---------
+      // Look one opponent reply ahead on the RESULTING board and penalise how
+      // many of our cells their best single move could capture. This implements
+      // both requested rules at once:
+      //   (A) "defend a threatened edge/corner" — a move that reinforces a cell
+      //       under local threat lowers the opponent's best capture, so it
+      //       scores higher than leaving the cell exposed; and
+      //   (B) "don't give an immediate chain-reaction" — a move that leaves our
+      //       cells capturable by a single enemy eruption is penalised heavily.
+      // Skipped when the move already won (handled above) or when the board is
+      // decided.
+      if (level === 'medium' && after.winner === G.EMPTY) {
+        var threat = opponentBestImmediateCapture(G, after, me, opp);
+        score -= W.oppCapture * threat;
+      }
       return score;
     }
 
     return {
       name: 'Tutor',
+      level: level,
       chooseMove: function (state) {
         var me = state.current;
         var moves = legalMoves(G, state, me);
         if (!moves.length) return null;
+        // Equal-scoring moves are broken randomly by argmax, which is the
+        // sensible fallback when the board is saturated and every option is
+        // comparably bad: Medium's defensive term makes all equally-exposed
+        // moves tie, and a random pick among them avoids a predictable, easily
+        // exploited response (the "revert to random among equally-bad" idea).
         return argmax(moves, function (m) {
           var clone = G.cloneState(state);
           var placedIdx = m.r * state.cols + m.c;

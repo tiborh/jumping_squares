@@ -55,7 +55,7 @@
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
   var PREFS_KEY = 'jumping_squares:prefs';
-  var PREFS_VERSION = 6; // v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 7; // v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -86,6 +86,10 @@
       // and the UI should surface a time hint — ideally from a one-time
       // in-browser calibration rather than hard-coded (machine-specific) numbers.
       sharkDepth: { 1: 3, 2: 3 },
+      // Tutor difficulty PER SEAT: 'easy' (the original gentle 1-ply heuristic,
+      // the default so a first opponent stays beatable/learnable) or 'medium'
+      // (adds a defensive opponent-reply lookahead — a step toward Shark).
+      tutorLevel: { 1: 'easy', 2: 'easy' },
       // Which player makes the FIRST move of the NEXT game. The game alternates
       // this after each COMPLETED game (so the player who went second last game
       // opens the next one). Persisted so the alternation survives reloads.
@@ -173,6 +177,15 @@
         var sp = parsed.startingPlayer;
         if (sp === 1 || sp === 2) {
           mem.startingPlayer = sp;
+        }
+
+        // tutorLevel: per-seat since v7; absent in older records (keep the
+        // default, 'easy'). Only adopt known values per seat.
+        if (parsed.tutorLevel && typeof parsed.tutorLevel === 'object') {
+          [1, 2].forEach(function (n) {
+            var lv = parsed.tutorLevel[n];
+            if (lv === 'easy' || lv === 'medium') mem.tutorLevel[n] = lv;
+          });
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -275,6 +288,14 @@
       setPlayerType: function (n, t) {
         mem.playerType[n] = (t === 'random' || t === 'tutor' || t === 'shark')
           ? t : 'human';
+        persist();
+      },
+      // --- Tutor difficulty (easy / medium), per seat ---
+      getTutorLevel: function (n) {
+        return (mem.tutorLevel[n] === 'medium') ? 'medium' : 'easy';
+      },
+      setTutorLevel: function (n, lv) {
+        mem.tutorLevel[n] = (lv === 'medium') ? 'medium' : 'easy';
         persist();
       },
       // --- Shark difficulty (search depth), per seat ---
@@ -1244,9 +1265,17 @@
       if (!aiAgents[key]) aiAgents[key] = AGENTS.makeShark(G, { depth: depth });
       return aiAgents[key];
     }
+    if (type === 'tutor') {
+      // Per-seat Tutor difficulty (easy / medium), keyed by seat+level so
+      // changing one seat's level never disturbs the other. `level` is passed
+      // to makeTutor; an older cached agents.js ignores it (plays easy).
+      var level = prefs.getTutorLevel(seat);
+      var tkey = 'tutor@' + seat + '@' + level;
+      if (!aiAgents[tkey]) aiAgents[tkey] = AGENTS.makeTutor(G, { level: level });
+      return aiAgents[tkey];
+    }
     if (!aiAgents[type]) {
-      aiAgents[type] = (type === 'tutor')
-        ? AGENTS.makeTutor(G) : AGENTS.makeRandom(G);
+      aiAgents[type] = AGENTS.makeRandom(G);
     }
     return aiAgents[type];
   }
@@ -1609,9 +1638,50 @@
       r.row.hidden = !show;
       if (r.sel) r.sel.value = String(prefs.getSharkDepth(n));
       if (r.label) {
+        // When BOTH seats are Shark, playerName() returns the same literal
+        // "Shark (AI)" for each, so name the SEAT ("Player N") to keep the two
+        // difficulty rows distinguishable; with a single Shark the generic
+        // "Shark difficulty" reads cleanest.
         r.label.textContent = both
-          ? (playerName(n) + ' difficulty')
+          ? ('Player ' + n + ' difficulty')
           : 'Shark difficulty';
+      }
+    });
+  }
+
+  // Per-seat Tutor difficulty controls, mirroring the Shark rows: a row per seat
+  // shown only when that seat is a Tutor; with both seats Tutor the label names
+  // the player so the two rows are distinguishable.
+  var tutorRows = {
+    1: {
+      row: document.getElementById('tutor-level-row-1'),
+      sel: document.getElementById('tutor-level-1'),
+      label: document.getElementById('tutor-level-label-1'),
+    },
+    2: {
+      row: document.getElementById('tutor-level-row-2'),
+      sel: document.getElementById('tutor-level-2'),
+      label: document.getElementById('tutor-level-label-2'),
+    },
+  };
+
+  function isTutor(n) { return prefs.getPlayerType(n) === 'tutor'; }
+
+  function syncTutorLevelUI() {
+    var canTutor = !!AGENTS && !!AGENTS.makeTutor;
+    var both = isTutor(1) && isTutor(2);
+    [1, 2].forEach(function (n) {
+      var r = tutorRows[n];
+      if (!r.row) return;
+      var show = canTutor && isTutor(n);
+      r.row.hidden = !show;
+      if (r.sel) r.sel.value = prefs.getTutorLevel(n);
+      if (r.label) {
+        // Both seats Tutor -> playerName() is "Tutor (AI)" for each, so name the
+        // SEAT ("Player N") so the two rows are distinguishable.
+        r.label.textContent = both
+          ? ('Player ' + n + ' difficulty')
+          : 'Tutor difficulty';
       }
     });
   }
@@ -1625,11 +1695,13 @@
       sel.value = prefs.getPlayerType(n);
     });
     syncSharkLevelUI();
+    syncTutorLevelUI();
   }
 
   function onPlayerTypeChange(n, sel) {
     prefs.setPlayerType(n, sel.value);
     syncSharkLevelUI(); // show/hide the Shark difficulty row as needed
+    syncTutorLevelUI(); // show/hide the Tutor difficulty row as needed
     // Re-render so the turn label (which shows the agent name for an AI seat)
     // and the rename affordance update; render() also re-evaluates whether the
     // CURRENT player is now an AI and, if so, schedules its move.
@@ -1651,6 +1723,17 @@
       // move (this game or next) uses the new difficulty automatically, without
       // disturbing the other seat's Shark. Re-render in case this Shark is to
       // move now (it will be re-fetched at the new depth).
+      render();
+    });
+  });
+  [1, 2].forEach(function (n) {
+    var sel = tutorRows[n].sel;
+    if (!sel) return;
+    sel.addEventListener('change', function () {
+      prefs.setTutorLevel(n, this.value);
+      // agentFor() keys its Tutor cache by seat+level, so this seat's next Tutor
+      // move uses the new level automatically, without disturbing the other
+      // seat's Tutor. Re-render in case this Tutor is to move now.
       render();
     });
   });
