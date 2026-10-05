@@ -29,6 +29,30 @@ the nearest user-facing entry.
 
 ---
 
+## v35 — Follow-up: fresh Player-2 board also saves on first load
+
+Player-facing:
+
+- Completes the v34 fix. A **freshly started** Player-2-opening game is now also
+  saved correctly the first time: an edge case on the boot/New-Game path could
+  still write an inconsistent save that was discarded on the next reload.
+
+Background:
+
+- The boot fallback (no save to restore) previously patched only
+  `state.current = prefs.getStartingPlayer()` on the module's initial state,
+  leaving `startingPlayer` at 1. With a persisted opener of 2 that produced a
+  `current: 2, startingPlayer: 1` state whose auto-save `loadState()` (correctly)
+  rejects — so the next reload discarded it. Both boot fallbacks now **rebuild
+  via `createGame({ startingPlayer })`**, setting `current` and `startingPlayer`
+  consistently.
+- Added terminal (finished) **Player-2-opening** save/validate tests — the v34
+  round-trip tests covered only ongoing games — including opener-mismatch and
+  bad-`turnsTaken` rejections.
+- Restored the `## v33` changelog heading (orphaned again when the v34 section
+  was inserted) and will anchor future changelog edits above the previous
+  heading to stop this recurring.
+
 ## v34 — Fix: save/restore a Player-2-opened game; review follow-ups
 
 Player-facing:
@@ -63,7 +87,7 @@ Background:
     (the ruleset requires verified signatures; signing is configured globally
     per `CONTRIBUTING.md`).
 
-
+## v33 — Turn-taking: alternate who opens the next game
 
 Player-facing:
 

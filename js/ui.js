@@ -1933,10 +1933,15 @@
     if (!restored) {
       // No save to resume: open the fresh board with the PERSISTED starting
       // player (turn-taking alternates across completed games and is remembered
-      // across reloads). The initial state created at the top of this module
-      // predates the prefs store, so set its first mover here now that prefs
-      // are available.
-      state.current = prefs.getStartingPlayer();
+      // across reloads). Rebuild via createGame so BOTH `current` and
+      // `startingPlayer` are set consistently — patching only `current` would
+      // leave startingPlayer at 1, and a later auto-save (current=2,
+      // startingPlayer=1) would then be rejected by loadState on the next
+      // reload, discarding the game.
+      state = G.createGame({
+        rows: ROWS, cols: COLS, players: PLAYERS,
+        startingPlayer: prefs.getStartingPlayer(),
+      });
       return;
     }
     // Defence-in-depth: the pre-load predicate above already rejects mismatched
@@ -1945,7 +1950,10 @@
     if (restored.rows !== ROWS || restored.cols !== COLS ||
         restored.players !== PLAYERS) {
       boardStore.remove();
-      state.current = prefs.getStartingPlayer();
+      state = G.createGame({
+        rows: ROWS, cols: COLS, players: PLAYERS,
+        startingPlayer: prefs.getStartingPlayer(),
+      });
       return;
     }
     state = restored;
