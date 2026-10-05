@@ -334,7 +334,7 @@ Status of the project and planned work. Done items reflect the current build.
       [`docs/strategy-notes.md`](docs/strategy-notes.md) (*Shark performance,
       difficulty, and device calibration*).
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
-- [x] Animated cascades — settable speed + manual step mode (see Done above)
+- [x] Animated cascades — settable delay + manual step mode (see Done above)
 - [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**,
       and **Shark**, each **per-player and per-difficulty**: Random (Easy pure /
       Medium reactive-hit-back), Tutor (Easy positional / Medium adds
@@ -400,8 +400,8 @@ notes before implementation; nothing below is built yet.
   (dice-face arrangement), reinforcing the casting metaphor.
 - In **adder mode**, the current pip rendering applies.
 
-**4. Distribution speed (settable).** *(Implemented — see "Propagation delay"
-under How to play.)* How fast an overflow/cascade resolves:
+**4. Distribution timing (settable).** *(Implemented as **Propagation delay** —
+see How to play.)* How quickly an overflow/cascade resolves:
 
 - **Instantaneous** — resolve the whole cascade immediately.
 - **Slow / stepped** — animate the cascade one generation at a time (100–1000
