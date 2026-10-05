@@ -351,9 +351,13 @@
       }
 
       // --- 2. Edge-adjacent race: an enemy cell orthogonally next to one of my
-      //        cells, with value >= my cell's value (level or ahead). Reinforce
-      //        my cell to stay >=, UNLESS doing so is pointless because my cell
-      //        is already doomed (the enemy can capture it next move anyway).
+      //        cells that I can still win by matching. "Match 2–2, 3–3…" means
+      //        only a WINNABLE race qualifies: the enemy must be level with, or
+      //        exactly one ahead of, my cell (a one-point catch-up) AND not
+      //        already critical. A critical or far-ahead enemy can erupt and
+      //        capture my cell next turn regardless, so reinforcing is wasted
+      //        (and the v37-primary safety gate would reject it anyway). Among
+      //        qualifying races, prefer the tightest (smallest gap).
       var reinforce = null, reinforceGap = Infinity;
       for (var a = 0; a < myCells.length; a++) {
         var mr = myCells[a].r, mc = myCells[a].c;
@@ -363,10 +367,13 @@
         if (!G.canPlay(state, me, mr, mc)) continue;
         var orth = G.neighbours(state, mr, mc);
         for (var o = 0; o < orth.length; o++) {
-          var ec = state.cells[orth[o]];
+          var ej = orth[o];
+          var ec = state.cells[ej];
           if (ec.owner !== opp) continue;
-          if (ec.value >= myCell.value) {            // enemy level or ahead -> match
-            var gap = ec.value - myCell.value;       // prefer the tightest race
+          var ejr = Math.floor(ej / cols), ejc = ej % cols;
+          if (ec.value === G.capacity(state, ejr, ejc)) continue; // enemy critical: race already lost
+          var gap = ec.value - myCell.value;         // >=0 level, 1 one-ahead
+          if (gap === 0 || gap === 1) {               // winnable one-point race
             if (gap < reinforceGap) { reinforceGap = gap; reinforce = { r: mr, c: mc }; }
           }
         }

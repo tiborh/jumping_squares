@@ -815,6 +815,19 @@ console.log('tutor difficulty (easy / medium) — 1-cell-radius reactive play');
   ok(!(easyRace['0,1'] === 100),
      'Case A: Easy does not reliably reinforce (plays positionally elsewhere)');
 
+  // Case A edge case: a race that is ALREADY LOST locally must NOT trigger a
+  // futile reinforce. Tutor edge (0,1)=1, enemy (0,2)=3 (edge-critical): raising
+  // (0,1) to 2 is pointless — the enemy erupts next turn and captures it. Medium
+  // should NOT spend its move on (0,1); it should play elsewhere.
+  function lostRaceBoard() {
+    var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+    set(s, 0, 1, 1, 1); set(s, 0, 2, 2, 3); set(s, 4, 4, 1, 1);
+    return fin(s);
+  }
+  var medLost = dist(lostRaceBoard, 'medium', 100);
+  ok(!medLost['0,1'],
+     'Case A: Medium does not reinforce a cell against a critical/far-ahead enemy');
+
   // --- Case B: diagonal (vertex) approach -> Medium takes an in-between cell -
   // Tutor corner (0,0)=1; enemy diagonal (1,1)=1. The in-between edge cells are
   // (0,1) and (1,0); Medium must occupy one of them. Easy spreads to far corners.
