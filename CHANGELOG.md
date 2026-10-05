@@ -29,7 +29,41 @@ the nearest user-facing entry.
 
 ---
 
-## v33 — Turn-taking: alternate who opens the next game
+## v34 — Fix: save/restore a Player-2-opened game; review follow-ups
+
+Player-facing:
+
+- **Fixed:** a game **opened by Player 2** (which now happens via turn-taking
+  alternation, v33) is saved and restored correctly. Previously the save
+  validator assumed Player 1 always opened, so a Player-2-opening board failed
+  validation on reload and was discarded — silently losing the game (and the
+  alternation). Terminal Player-2-opening boards were rejected for the same
+  reason. Older saves (always Player-1-opened) are unaffected.
+
+Background:
+
+- Root cause: `loadState()`'s turn-order invariant and `turnsTaken`
+  reconstruction were hardcoded to "player 1 opened". The game state now carries
+  `startingPlayer` (set by `createGame`, preserved by `cloneState`), and the
+  validator computes the expected mover as
+  `moverOf(m) = ((startingPlayer - 1 + m) % players) + 1`, applying it to the
+  ongoing/terminal `current` checks and the per-player turn distribution. Saves
+  **without** `startingPlayer` default to opener 1, so legacy saves validate
+  exactly as before; an out-of-range or inconsistent opener is rejected. New
+  tests cover fresh/in-progress Player-2 round-trips, a wrong-opener rejection,
+  and the legacy default.
+- Addressed automated-review follow-ups from the v29–v33 PRs:
+  - Removed an unused `anyShark()` helper (`js/ui.js`) and an unused `opp`
+    local in the Shark root search (`js/agents.js`) — both flagged by CodeQL
+    `js/unused-local-variable`.
+  - Restored five `##` version headings in this changelog (v25, v29–v32) that
+    were accidentally dropped as each release edited the top of the file,
+    leaving their bodies orphaned under the newest heading.
+  - The PR-workflow steering file now states that commits must be **signed**
+    (the ruleset requires verified signatures; signing is configured globally
+    per `CONTRIBUTING.md`).
+
+
 
 Player-facing:
 
@@ -59,7 +93,7 @@ Background:
   resolution mode. New Game / boot read the persisted value; the generic confirm
   dialog grew an optional checkbox used by the tally reset.
 
-
+## v32 — "What's new" panel: progressive disclosure (5 → more → full)
 
 Player-facing:
 
@@ -84,7 +118,7 @@ Background:
   link is appended once the inline list is fully expanded (or when nothing was
   hidden), keeping a single clear "next step" at the bottom.
 
-
+## v31 — The after-flash was a timing race (really fixed now)
 
 Player-facing:
 
@@ -118,7 +152,7 @@ Background:
 - Also: `buildGrid()` resets the previous-render snapshot, so the first render
   after a New Game paints without flashing leftover diffs.
 
-
+## v30 — Flash fixes: no after-flash; AI-vs-AI respects the delay
 
 Player-facing:
 
@@ -149,7 +183,7 @@ Background:
   used). A move that *does* cascade already animated at the chosen delay; this
   only adds the same pacing to plain, non-cascading placements.
 
-
+## v29 — Placement flash, Tutor-by-default, per-Shark difficulty, delay wording
 
 Player-facing:
 
@@ -187,7 +221,7 @@ Background:
   any stored `playerType` still overrides it on load, so the change only affects
   users with no prefs yet.
 
-
+## v25 — Auto-save & restore (board persistence, Phase 1)
 
 Player-facing:
 

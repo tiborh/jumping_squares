@@ -305,7 +305,6 @@
       depth: maxDepth,
       chooseMove: function (state) {
         var me = state.current;
-        var opp = (me % state.players) + 1;
         var moves = orderedMoves(G, state, me);
         if (!moves.length) return null;
         // Root: pick the move with the best searched value; ties broken randomly.

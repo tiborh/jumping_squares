@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '33';
+  var VERSION = '34';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '34', text: 'Fix: a game opened by Player 2 (after turn-taking alternation) is now saved and restored correctly \u2014 previously reloading could discard it and start over. Plus small internal tidy-ups.' },
     { v: '33', text: 'Turn-taking: after a game ends, New Game / Play Again now lets the OTHER player open the next game (it alternates across completed games and is remembered). Resetting the win tally can also reset who starts \u2014 there\u2019s a checkbox for it in the reset dialog.' },
     { v: '32', text: 'The \u201CWhat\u2019s new\u201D list now shows the 5 most recent entries; \u201CShow more\u201D expands the rest, and \u201CSee full changelog\u201D opens the complete history.' },
     { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
@@ -79,7 +80,6 @@
     { v: '25', text: 'Auto-save: your game is kept in this browser and restored after a reload or reopened tab. Turn it off (and clear saved data) under Settings \u2192 Persistence.' },
     { v: '24', text: 'Win tally: the score (wins per player) is kept for the current name pair; renaming a player resets it.' },
     { v: '22', text: 'Rename a player by clicking their name on their turn; names are remembered in this browser.' },
-    { v: '21', text: 'About now has a "What\u2019s new" panel (this one) summarising recent, player-relevant changes.' },
   ];
 
   // Owner sentinel for an empty/neutral cell.
@@ -130,6 +130,7 @@
       players: players,
       cells: cells,          // flat array, index = r * cols + c
       current: startingPlayer, // current player (1-based); first mover this game
+      startingPlayer: startingPlayer, // who opened this game (for turn-order math)
       moveCount: 0,          // total points placed across the game
       // How many turns each player has taken (index 0 unused). A player only
       // becomes "in the game" once they have taken at least one turn, so no
@@ -513,18 +514,35 @@
     if (!isPlainInt(winner) || winner < 0 || winner > players) return null;
     if (!isPlainInt(obj.moveCount) || obj.moveCount < 0) return null;
 
-    // Turn order invariant:
-    // - For an ongoing state (winner == 0), current must match completed moveCount
-    //   (moves alternate strictly starting from player 1).
-    // - For a terminal state (winner != 0), the winning move was made by the winner,
-    //   so moveCount must be >= 1, current must equal winner, and winner must match
-    //   the player who made the last move.
+    // Opener of this game. Saves written since turn-taking landed carry
+    // `startingPlayer`; OLDER saves (pre-feature) omit it and are treated as
+    // player-1-opened (the only possibility back then), so legacy saves keep
+    // validating exactly as before. Must be a valid player id.
+    var startingPlayer = obj.startingPlayer;
+    if (startingPlayer === undefined) {
+      startingPlayer = 1;
+    } else if (!isPlainInt(startingPlayer) ||
+               startingPlayer < 1 || startingPlayer > players) {
+      return null;
+    }
+
+    // Player who makes 0-indexed move number `m`, given the opener: moves
+    // alternate strictly in player order starting FROM the opener.
+    function moverOf(m) {
+      return ((startingPlayer - 1 + m) % players) + 1;
+    }
+
+    // Turn order invariant, now RELATIVE TO THE OPENER (not hardcoded to p1):
+    // - Ongoing (winner == 0): `current` is the player about to make move
+    //   number `moveCount` (0-indexed), i.e. moverOf(moveCount).
+    // - Terminal (winner != 0): the winning (last) move was number moveCount-1,
+    //   so moveCount >= 1, current == winner, and winner == moverOf(moveCount-1).
     if (winner === EMPTY) {
-      if (obj.current !== (obj.moveCount % players) + 1) return null;
+      if (obj.current !== moverOf(obj.moveCount)) return null;
     } else {
       if (obj.moveCount < 1) return null;
       if (obj.current !== winner) return null;
-      if (winner !== ((obj.moveCount - 1) % players) + 1) return null;
+      if (winner !== moverOf(obj.moveCount - 1)) return null;
     }
 
     // Rebuild cells, enforcing per-cell invariants.
@@ -568,8 +586,10 @@
         var expectedRemainder = obj.moveCount % players;
         if (turnsTaken[0] !== 0) okTurns = false;
         for (var expectedP = 1; okTurns && expectedP <= players; expectedP++) {
-          var expected = expectedBase +
-            (expectedP <= expectedRemainder ? 1 : 0);
+          // A player has the extra (base+1) turn iff they are among the first
+          // `expectedRemainder` movers counting from the opener (startingPlayer).
+          var offset = (expectedP - startingPlayer + players) % players;
+          var expected = expectedBase + (offset < expectedRemainder ? 1 : 0);
           if (turnsTaken[expectedP] !== expected) okTurns = false;
         }
 
@@ -599,7 +619,9 @@
       var baseTurns = Math.floor(obj.moveCount / players);
       var remTurns = obj.moveCount % players;
       for (var p = 1; p <= players; p++) {
-        turnsTaken[p] = baseTurns + (p <= remTurns ? 1 : 0);
+        // Extra turn goes to the first `remTurns` movers from the opener.
+        var off = (p - startingPlayer + players) % players;
+        turnsTaken[p] = baseTurns + (off < remTurns ? 1 : 0);
       }
       // Invariant: any player who owns cells MUST have taken at least one turn.
       // If moveCount was too low for an active cell owner (e.g. moveCount: 0
@@ -631,6 +653,7 @@
       cols: cols,
       players: players,
       current: obj.current,
+      startingPlayer: startingPlayer,
       moveCount: obj.moveCount,
       turnsTaken: turnsTaken,
       winner: winner,
@@ -685,6 +708,7 @@
       cols: state.cols,
       players: state.players,
       current: state.current,
+      startingPlayer: state.startingPlayer,
       moveCount: state.moveCount,
       turnsTaken: state.turnsTaken.slice(),
       winner: state.winner,
