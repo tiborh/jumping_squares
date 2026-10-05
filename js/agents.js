@@ -223,6 +223,28 @@
   // Index helper.
   function at(state, r, c) { return state.cells[r * state.cols + c]; }
 
+  // The v37 Tutor-Medium "winning term": how many of `me`'s cells could the
+  // opponent capture on their single best reply from `state` (place + resolve
+  // the cascade)? Evaluated on an opponent-to-move clone (canPlay/applyMove gate
+  // on `current`). This is a reactive, one-move-ahead "don't leave a cell
+  // hanging" measure — dissection showed it is what made v37 Medium beat Easy
+  // ~85% (it stops blundering capturable cells, especially in the saturated
+  // late game). Reused here so Medium keeps that strength.
+  function opponentBestImmediateCapture(G, state, me, opp) {
+    var view = G.cloneState(state);
+    view.current = opp;
+    var oppMoves = legalMoves(G, view, opp);
+    var myNow = G.ownershipCounts(state)[me];
+    var worst = 0;
+    for (var k = 0; k < oppMoves.length; k++) {
+      var cl = G.cloneState(view);
+      if (!G.applyMove(cl, opp, oppMoves[k].r, oppMoves[k].c)) continue;
+      var lost = myNow - G.ownershipCounts(cl)[me];
+      if (lost > worst) worst = lost;
+    }
+    return worst;
+  }
+
   function makeTutor(G, opts) {
     opts = opts || {};
     var rng = opts.rng || defaultRng;
@@ -241,10 +263,13 @@
       lowCapacity: 4,   // bonus for the PLACED cell having low capacity (corner>edge)
       ownCritical: 2,   // per own critical cell after the move
       adjEnemyCritical: 12, // penalty for the placed cell sitting next to enemy-critical
+      oppCapture: 14,   // (Medium) penalty per own cell the opponent could
+                        //  capture on their immediate reply — the v37 term.
     };
 
-    // Easy's positional one-ply evaluation (unchanged). Medium reuses it as the
-    // fallback when there is no local race to contest.
+    // Easy's positional one-ply evaluation. For MEDIUM it also subtracts the
+    // v37 capture-avoidance term, so the positional/fallback scoring already
+    // prefers moves that don't hand the opponent an immediate capture.
     function evaluateAfter(before, after, me, placedIdx) {
       if (after.winner === me) return W.win;
       if (after.winner !== G.EMPTY && after.winner !== me) return -W.win;
@@ -274,6 +299,12 @@
         if (before.cells[j].owner === opp && isCritical(G, before, j)) {
           score -= W.adjEnemyCritical;
         }
+      }
+
+      // v37 capture-avoidance (Medium only): penalise leaving cells capturable
+      // on the opponent's immediate reply.
+      if (level === 'medium' && after.winner === G.EMPTY) {
+        score -= W.oppCapture * opponentBestImmediateCapture(G, after, me, opp);
       }
       return score;
     }
@@ -459,12 +490,26 @@
         var moves = legalMoves(G, state, me);
         if (!moves.length) return null;
 
-        if (level === 'medium') {
-          var reactive = mediumReactiveMove(state, me, opp);
-          if (reactive) return reactive;
-          // No local race to contest: fall through to Easy positional build.
-          // Last-resort capture (even non-erupting) over feeding a doomed cell
-          // is covered by Easy's own capture/ownDelta terms.
+        if (level !== 'medium') return easyMove(state, me);
+
+        // Medium precedence (chosen empirically — see docs/strategy-notes.md):
+        // the v37 "don't leave a cell capturable" strength is DOMINANT, and the
+        // v39 anti-fortress contesting is SECONDARY. Concretely: take the local
+        // anti-fortress move ONLY when it is itself SAFE (doesn't hand the
+        // opponent an immediate capture) or outright winning; otherwise defer to
+        // the capture-avoidance-weighted positional move (easyMove, whose
+        // evaluation includes the v37 oppCapture penalty for Medium). Testing
+        // showed this keeps BOTH the ~90% edge over Easy / ~70% over Easy-Shark
+        // AND the fortress fix, whereas making the reactive move strictly
+        // override lost the strength (dropped to ~48% vs Easy).
+        var reactive = mediumReactiveMove(state, me, opp);
+        if (reactive) {
+          var cl = G.cloneState(state);
+          if (G.applyMove(cl, me, reactive.r, reactive.c) &&
+              (cl.winner === me ||
+               opponentBestImmediateCapture(G, cl, me, opp) === 0)) {
+            return reactive;
+          }
         }
         return easyMove(state, me);
       },
