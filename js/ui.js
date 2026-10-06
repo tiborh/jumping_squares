@@ -2055,9 +2055,15 @@
     if (doBoard) {
       // The saved board is gone; reinitialise the live game too, otherwise
       // render() would redraw the old (possibly finished) board. newGame()
-      // rebuilds the grid, re-renders, clears any end-of-game modal, and (if
-      // auto-save is on) persists the fresh board.
+      // rebuilds the grid, clears any end-of-game modal, cancels any in-flight
+      // cascade, and re-renders. It ALSO calls autoSaveIfOn(), which (with
+      // auto-save on) would immediately write a NEW jumping_squares:save for
+      // the fresh board — resurrecting a "current game" the user just asked to
+      // erase. So we remove the save again afterwards: the net result is a
+      // fresh empty board on screen and NO persisted save, i.e. true first-use.
+      // (Normal gameplay from here still auto-saves on the next move as usual.)
       newGame();
+      boardStore.remove();
     }
     if (doPrefs) {
       // Preferences reset in place: resync the Players/difficulty controls and
@@ -2065,12 +2071,21 @@
       syncPlayerTypeUI();
       // The propagation delay is an in-memory session setting (not persisted),
       // so clearing storage doesn't touch it; a reload would reset it to the
-      // default on its own. For an in-place reset (no reload) do the same by
-      // hand so the live slider also reads first-use (default 500 ms).
-      settings.delayMs = 500;
-      settings.stepMode = false;
-      if (delayRange) { delayRange.value = 5; } // index 5 -> 500 ms
-      updateDelayReadout();
+      // default on its own. For an in-place reset, drive the change THROUGH the
+      // slider's own input handler (set the value, then dispatch 'input') so
+      // its cascade-transition logic runs — e.g. if Reset was opened while a
+      // manual/timed cascade is paused mid-resolution, the handler converts or
+      // reschedules it rather than being left with stale pacing or a stranded
+      // Step control. Setting settings.* directly would bypass that.
+      if (delayRange && delayRange.value !== '5') {
+        delayRange.value = 5; // index 5 -> 500 ms (default)
+        delayRange.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        // Already at default: nothing for the input handler to transition, but
+        // keep the readout honest.
+        sliderIndexToSetting(5);
+        updateDelayReadout();
+      }
       render();
     }
     closeReset();
