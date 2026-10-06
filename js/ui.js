@@ -1993,10 +1993,23 @@
     resetGroupReload.checked = true;
     syncResetDialog();
     resetOverlay.classList.add('show');
+    // onOpen() moves focus into the reset dialog FIRST (synchronously), so the
+    // trigger (inside Settings) is never focused within an inert subtree.
     resetFocus.onOpen(); // focuses Cancel (safe default for a destructive action)
+    // Reset is opened from the Settings panel, which stays visually behind it.
+    // Make the Settings OVERLAY inert so assistive tech doesn't see two active
+    // modal dialogs (it carries role="dialog" aria-modal="true"), mirroring the
+    // About ⇄ What's new nesting. Removed again in closeReset().
+    settingsOverlay.setAttribute('inert', '');
+    settingsOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeReset() {
     resetOverlay.classList.remove('show');
+    // Re-enable the Settings layer BEFORE restoring focus — focus can't land on
+    // an element inside an inert subtree, and onClose() restores focus to the
+    // Reset trigger, which lives inside the Settings card.
+    settingsOverlay.removeAttribute('inert');
+    settingsOverlay.removeAttribute('aria-hidden');
     resetFocus.onClose();
   }
 
@@ -2050,6 +2063,14 @@
       // Preferences reset in place: resync the Players/difficulty controls and
       // the turn label so they show defaults rather than stale values.
       syncPlayerTypeUI();
+      // The propagation delay is an in-memory session setting (not persisted),
+      // so clearing storage doesn't touch it; a reload would reset it to the
+      // default on its own. For an in-place reset (no reload) do the same by
+      // hand so the live slider also reads first-use (default 500 ms).
+      settings.delayMs = 500;
+      settings.stepMode = false;
+      if (delayRange) { delayRange.value = 5; } // index 5 -> 500 ms
+      updateDelayReadout();
       render();
     }
     closeReset();
