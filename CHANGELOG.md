@@ -29,6 +29,59 @@ the nearest user-facing entry.
 
 ---
 
+## v40 — Reset to first-use state (Settings → Persistence)
+
+Player-facing:
+
+- **New: a "Reset to first-use state" button** under **Settings → Persistence**.
+  It opens a dialog that restores the game to how it was before you first used
+  it. You pick exactly what to erase — each item spells out what it clears, and
+  all are selected by default:
+  - **Names, scores & settings** — the whole preferences record: player names,
+    the win tally, who starts next, the auto-save preference, and all
+    Players/difficulty settings.
+  - **Current game** — the saved board (tile layout and counts) that is restored
+    on reload.
+  - **Reload the page afterwards** — refreshes the app so nothing lingers in
+    memory, giving the true first-use look. It is only meaningful when something
+    is actually cleared, so it is **enabled only while at least one of the two
+    data options above is selected** (reloading alone clears nothing).
+- The reset is immediate and **cannot be undone**. If you don't reload, the live
+  page is updated in place so it already reflects the cleared state.
+
+Why / design:
+
+- **Clears by namespace sweep, not a hard-coded list.** The two persistence
+  stores (`jumping_squares:prefs` and `jumping_squares:save`) both live under
+  the `jumping_squares:` prefix. Rather than enumerating individual fields or
+  keys, Reset **sweeps every key under that prefix** — the two data options only
+  decide whether the board save is spared. The payoff is future-proofing: *any*
+  new persisted setting added under the same prefix is cleaned up by Reset
+  **automatically**, with no extra wiring. The only way a key escapes the sweep
+  is by deliberately choosing a different prefix, which the storage-registry
+  comment in `js/ui.js` warns against.
+- **Reload, not cache-bust.** Reset changes *data*, not code, so a plain
+  `location.reload()` is correct — there is no need to touch the `?v=` cache
+  tags. The reload simply drops in-memory state so the app presents its genuine
+  first-use appearance.
+- **Single source of truth, unit-tested.** The key-selection decision ("which
+  stored keys does a reset remove?") is a pure engine helper,
+  `G.storageKeysToClear(allKeys, prefix, keep)`, exported from `js/game.js`. The
+  UI's prefix-sweep delegates to it, and the Node harness tests it directly —
+  covering the future-key guarantee, sparing foreign/bare keys, both-groups vs.
+  single-group sweeps, and defensive bad-input handling.
+- `prefs.clearAll()` also rebuilds the in-memory prefs from a `makeDefaults()`
+  factory, so the live page matches a brand-new install even without a reload.
+
+Internal:
+
+- Node test harness grows to **181 assertions** (+9 for the prefix-sweep
+  helper). Version wiring bumped to **40** (both `?v=` tags and the engine
+  `VERSION`); the oldest What's-new entry (v27) rolls off the 12-entry cap and
+  survives only here.
+
+---
+
 ## v39 — Tutor Medium: keep the winning defence, add anti-fortress contesting
 
 Player-facing:

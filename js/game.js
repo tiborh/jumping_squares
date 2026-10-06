@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '39';
+  var VERSION = '40';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
     { v: '38', text: 'Random now has two levels (Settings \u2192 Players, per Random): Easy (pure random \u2014 the gentle beginner) and Medium (mostly random, but hits back when the opponent is about to capture one of its cells). Also fixes the Tutor\u2019s defence check, which wasn\u2019t firing in some positions.' },
     { v: '37', text: 'Tutor now has two levels (Settings \u2192 Players, per Tutor): Easy (the original gentle opponent, the default) and Medium \u2014 Medium defends its position and won\u2019t hand you an easy chain-reaction, narrowing the gap toward Shark. When both players are the same AI, each difficulty row is labelled by seat (Player 1 / Player 2).' },
@@ -79,7 +80,6 @@
     { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
     { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },
     { v: '28', text: 'New AI opponent \u2014 Shark: it searches moves ahead and plays strongly, exploiting cascades. Pick it per player under Settings \u2192 Players, and set its difficulty (Easy / Medium / Hard).' },
-    { v: '27', text: 'Play against the computer: under Settings \u2192 Players, set either player to Random or Tutor (a simple human-style AI). AI moves use your propagation speed. A stronger AI is planned.', experimental: true },
   ];
 
   // Owner sentinel for an empty/neutral cell.
@@ -718,6 +718,40 @@
     };
   }
 
+  // --- persistence reset helper (pure) -------------------------------------
+  // Given a snapshot of localStorage key names, decide WHICH keys a
+  // "reset to first-use state" should remove: every key under `prefix`, minus
+  // any in `keep`. Pure (no DOM / storage access) so it is unit-testable and
+  // so the UI's prefix-sweep logic has a single, verified source of truth.
+  //
+  // This is the mechanism that makes future persistence auto-cleanable: because
+  // the decision is "everything under the namespace prefix (except explicitly
+  // kept keys)", any NEW key added under the same prefix is swept automatically,
+  // with no change here or in the reset UI. `keep` lets the two reset groups
+  // (preferences vs. the board save) clear their keys independently.
+  //
+  // @param {string[]} allKeys  current localStorage key names (any order)
+  // @param {string}   prefix   namespace every app key begins with
+  // @param {string[]} [keep]   keys to spare from the sweep
+  // @returns {string[]} the subset of allKeys to remove
+  function storageKeysToClear(allKeys, prefix, keep) {
+    if (!Array.isArray(allKeys) || typeof prefix !== 'string' || !prefix) {
+      return [];
+    }
+    var keepSet = Object.create(null);
+    if (Array.isArray(keep)) {
+      for (var k = 0; k < keep.length; k++) keepSet[keep[k]] = true;
+    }
+    var out = [];
+    for (var i = 0; i < allKeys.length; i++) {
+      var key = allKeys[i];
+      if (typeof key === 'string' && key.indexOf(prefix) === 0 && !keepSet[key]) {
+        out.push(key);
+      }
+    }
+    return out;
+  }
+
   return {
     EMPTY: EMPTY,
     VERSION: VERSION,
@@ -740,5 +774,6 @@
     finalizeAfterCascade: finalizeAfterCascade,
     loadState: loadState,
     cloneState: cloneState,
+    storageKeysToClear: storageKeysToClear,
   };
 });
