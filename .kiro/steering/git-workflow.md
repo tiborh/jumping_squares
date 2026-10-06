@@ -29,6 +29,34 @@ For any change (code, docs, config):
    URL back to the user.
 5. **Let the required status checks run and pass** (CI, CodeQL, etc.). Do not
    bypass the ruleset or merge for the user unless they explicitly ask.
+6. **Check the automated code reviews before merging.** Beyond the required
+   status checks, PRs get an advisory **Copilot code review** (and may surface
+   other review output). Read every finding and disposition each on its merits:
+   **fix the ones that are real issues**, and for a demonstrable false positive
+   or a finding that contradicts an earlier one, record *why* — ideally with a
+   concrete check (a repro, a byte-level test) — rather than looping. Push any
+   fix and let Copilot **re-review**; merge only when it's clean (no unaddressed
+   actionable findings) **and** all required checks pass. The review is
+   *advisory* — the real merge gate is the required checks plus the branch
+   ruleset — but genuine findings get fixed first.
+
+## Merging a PR
+
+Merge **only when the user explicitly authorizes it**, and only after step 6
+(reviews addressed) and all required checks pass. Use:
+
+```
+gh pr merge <N> --squash --delete-branch --admin
+```
+
+`--admin` uses the owner's administrator bypass. GitHub admin bypass can
+override branch-protection requirements — potentially including required status
+checks, depending on the ruleset — so it is **not** a safe-by-construction
+guarantee that CI passed. Treat waiting for **all required checks to pass** as a
+hard workflow rule enforced by *us*, not by the command: only run this after
+step 6 (reviews addressed) **and** every required check is green. After merging,
+sync local `main` (`git checkout main && git pull --ff-only`) and confirm no PR
+is left open.
 
 ## Only push to `main` directly when
 
