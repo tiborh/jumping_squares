@@ -1309,29 +1309,32 @@
       <ul class="reset-groups">
         <li>
           <label>
-            <input type="checkbox" id="reset-group-prefs" checked />
+            <input type="checkbox" id="reset-group-prefs" checked
+                   aria-describedby="reset-detail-prefs" />
             <span class="reset-group-title">Names, scores &amp; settings</span>
           </label>
-          <span class="reset-group-detail">
+          <span class="reset-group-detail" id="reset-detail-prefs">
             Player names, the win tally, who starts next, auto-save preference,
             and all Players/difficulty settings.
           </span>
         </li>
         <li>
           <label>
-            <input type="checkbox" id="reset-group-board" checked />
+            <input type="checkbox" id="reset-group-board" checked
+                   aria-describedby="reset-detail-board" />
             <span class="reset-group-title">Current game</span>
           </label>
-          <span class="reset-group-detail">
+          <span class="reset-group-detail" id="reset-detail-board">
             The saved board (tile layout and counts) that is restored on reload.
           </span>
         </li>
         <li>
           <label>
-            <input type="checkbox" id="reset-group-reload" checked />
+            <input type="checkbox" id="reset-group-reload" checked
+                   aria-describedby="reset-detail-reload" />
             <span class="reset-group-title">Reload the page afterwards</span>
           </label>
-          <span class="reset-group-detail">
+          <span class="reset-group-detail" id="reset-detail-reload">
             Refreshes the app so nothing lingers in memory. Available only when
             at least one of the above is selected.
           </span>
