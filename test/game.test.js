@@ -1030,6 +1030,50 @@ console.log('changelog wiring');
      G.WHATSNEW_MAX + ')');
 })();
 
+console.log('persistence reset: storageKeysToClear (prefix sweep)');
+(function () {
+  var PREFIX = 'jumping_squares:';
+  var SAVE = PREFIX + 'save';
+  var PREFS = PREFIX + 'prefs';
+
+  // A realistic snapshot: our two keys, a (hypothetical) FUTURE namespaced key,
+  // another same-origin app's key, and a bare key. Only our-prefixed keys may
+  // ever be swept.
+  var snapshot = [PREFS, SAVE, PREFIX + 'stats', 'other_app:prefs', 'theme'];
+
+  // Reset "everything" (prefs group, keeping the board save) must clear prefs
+  // AND the future `:stats` key — this is the auto-cleanable guarantee — while
+  // sparing the board save and every foreign/bare key.
+  var keepBoard = G.storageKeysToClear(snapshot, PREFIX, [SAVE]).sort();
+  eq(keepBoard, [PREFIX + 'stats', PREFS].sort(),
+     'sweep (keep board) clears prefs + future namespaced keys, spares the save and foreign keys');
+
+  // A FUTURE key is cleared with no code change — the point of point 3.
+  ok(keepBoard.indexOf(PREFIX + 'stats') !== -1,
+     'a future jumping_squares:* key is swept automatically');
+  ok(keepBoard.indexOf('other_app:prefs') === -1,
+     'another app\u2019s same-origin key is never touched');
+  ok(keepBoard.indexOf('theme') === -1, 'a bare (un-namespaced) key is never touched');
+
+  // No `keep` -> sweep ALL app keys (used by a full reset / "both groups").
+  var all = G.storageKeysToClear(snapshot, PREFIX).sort();
+  eq(all, [PREFIX + 'stats', PREFS, SAVE].sort(),
+     'sweep with no keep removes every namespaced key (both groups)');
+
+  // Keeping prefs instead (board-only group) spares prefs and stats.
+  var keepPrefs = G.storageKeysToClear(snapshot, PREFIX, [PREFS]).sort();
+  eq(keepPrefs, [PREFIX + 'stats', SAVE].sort(),
+     'sweep (keep prefs) targets the board save (plus any non-prefs namespaced keys)');
+
+  // Defensive: bad inputs return [] rather than throwing (reset must never
+  // crash the app, even with a hostile/odd storage snapshot).
+  eq(G.storageKeysToClear(null, PREFIX), [], 'non-array keys -> []');
+  eq(G.storageKeysToClear(snapshot, ''), [], 'empty prefix -> [] (never sweep everything)');
+  eq(G.storageKeysToClear([PREFS, 42, null, PREFIX + 'x'], PREFIX).sort(),
+     [PREFIX + 'x', PREFS].sort(),
+     'non-string entries in the snapshot are ignored');
+})();
+
 // ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

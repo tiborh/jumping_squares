@@ -150,7 +150,9 @@ stepped-cascade equivalence (the stepped path matches the instant result),
 save validation and rehydration (`loadState`: bounds, cell/owner invariants,
 the winner + turn-gate rule, settled-state and point-conservation checks,
 including non-player-1 openers), the configurable **starting player**, the
-**AI difficulty levels** (Random and Tutor Easy/Medium behaviours), and
+**AI difficulty levels** (Random and Tutor Easy/Medium behaviours), the
+**persistence-reset key sweep** (`storageKeysToClear`: future-key auto-clear,
+sparing foreign/un-namespaced keys, per-group clearing), and
 version-tag consistency (see below). Agent *strength* is measured separately by
 `test/agents.harness.js` (win-rate stats, not pass/fail).
 
@@ -168,6 +170,22 @@ reloads and reopened tabs:
 - **Player names** — the custom names you set by clicking the turn indicator.
 - **Win tally** — the running score for the current name pair.
 
+**Reset to first-use state.** Under **Settings → Persistence**, the **Reset to
+first-use state…** button opens a dialog that restores the game to how it was
+before you ever used it. You choose exactly what to erase — each item is listed
+with what it clears, and all are selected by default:
+
+| Option | What it erases |
+| --- | --- |
+| **Names, scores & settings** | Player names, the win tally, who starts next, the auto-save preference, and all Players/difficulty settings (the whole `…:prefs` record). |
+| **Current game** | The saved board — tile layout and counts — that is restored on reload (the `…:save` record). |
+| **Reload the page afterwards** | Refreshes the app so nothing lingers in memory, giving the true first-use appearance. Enabled only while at least one of the two data options above is selected (reloading alone clears nothing). |
+
+The reset is immediate and **cannot be undone**. If you don't reload, the live
+page is still updated in place to match. (Reset does **not** change any code, so
+a plain reload is enough — no cache-busting is involved; see *Versioning* below
+for when `?v=` matters.)
+
 How it works and its boundaries:
 
 - Stored via the browser's **`localStorage`** under two namespaced keys:
@@ -175,6 +193,15 @@ How it works and its boundaries:
   preferences and scores (namespaced because GitHub Pages serves every project
   of the account from the same origin). There is **no server** and nothing is
   sent anywhere — data never leaves your browser.
+- **Reset clears by namespace, not by a fixed list.** Every key this app writes
+  begins with the `jumping_squares:` prefix, and Reset **sweeps every key under
+  that prefix** (the two options above simply decide whether the board save is
+  spared). This is deliberate: any *future* persisted setting added under the
+  same prefix is cleaned up by Reset **automatically**, with no extra wiring —
+  so "Reset to first-use state" stays complete as the game grows. The
+  key-selection logic is a pure, unit-tested engine helper
+  (`storageKeysToClear`), shared as the single source of truth between the sweep
+  and its tests.
 - **No expiry logic by design** — the browser (and you) manage its lifetime;
   clearing site data removes it. It's **per browser / profile**, so a different
   browser, device, or a private window starts fresh.
@@ -320,9 +347,14 @@ Status of the project and planned work. Done items reflect the current build.
       saved to `localStorage` and restored seamlessly on reload / reopened tab;
       a **Settings → Persistence** panel toggles auto-save and clears saved
       data; an engine-side `loadState` validator guards untrusted saves
+- [x] **Reset to first-use state** (Settings → Persistence): a dialog to erase
+      names/scores/settings and/or the saved game, with an optional reload.
+      Clears by **namespace sweep** (every `jumping_squares:` key), so any
+      future persisted setting is reset automatically; the key-selection engine
+      helper (`storageKeysToClear`) is pure and unit-tested
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (172 assertions, no dependencies)
+- [x] Node test harness (181 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**

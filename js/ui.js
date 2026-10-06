@@ -54,53 +54,102 @@
   // feature-detected and wrapped so private mode or disabled storage simply
   // falls back to in-memory defaults and never breaks the game. A `v` field
   // lets future changes migrate or discard old data.
-  var PREFS_KEY = 'jumping_squares:prefs';
+  // --- storage namespace registry ------------------------------------------
+  // EVERY localStorage key this app writes MUST begin with this prefix. Two
+  // reasons: (1) GitHub Pages serves all of this account's projects from the
+  // same origin, so a bare key could collide with another app; (2) the Reset
+  // feature (Settings → Persistence) clears persistence by SWEEPING every key
+  // under this prefix rather than deleting a hard-coded list. That makes any
+  // future namespaced key automatically "cleanable" — add a new
+  // `jumping_squares:<thing>` key anywhere and Reset will remove it with no
+  // extra wiring. The ONLY thing that keeps a key out of the sweep is choosing
+  // a different prefix, so: always use STORAGE_PREFIX for new persistence.
+  var STORAGE_PREFIX = 'jumping_squares:';
+
+  // Remove every localStorage key under STORAGE_PREFIX, optionally except the
+  // keys listed in `keep` (used so the two Reset groups — prefs vs. board save —
+  // can be cleared independently). Best-effort and self-contained: feature-
+  // detected, swallows errors, and snapshots the key list first (removing while
+  // iterating a live `localStorage` is unsafe). Returns the number removed.
+  function sweepStorage(keep) {
+    var removed = 0;
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return 0;
+      var ls = window.localStorage;
+      // Snapshot the key names first (removing while iterating a live Storage
+      // is unsafe), then let the engine's PURE, unit-tested helper decide which
+      // to clear. Keeping that decision in game.js means the "future keys are
+      // swept automatically" rule has a single, verified source of truth.
+      var allKeys = [];
+      for (var i = 0; i < ls.length; i++) {
+        var key = ls.key(i);
+        if (key) allKeys.push(key);
+      }
+      var doomed = (G && G.storageKeysToClear)
+        ? G.storageKeysToClear(allKeys, STORAGE_PREFIX, keep)
+        : allKeys.filter(function (k) { return k.indexOf(STORAGE_PREFIX) === 0; });
+      for (var j = 0; j < doomed.length; j++) {
+        try { ls.removeItem(doomed[j]); removed++; } catch (e) { /* skip */ }
+      }
+    } catch (e) { /* storage blocked: nothing to sweep */ }
+    return removed;
+  }
+
+  var PREFS_KEY = STORAGE_PREFIX + 'prefs';
   var PREFS_VERSION = 8; // v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
     // name pair: which seat (1/2) has won how many rounds. `pair` records the
     // names those wins belong to (bookkeeping + future multi-pair support).
-    var mem = {
-      v: PREFS_VERSION,
-      playerNames: {},
-      score: { pair: { 1: '', 2: '' }, wins: { 1: 0, 2: 0 } },
-      // Auto-save the board between sessions. ON by default (the whole point is
-      // guarding against accidental reloads / tab closure). Persisted here in
-      // the PREFS record — independent of the board save itself — so turning it
-      // off is remembered even when there is no saved board. See the Persistence
-      // section in Settings.
-      autoSave: true,
-      // Who controls each player: 'human' (default), 'random', 'tutor', or
-      // 'shark'. Persisted so the chosen match-up survives reloads. Player 2
-      // defaults to the Tutor AI so a brand-new user (no saved game, no stored
-      // prefs) immediately has an opponent to play against — easier onboarding
-      // than two human seats on a single device. Any stored playerType in prefs
-      // overrides this default on load.
-      playerType: { 1: 'human', 2: 'tutor' },
-      // Shark search depth (difficulty), PER SEAT: 2=Easy, 3=Medium (default),
-      // 4=Hard. Per-seat so when BOTH players are Shark each can have its own
-      // difficulty. NOTE: per-move time is CPU-DEPENDENT and grows ~ area^depth.
-      // On the current fixed 5x5 board all depths are fast (<~100 ms). When
-      // larger boards arrive (board-size picker), higher depths get expensive
-      // and the UI should surface a time hint — ideally from a one-time
-      // in-browser calibration rather than hard-coded (machine-specific) numbers.
-      sharkDepth: { 1: 3, 2: 3 },
-      // Tutor difficulty PER SEAT: 'easy' (the original gentle 1-ply heuristic,
-      // the default so a first opponent stays beatable/learnable) or 'medium'
-      // (adds a defensive opponent-reply lookahead — a step toward Shark).
-      tutorLevel: { 1: 'easy', 2: 'easy' },
-      // Random difficulty PER SEAT: 'easy' (default — pure random) or 'medium'
-      // (mostly random, but hits back when the opponent could capture one of
-      // its cells next move). Still positionally blind — the "chaos" family.
-      randomLevel: { 1: 'easy', 2: 'easy' },
-      // Which player makes the FIRST move of the NEXT game. The game alternates
-      // this after each COMPLETED game (so the player who went second last game
-      // opens the next one). Persisted so the alternation survives reloads.
-      // Defaults to 1; reset to 1 when the user resets the series (tally),
-      // unless they opt to keep it via the reset dialog's checkbox.
-      startingPlayer: 1,
-    };
+    //
+    // Built via a FACTORY (not a literal) so the exact same first-use defaults
+    // can be re-created by clearAll() when the user resets to first-use state —
+    // guaranteeing the live in-memory prefs match a brand-new install, not just
+    // the on-disk key being gone.
+    function makeDefaults() {
+      return {
+        v: PREFS_VERSION,
+        playerNames: {},
+        score: { pair: { 1: '', 2: '' }, wins: { 1: 0, 2: 0 } },
+        // Auto-save the board between sessions. ON by default (the whole point is
+        // guarding against accidental reloads / tab closure). Persisted here in
+        // the PREFS record — independent of the board save itself — so turning it
+        // off is remembered even when there is no saved board. See the Persistence
+        // section in Settings.
+        autoSave: true,
+        // Who controls each player: 'human' (default), 'random', 'tutor', or
+        // 'shark'. Persisted so the chosen match-up survives reloads. Player 2
+        // defaults to the Tutor AI so a brand-new user (no saved game, no stored
+        // prefs) immediately has an opponent to play against — easier onboarding
+        // than two human seats on a single device. Any stored playerType in prefs
+        // overrides this default on load.
+        playerType: { 1: 'human', 2: 'tutor' },
+        // Shark search depth (difficulty), PER SEAT: 2=Easy, 3=Medium (default),
+        // 4=Hard. Per-seat so when BOTH players are Shark each can have its own
+        // difficulty. NOTE: per-move time is CPU-DEPENDENT and grows ~ area^depth.
+        // On the current fixed 5x5 board all depths are fast (<~100 ms). When
+        // larger boards arrive (board-size picker), higher depths get expensive
+        // and the UI should surface a time hint — ideally from a one-time
+        // in-browser calibration rather than hard-coded (machine-specific) numbers.
+        sharkDepth: { 1: 3, 2: 3 },
+        // Tutor difficulty PER SEAT: 'easy' (the original gentle 1-ply heuristic,
+        // the default so a first opponent stays beatable/learnable) or 'medium'
+        // (adds a defensive opponent-reply lookahead — a step toward Shark).
+        tutorLevel: { 1: 'easy', 2: 'easy' },
+        // Random difficulty PER SEAT: 'easy' (default — pure random) or 'medium'
+        // (mostly random, but hits back when the opponent could capture one of
+        // its cells next move). Still positionally blind — the "chaos" family.
+        randomLevel: { 1: 'easy', 2: 'easy' },
+        // Which player makes the FIRST move of the NEXT game. The game alternates
+        // this after each COMPLETED game (so the player who went second last game
+        // opens the next one). Persisted so the alternation survives reloads.
+        // Defaults to 1; reset to 1 when the user resets the series (tally),
+        // unless they opt to keep it via the reset dialog's checkbox.
+        startingPlayer: 1,
+      };
+    }
+    var mem = makeDefaults();
 
     function storageAvailable() {
       // Probe under our OWN namespace so we never touch another same-origin
@@ -329,6 +378,19 @@
         mem.sharkDepth[n] = (d === 2 || d === 3 || d === 4) ? d : 3;
         persist();
       },
+      // --- reset to first-use state ---
+      // Erase ALL stored preferences and reset the in-memory cache to the exact
+      // first-use defaults. Used by the Reset feature (Settings → Persistence).
+      // Rather than deleting only PREFS_KEY, it SWEEPS every key under
+      // STORAGE_PREFIX except the board save (which the Reset dialog's "current
+      // game" group owns and clears separately). Sweeping means any future
+      // namespaced prefs key is cleared automatically — no per-key wiring.
+      // Returns the number of storage keys removed (0 if storage is blocked).
+      clearAll: function () {
+        var removed = sweepStorage([SAVE_KEY]);
+        mem = makeDefaults(); // live state now matches a brand-new install
+        return removed;
+      },
     };
   })();
 
@@ -346,7 +408,7 @@
   // engineVersion is recorded so a later format change can migrate old saves
   // (validate AFTER converting). All reads go through the engine's loadState()
   // validator, so corrupt/edited/hostile data can never become a live state.
-  var SAVE_KEY = 'jumping_squares:save';
+  var SAVE_KEY = STORAGE_PREFIX + 'save';
   var SAVE_FORMAT = 'jumping_squares/save';
   var SAVE_FORMAT_VERSION = 1;
 
@@ -1878,6 +1940,89 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && confirmOverlay.classList.contains('show')) {
       closeConfirm();
+    }
+  });
+
+  // --- reset-to-first-use dialog -------------------------------------------
+  // A multi-checkbox dialog (opened from Settings → Persistence) that erases
+  // the two persistence stores — "Names, scores & settings" (the whole prefs
+  // record, cleared via prefs.clearAll()'s prefix sweep) and "Current game"
+  // (the board save) — each independently selectable, both checked by default.
+  // A third "Reload" option refreshes the page so no stale state lingers in
+  // memory; it is only meaningful when something is actually cleared, so it is
+  // enabled (and auto-checked) only while group 1 or group 2 is selected.
+  var resetOverlay = document.getElementById('reset-overlay');
+  var resetCard = document.getElementById('reset-card');
+  var resetOpenBtn = document.getElementById('reset-firstuse');
+  var resetOk = document.getElementById('reset-ok');
+  var resetCancel = document.getElementById('reset-cancel');
+  var resetGroupPrefs = document.getElementById('reset-group-prefs');
+  var resetGroupBoard = document.getElementById('reset-group-board');
+  var resetGroupReload = document.getElementById('reset-group-reload');
+  var resetFocus = makeDialogFocusManager(resetOverlay, resetCard, 'reset-cancel');
+
+  // Keep the Reload checkbox honest: enabled only when at least one of the two
+  // data groups is selected (reloading clears nothing by itself). When it gets
+  // disabled it is also unchecked; when it becomes enabled again it re-checks
+  // (the default), and OK is disabled when nothing at all is selected.
+  function syncResetDialog() {
+    var anyData = resetGroupPrefs.checked || resetGroupBoard.checked;
+    resetGroupReload.disabled = !anyData;
+    if (!anyData) resetGroupReload.checked = false;
+    else if (!resetGroupReload.checked) resetGroupReload.checked = true;
+    if (resetOk) resetOk.disabled = !anyData;
+  }
+
+  function openReset() {
+    // Fresh defaults each time: all three groups checked.
+    resetGroupPrefs.checked = true;
+    resetGroupBoard.checked = true;
+    resetGroupReload.checked = true;
+    syncResetDialog();
+    resetOverlay.classList.add('show');
+    resetFocus.onOpen(); // focuses Cancel (safe default for a destructive action)
+  }
+  function closeReset() {
+    resetOverlay.classList.remove('show');
+    resetFocus.onClose();
+  }
+
+  if (resetOpenBtn) {
+    resetOpenBtn.addEventListener('click', openReset);
+  }
+  resetGroupPrefs.addEventListener('change', syncResetDialog);
+  resetGroupBoard.addEventListener('change', syncResetDialog);
+
+  resetOk.addEventListener('click', function () {
+    var doPrefs = resetGroupPrefs.checked;
+    var doBoard = resetGroupBoard.checked;
+    var doReload = resetGroupReload.checked && !resetGroupReload.disabled;
+    if (!doPrefs && !doBoard) { closeReset(); return; } // nothing selected
+
+    if (doPrefs) prefs.clearAll(); // sweeps all prefix keys except the board save
+    if (doBoard) boardStore.remove();
+
+    if (doReload) {
+      // A plain reload is enough: we are NOT changing code, only clearing data,
+      // so there is no need to cache-bust the scripts. The reload simply drops
+      // all in-memory state so the app presents its true first-use appearance.
+      closeReset();
+      window.location.reload();
+      return;
+    }
+
+    // No reload: update the live UI in place so the change is visible now.
+    closeReset();
+    syncPersistenceUI();
+    render();
+  });
+  resetCancel.addEventListener('click', closeReset);
+  resetOverlay.addEventListener('click', function (e) {
+    if (e.target === resetOverlay) closeReset(); // backdrop click = cancel
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && resetOverlay.classList.contains('show')) {
+      closeReset();
     }
   });
 

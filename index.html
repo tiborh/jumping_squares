@@ -774,6 +774,105 @@
       outline-offset: 2px;
     }
 
+    /* --- Reset-to-first-use dialog ----------------------------------------
+       Shares the confirm dialog's look (dark card, destructive OK) but shows a
+       checklist of exactly what will be erased, so the action is transparent. */
+    #reset-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 36; /* above the settings dialog (opened from Persistence) */
+    }
+    #reset-overlay.show { display: flex; }
+    #reset-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 440px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #reset-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 22px);
+    }
+    #reset-card #reset-intro {
+      margin: 0;
+      font-size: clamp(13px, 3.4vw, 16px);
+      line-height: 1.45;
+      opacity: 0.9;
+    }
+    #reset-card .reset-groups {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #reset-card .reset-groups > li {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #reset-card .reset-groups label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    #reset-card .reset-groups input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #3d7bd6;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    #reset-card .reset-groups input:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    #reset-card .reset-group-title {
+      font-size: clamp(14px, 3.6vw, 16px);
+      font-weight: 600;
+    }
+    #reset-card .reset-group-detail {
+      font-size: clamp(12px, 3vw, 13px);
+      line-height: 1.35;
+      opacity: 0.75;
+      padding-left: 26px; /* align under the title, past the checkbox */
+    }
+    /* A disabled group (e.g. Reload with nothing selected) reads as inactive. */
+    #reset-card .reset-groups input:disabled ~ .reset-group-title { opacity: 0.45; }
+    #reset-card .reset-groups label:has(input:disabled) { cursor: default; }
+    #reset-card .confirm-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    /* Reset is destructive — emphasise it like the confirm OK; Cancel stays quiet. */
+    #reset-ok {
+      font-weight: 700;
+      background: #b23a3f;
+      border-color: #d2585d;
+    }
+    #reset-ok:hover { background: #c7444a; }
+    #reset-ok:focus-visible,
+    #reset-cancel:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+
     #about-overlay {
       position: fixed;
       inset: 0;
@@ -1167,6 +1266,12 @@
              continuously overwritten by an active auto-save (i.e. auto-save OFF
              and a save exists). -->
         <button id="remove-save" type="button" disabled>Remove saved data</button>
+        <!-- Reset to first-use state: opens a dialog listing exactly what will
+             be erased (names/scores/settings, current game) with an optional
+             reload to clear any in-memory/cached state afterwards. Always
+             enabled — unlike "Remove saved data", a reset is meaningful even
+             when auto-save is on (it also clears names, scores and settings). -->
+        <button id="reset-firstuse" type="button">Reset to first-use state…</button>
       </div>
     </div>
   </div>
@@ -1185,6 +1290,56 @@
       <div class="confirm-actions">
         <button id="confirm-cancel" type="button">Cancel</button>
         <button id="confirm-ok" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset-to-first-use dialog. A multi-checkbox variant of the confirm
+       dialog: it lists exactly what each group erases so the user knows
+       precisely what will happen before confirming. Groups 1 and 2 are the two
+       persistence stores; "Reload" (group 3) is only meaningful when something
+       is actually cleared, so it enables only when group 1 or 2 is checked. -->
+  <div id="reset-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-title">
+    <div id="reset-card">
+      <h2 id="reset-title">Reset to first-use state</h2>
+      <p id="reset-intro">
+        Choose what to erase from this browser. This restores the game to how it
+        was before you first used it. <strong>This cannot be undone.</strong>
+      </p>
+      <ul class="reset-groups">
+        <li>
+          <label>
+            <input type="checkbox" id="reset-group-prefs" checked />
+            <span class="reset-group-title">Names, scores &amp; settings</span>
+          </label>
+          <span class="reset-group-detail">
+            Player names, the win tally, who starts next, auto-save preference,
+            and all Players/difficulty settings.
+          </span>
+        </li>
+        <li>
+          <label>
+            <input type="checkbox" id="reset-group-board" checked />
+            <span class="reset-group-title">Current game</span>
+          </label>
+          <span class="reset-group-detail">
+            The saved board (tile layout and counts) that is restored on reload.
+          </span>
+        </li>
+        <li>
+          <label>
+            <input type="checkbox" id="reset-group-reload" checked />
+            <span class="reset-group-title">Reload the page afterwards</span>
+          </label>
+          <span class="reset-group-detail">
+            Refreshes the app so nothing lingers in memory. Available only when
+            at least one of the above is selected.
+          </span>
+        </li>
+      </ul>
+      <div class="confirm-actions">
+        <button id="reset-cancel" type="button">Cancel</button>
+        <button id="reset-ok" type="button">Reset</button>
       </div>
     </div>
   </div>
@@ -1243,8 +1398,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=39"></script>
-  <script src="js/agents.js?v=39"></script>
-  <script src="js/ui.js?v=39"></script>
+  <script src="js/game.js?v=40"></script>
+  <script src="js/agents.js?v=40"></script>
+  <script src="js/ui.js?v=40"></script>
 </body>
 </html>
