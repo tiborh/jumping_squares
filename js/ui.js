@@ -87,7 +87,14 @@
       }
       var doomed = (G && G.storageKeysToClear)
         ? G.storageKeysToClear(allKeys, STORAGE_PREFIX, keep)
-        : allKeys.filter(function (k) { return k.indexOf(STORAGE_PREFIX) === 0; });
+        : allKeys.filter(function (k) {
+            // Fallback (engine helper somehow unavailable): mirror its contract
+            // exactly — sweep our-prefixed keys but SPARE any in `keep`, so a
+            // mixed/stale load can never clear the board save when the caller
+            // asked to keep it (fail closed, same as the pure helper).
+            if (k.indexOf(STORAGE_PREFIX) !== 0) return false;
+            return !(keep && keep.indexOf(k) !== -1);
+          });
       for (var j = 0; j < doomed.length; j++) {
         try { ls.removeItem(doomed[j]); removed++; } catch (e) { /* skip */ }
       }
@@ -379,15 +386,17 @@
         persist();
       },
       // --- reset to first-use state ---
-      // Erase ALL stored preferences and reset the in-memory cache to the exact
+      // Erase stored preferences and reset the in-memory cache to the exact
       // first-use defaults. Used by the Reset feature (Settings → Persistence).
-      // Rather than deleting only PREFS_KEY, it SWEEPS every key under
-      // STORAGE_PREFIX except the board save (which the Reset dialog's "current
-      // game" group owns and clears separately). Sweeping means any future
-      // namespaced prefs key is cleared automatically — no per-key wiring.
+      // Rather than deleting only PREFS_KEY, it SWEEPS keys under STORAGE_PREFIX
+      // (minus `keep`), so any future namespaced prefs key is cleared
+      // automatically — no per-key wiring. `keep` defaults to [SAVE_KEY] so the
+      // board save (the Reset dialog's "current game" group) is spared unless
+      // the caller explicitly opts to clear everything (keep = []).
       // Returns the number of storage keys removed (0 if storage is blocked).
-      clearAll: function () {
-        var removed = sweepStorage([SAVE_KEY]);
+      clearAll: function (keep) {
+        var toKeep = (keep === undefined) ? [SAVE_KEY] : keep;
+        var removed = sweepStorage(toKeep);
         mem = makeDefaults(); // live state now matches a brand-new install
         return removed;
       },
@@ -1582,7 +1591,11 @@
   });
   // Escape closes it (desktop convenience).
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && settingsOverlay.classList.contains('show')) {
+    // Ignore Escape while the reset dialog (layered above Settings) is open —
+    // that dialog's own handler dismisses the topmost layer first, so Settings
+    // must not also close underneath it and strand focus restoration.
+    if (e.key === 'Escape' && settingsOverlay.classList.contains('show') &&
+        !(resetOverlay && resetOverlay.classList.contains('show'))) {
       closeSettings();
     }
   });
@@ -1999,8 +2012,21 @@
     var doReload = resetGroupReload.checked && !resetGroupReload.disabled;
     if (!doPrefs && !doBoard) { closeReset(); return; } // nothing selected
 
-    if (doPrefs) prefs.clearAll(); // sweeps all prefix keys except the board save
-    if (doBoard) boardStore.remove();
+    // Clear by NAMESPACE SWEEP so the "future keys are cleaned automatically"
+    // guarantee holds for every selection, not just "both groups":
+    //   - both groups  -> sweep the whole namespace (keep nothing)
+    //   - prefs only   -> sweep everything EXCEPT the board save
+    //   - board only   -> sweep everything EXCEPT the prefs record
+    // Any future jumping_squares:* key is therefore removed whenever at least
+    // one group is selected (it is only spared by the OTHER group's keep).
+    if (doPrefs && doBoard) {
+      prefs.clearAll([]);        // sweep all; reset in-memory prefs to defaults
+      boardStore.remove();       // belt-and-braces (clearAll already took :save)
+    } else if (doPrefs) {
+      prefs.clearAll();          // keeps the board save (default keep = [:save])
+    } else { // board only
+      sweepStorage([PREFS_KEY]); // clear :save (and any non-prefs future key)
+    }
 
     if (doReload) {
       // A plain reload is enough: we are NOT changing code, only clearing data,
@@ -2011,10 +2037,23 @@
       return;
     }
 
-    // No reload: update the live UI in place so the change is visible now.
+    // No reload: bring the LIVE page into line with what was cleared, so the
+    // on-screen state matches first-use even though nothing was refreshed.
+    if (doBoard) {
+      // The saved board is gone; reinitialise the live game too, otherwise
+      // render() would redraw the old (possibly finished) board. newGame()
+      // rebuilds the grid, re-renders, clears any end-of-game modal, and (if
+      // auto-save is on) persists the fresh board.
+      newGame();
+    }
+    if (doPrefs) {
+      // Preferences reset in place: resync the Players/difficulty controls and
+      // the turn label so they show defaults rather than stale values.
+      syncPlayerTypeUI();
+      render();
+    }
     closeReset();
     syncPersistenceUI();
-    render();
   });
   resetCancel.addEventListener('click', closeReset);
   resetOverlay.addEventListener('click', function (e) {
