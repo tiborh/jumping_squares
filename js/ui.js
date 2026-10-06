@@ -1974,20 +1974,28 @@
   var resetGroupReload = document.getElementById('reset-group-reload');
   var resetFocus = makeDialogFocusManager(resetOverlay, resetCard, 'reset-cancel');
 
+  // The user's explicit preference for the Reload option, remembered across
+  // enable/disable transitions so toggling a data group never silently
+  // overrides a deliberate choice. Defaults to true (reload is the recommended
+  // way to reach a clean first-use appearance). Updated only by a real user
+  // toggle (the change handler below), not by the programmatic disable logic.
+  var reloadPref = true;
+
   // Keep the Reload checkbox honest: enabled only when at least one of the two
-  // data groups is selected (reloading clears nothing by itself). When it gets
-  // disabled it is also unchecked; when it becomes enabled again it re-checks
-  // (the default), and OK is disabled when nothing at all is selected.
+  // data groups is selected (reloading clears nothing by itself). While
+  // disabled it shows unchecked; when it becomes enabled again it is restored
+  // to the user's remembered preference (not force-checked). OK is disabled
+  // when nothing at all is selected.
   function syncResetDialog() {
     var anyData = resetGroupPrefs.checked || resetGroupBoard.checked;
     resetGroupReload.disabled = !anyData;
-    if (!anyData) resetGroupReload.checked = false;
-    else if (!resetGroupReload.checked) resetGroupReload.checked = true;
+    resetGroupReload.checked = anyData && reloadPref;
     if (resetOk) resetOk.disabled = !anyData;
   }
 
   function openReset() {
     // Fresh defaults each time: all three groups checked.
+    reloadPref = true; // reset the remembered Reload preference to the default
     resetGroupPrefs.checked = true;
     resetGroupBoard.checked = true;
     resetGroupReload.checked = true;
@@ -2018,6 +2026,12 @@
   }
   resetGroupPrefs.addEventListener('change', syncResetDialog);
   resetGroupBoard.addEventListener('change', syncResetDialog);
+  // Remember the user's explicit Reload choice so it survives later toggles of
+  // the data checkboxes (which disable/enable Reload). Only fires on a real
+  // user interaction, never on the programmatic checked= in syncResetDialog.
+  resetGroupReload.addEventListener('change', function () {
+    if (!resetGroupReload.disabled) reloadPref = resetGroupReload.checked;
+  });
 
   resetOk.addEventListener('click', function () {
     var doPrefs = resetGroupPrefs.checked;

@@ -1048,7 +1048,8 @@ console.log('persistence reset: storageKeysToClear (prefix sweep)');
   eq(keepBoard, [PREFIX + 'stats', PREFS].sort(),
      'sweep (keep board) clears prefs + future namespaced keys, spares the save and foreign keys');
 
-  // A FUTURE key is cleared with no code change — the point of point 3.
+  // A FUTURE namespaced key is cleared with no code change — this is the
+  // auto-cleanable guarantee the sweep exists to provide.
   ok(keepBoard.indexOf(PREFIX + 'stats') !== -1,
      'a future jumping_squares:* key is swept automatically');
   ok(keepBoard.indexOf('other_app:prefs') === -1,
