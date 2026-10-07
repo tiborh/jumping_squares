@@ -18,12 +18,15 @@ CSS, gameplay, UI), you **must bump the version** so caches don't serve stale
 files. If it's docs-only (`README`, this file, comments), skip to section B.
 
 1. Edit `VERSION` in `js/game.js` — bump it by one (e.g. `'6'` → `'7'`).
-2. Edit **both** `?v=` query strings in `index.html` to the same number:
+2. Edit **all three** `?v=` query strings in `index.html` to the same number:
    ```html
    <script src="js/game.js?v=7"></script>
+   <script src="js/agents.js?v=7"></script>
    <script src="js/ui.js?v=7"></script>
    ```
-   (The `version wiring` test fails if these don't match `VERSION`.)
+   (The `version wiring` test fails if any present `?v=` value doesn't match
+   `VERSION`; it does not check that all three tags exist, so update them all by
+   hand.)
 
 ---
 
@@ -109,7 +112,7 @@ files. If it's docs-only (`README`, this file, comments), skip to section B.
 ## Quick reference (browser-visible change)
 
 ```bash
-# A. bump VERSION in js/game.js and both ?v= in index.html
+# A. bump VERSION in js/game.js and all three ?v= in index.html
 # B. test
 node test/game.test.js
 # C. branch + commit + PR
