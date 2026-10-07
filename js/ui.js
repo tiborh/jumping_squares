@@ -2115,6 +2115,116 @@
     }
   });
 
+  // --- help dialog ---------------------------------------------------------
+  // A single scrollable page of the concise "How to play" content. The text is
+  // the engine's HELP data, which is mirrored from the README (see
+  // tools/gen-help.js + the drift test). Rendered to the DOM with text nodes
+  // only (no innerHTML), so nothing in the content can be interpreted as markup.
+  var helpOverlay = document.getElementById('help-overlay');
+  var helpCard = document.getElementById('help-card');
+  var helpBtn = document.getElementById('help-btn');
+  var helpClose = document.getElementById('help-close');
+  var helpBody = document.getElementById('help-body');
+  var helpFocus = makeDialogFocusManager(helpOverlay, helpCard, 'help-close');
+  var helpRendered = false; // build once, lazily, on first open
+
+  // Append `raw` to `parent`, interpreting the small inline markdown subset the
+  // help uses: **bold**, *italic*, `code`. Everything is inserted as text
+  // nodes / element text content — never as HTML. Unmatched markers are left as
+  // literal characters, so plain text always renders safely.
+  function appendInline(parent, raw) {
+    // Tokenize on the three inline markers. The regex captures a run of code,
+    // bold or italic; anything else falls through as plain text.
+    var re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+    var last = 0;
+    var m;
+    while ((m = re.exec(raw)) !== null) {
+      if (m.index > last) {
+        parent.appendChild(document.createTextNode(raw.slice(last, m.index)));
+      }
+      var tok = m[0];
+      var el;
+      if (tok.charAt(0) === '`') {
+        el = document.createElement('code');
+        el.textContent = tok.slice(1, -1);
+      } else if (tok.slice(0, 2) === '**') {
+        el = document.createElement('strong');
+        el.textContent = tok.slice(2, -2);
+      } else {
+        el = document.createElement('em');
+        el.textContent = tok.slice(1, -1);
+      }
+      parent.appendChild(el);
+      last = m.index + tok.length;
+    }
+    if (last < raw.length) {
+      parent.appendChild(document.createTextNode(raw.slice(last)));
+    }
+  }
+
+  // Build a <ul> from a list block's items (each item may have children, which
+  // render as a single nested <ul> — the parser allows one level of nesting).
+  function buildList(items) {
+    var ul = document.createElement('ul');
+    items.forEach(function (item) {
+      var li = document.createElement('li');
+      appendInline(li, item.text);
+      if (item.children && item.children.length) {
+        var sub = document.createElement('ul');
+        item.children.forEach(function (child) {
+          var cli = document.createElement('li');
+          appendInline(cli, child.text);
+          sub.appendChild(cli);
+        });
+        li.appendChild(sub);
+      }
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+
+  // Render the HELP block list into #help-body. Headings become <h3> (the
+  // dialog's own <h2> is the title); paragraphs <p>; lists <ul>.
+  function renderHelp() {
+    var blocks = (G.HELP || []);
+    helpBody.innerHTML = '';
+    blocks.forEach(function (b) {
+      if (b.type === 'heading') {
+        var h = document.createElement('h3');
+        appendInline(h, b.text);
+        helpBody.appendChild(h);
+      } else if (b.type === 'paragraph') {
+        var p = document.createElement('p');
+        appendInline(p, b.text);
+        helpBody.appendChild(p);
+      } else if (b.type === 'list') {
+        helpBody.appendChild(buildList(b.items || []));
+      }
+    });
+  }
+
+  function openHelp() {
+    if (!helpRendered) { renderHelp(); helpRendered = true; }
+    helpBody.scrollTop = 0; // always start at the top
+    helpOverlay.classList.add('show');
+    helpFocus.onOpen();
+  }
+  function closeHelp() {
+    helpOverlay.classList.remove('show');
+    helpFocus.onClose();
+  }
+
+  if (helpBtn) helpBtn.addEventListener('click', openHelp);
+  helpClose.addEventListener('click', closeHelp);
+  helpOverlay.addEventListener('click', function (e) {
+    if (e.target === helpOverlay) closeHelp(); // backdrop click = close
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && helpOverlay.classList.contains('show')) {
+      closeHelp();
+    }
+  });
+
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game
   // is, the exact build, a link to the source, and the licence.

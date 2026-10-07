@@ -1075,6 +1075,53 @@ console.log('persistence reset: storageKeysToClear (prefix sweep)');
      'non-string entries in the snapshot are ignored');
 })();
 
+console.log('help content: README <-> embedded HELP (drift + shape)');
+(function () {
+  var H = G.HELP;
+  ok(Array.isArray(H) && H.length > 0, 'engine exports a non-empty HELP array');
+
+  // Every block is well-formed: a known type with the fields that type needs.
+  var VALID_TYPES = { heading: 1, paragraph: 1, list: 1 };
+  var shapeOk = H.every(function (b) {
+    if (!b || !VALID_TYPES[b.type]) return false;
+    if (b.type === 'heading') {
+      return (b.level === 2 || b.level === 3) &&
+             typeof b.text === 'string' && b.text.length > 0;
+    }
+    if (b.type === 'paragraph') {
+      return typeof b.text === 'string' && b.text.length > 0;
+    }
+    // list: items with string text and children that are {text}.
+    return Array.isArray(b.items) && b.items.length > 0 &&
+      b.items.every(function (it) {
+        return it && typeof it.text === 'string' && it.text.length > 0 &&
+          Array.isArray(it.children) &&
+          it.children.every(function (c) {
+            return c && typeof c.text === 'string' && c.text.length > 0;
+          });
+      });
+  });
+  ok(shapeOk, 'every HELP block is a well-formed heading/paragraph/list');
+
+  // The help must actually carry the game's essentials (guards against an empty
+  // or truncated regeneration): a Rules heading and the win condition.
+  var headings = H.filter(function (b) { return b.type === 'heading'; })
+                  .map(function (b) { return b.text; });
+  ok(headings.indexOf('Rules') !== -1, 'HELP includes a "Rules" heading');
+  var allText = JSON.stringify(H);
+  ok(/win/i.test(allText) && /capacity/i.test(allText),
+     'HELP mentions the win condition and capacity (core rules present)');
+
+  // DRIFT GUARD: re-extract+parse the README via the SAME code tools/gen-help.js
+  // uses, and compare to the embedded copy. If someone edits the README HELP
+  // block but forgets to run the generator, this fails (CI-enforced) — the
+  // mirror-with-a-drift-test contract, identical to the CHANGELOG approach.
+  var gen = require('../tools/gen-help.js');
+  var fromReadme = gen.blocksFromReadme();
+  eq(G.HELP, fromReadme,
+     'embedded HELP matches a fresh extraction from README (run tools/gen-help.js if this fails)');
+})();
+
 // ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

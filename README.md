@@ -22,7 +22,25 @@ board that fills the screen (works on desktop and mobile).
 
 Open `index.html` in any modern browser (double-click it, or serve the folder).
 
-Rules:
+<!-- HELP:BEGIN
+     The content between these markers is the SINGLE SOURCE OF TRUTH for the
+     in-app Help dialog (the ? icon in the top bar). A Node script,
+     tools/gen-help.js, extracts exactly this block, parses it into a small
+     structured form, and mirrors it into js/game.js as the exported HELP data
+     (the same mirror-with-a-drift-test pattern used for CHANGELOG). After
+     editing anything between the markers, run `node tools/gen-help.js` and
+     commit the regenerated js/game.js; a test fails if the two drift apart.
+     Keep this block to the formatting the parser understands: `##`/`###`
+     headings, paragraphs, `-` bullet lists (one level of nesting via two-space
+     indent), and inline **bold**, *italic* and `code`. -->
+
+### Goal
+
+Add a point to an empty or your own cell; when a cell fills past its capacity
+it **jumps**, sending a point to each neighbour and capturing them. Own the
+**entire** board to win.
+
+### Rules
 
 - The board is a grid of cells. Each cell has a **capacity** equal to how many
   orthogonal neighbours it has:
@@ -36,19 +54,39 @@ Rules:
   spreads into become **your** colour — capturing the opponent's cells.
 - Overflows can **chain-react** across the board in a cascade.
 - You **win** by owning the **entire** board — no opponent cells **and** no
-  empty/neutral cells left. (A win is only declared once every player has taken
-  at least one turn, so an opening cascade can't end the game prematurely.)
+  empty/neutral cells left.
+
+### Controls
+
+- **Add a point** — click an empty or your own cell on your turn.
+- **New Game** — click the tile-count readout in the top bar (it asks you to
+  confirm).
+- **Rename a player** — click a player's name on their turn; press **Enter** to
+  save or **Esc** to cancel. Renaming is purely cosmetic.
+- **Reset the win tally** — click the score tally (it asks you to confirm).
+- **Settings** — click the **⚙** icon in the top bar to set the propagation
+  delay (how fast cascades animate) and choose who controls each player (human
+  or an AI).
+- **Help** — click the **?** icon in the top bar to reopen this page.
+<!-- HELP:END -->
+
+For more detail on all of the above, see **More about playing** below.
+
+## More about playing
+
+The essentials are in **How to play** above; this section expands on the parts
+that have extra options or subtlety.
 
 **Want to play well?** See [`docs/strategy-notes.md`](docs/strategy-notes.md)
 for documented tactics (take corners then edges, win the local "arms race",
 guard your near-full chains) and how machine play differs from human play —
 with sources.
 
-To restart, **click the tile-count readout** (e.g. `Player 1: 10, Player 2: 9`)
-in the top bar — it's a button (tooltip: *New Game*) and asks you to confirm
-before clearing the board. When a round ends, the end-of-round screen also
-offers a **New Game** button. On a phone, the board auto-sizes to fill the
-viewport and re-fits on rotation.
+**Restarting.** To restart, **click the tile-count readout** (e.g. `Player 1:
+10, Player 2: 9`) in the top bar — it's a button (tooltip: *New Game*) and asks
+you to confirm before clearing the board. When a round ends, the end-of-round
+screen also offers a **New Game** button. On a phone, the board auto-sizes to
+fill the viewport and re-fits on rotation.
 
 **Turn-taking across games.** After a game **ends**, the next game (via New Game
 or Play Again) gives the **first move to the other player** — the opener
@@ -129,11 +167,35 @@ js/agents.js        # AI opponents (Random / Tutor / Shark), DOM-free
 js/ui.js            # DOM renderer + input wiring
 test/game.test.js   # Node rule-verification harness (no dependencies)
 test/agents.harness.js  # Agent-vs-agent win-rate harness (stats, not pass/fail)
+tools/gen-help.js   # Regenerates the in-app Help from the README (no deps)
 ```
 
 The game logic in `js/game.js` is intentionally **DOM-free** and dual-exported
 (browser global `window.JumpingSquares` and Node `module.exports`), so the exact
 same rules code powers both the playable UI and the automated tests.
+
+### In-app Help (sourced from this README)
+
+The **?** icon in the top bar opens a concise *How to play* dialog. Its text is
+**not** written twice: it is the block between the `HELP:BEGIN` / `HELP:END`
+markers in the *How to play* section above — the single source of truth. A small
+Node script mirrors that block into `js/game.js` as structured data the browser
+renders (the same mirror-with-a-drift-test pattern used for the changelog, and
+for the same reason: there is no build step and `file://` can't fetch the
+README at runtime).
+
+After editing anything between the `HELP` markers, regenerate and commit:
+
+```
+node tools/gen-help.js          # rewrite the HELP block in js/game.js
+node tools/gen-help.js --check  # CI-style: non-zero exit if out of date
+node tools/gen-help.js --print  # print the parsed blocks (debugging)
+```
+
+A test (`node test/game.test.js`) re-extracts from the README and **fails if the
+embedded copy has drifted**, so a forgotten regeneration can't ship. The
+expanded material under *More about playing* is deliberately **outside** the
+markers, so it does not bloat the in-app dialog.
 
 ## Running the tests
 
@@ -352,9 +414,14 @@ Status of the project and planned work. Done items reflect the current build.
       Clears by **namespace sweep** (every `jumping_squares:` key), so any
       future persisted setting is reset automatically; the key-selection engine
       helper (`storageKeysToClear`) is pure and unit-tested
+- [x] **In-app Help** (the **?** icon in the top bar): a concise *How to play*
+      dialog whose text is sourced from this README's `HELP` block — mirrored
+      into `js/game.js` by `tools/gen-help.js` and guarded by a drift test (the
+      same pattern as the changelog). The top-bar Settings control became a
+      matching **⚙** glyph icon (sized to the turn dot) to make room
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (181 assertions, no dependencies)
+- [x] Node test harness (186 assertions, no dependencies)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**
@@ -384,8 +451,9 @@ Status of the project and planned work. Done items reflect the current build.
       saving the settings in the file lets a reporter force **› Step** mode to
       walk the cascade. (Phase 1 — auto-save/restore — is done above.)
 - [ ] Optional sound and haptic feedback on mobile
-- [ ] Icon buttons for Settings / Step to save top-bar space on narrow
-      screens (portrait phones get crowded once more controls are added)
+- [ ] Icon buttons for the **Step** control to save top-bar space on narrow
+      screens (Settings and Help are already glyph icons; portrait phones still
+      get crowded once more controls are added)
 - [ ] Visual identity distinct from KJumpingCube (theme, pip style, layout)
 - [x] Deploy as a GitHub Pages site
       (live at https://tiborh.github.io/jumping_squares/)

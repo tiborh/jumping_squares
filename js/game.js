@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '40';
+  var VERSION = '41';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
     { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
     { v: '38', text: 'Random now has two levels (Settings \u2192 Players, per Random): Easy (pure random \u2014 the gentle beginner) and Medium (mostly random, but hits back when the opponent is about to capture one of its cells). Also fixes the Tutor\u2019s defence check, which wasn\u2019t firing in some positions.' },
@@ -79,8 +80,102 @@
     { v: '31', text: 'Really fix the stray \u201Cafter-flash\u201D: the leftover pulse was an intermittent timing race, now removed by only redrawing squares that actually changed and ending each flash on the animation itself rather than a guessed timer.' },
     { v: '30', text: 'Fixes to the new placement flash: no more stray \u201Cafter-flash\u201D on some squares once a cascade settles. Also, the propagation delay now paces AI-vs-AI play, so two computer players no longer race by \u2014 raise the delay to watch them think.' },
     { v: '29', text: 'Placing a dot now flashes the square and its dots, and the pulse follows the cascade as it spreads \u2014 easier to see what just changed. New players start against the Tutor AI (Player 2). When both players are Shark, each has its own difficulty. Settings: \u201CPropagation speed\u201D is now \u201CPropagation delay\u201D (clearer that higher = slower).' },
-    { v: '28', text: 'New AI opponent \u2014 Shark: it searches moves ahead and plays strongly, exploiting cascades. Pick it per player under Settings \u2192 Players, and set its difficulty (Easy / Medium / Hard).' },
   ];
+
+  // In-app Help content, MIRRORED from the README "How to play" HELP block.
+  // DO NOT edit the generated block below by hand: edit README.md between the
+  // HELP:BEGIN / HELP:END markers, then run `node tools/gen-help.js`. A test
+  // fails if this block drifts from the README. The structured shape is a list
+  // of blocks: { type:'heading', level, text } | { type:'paragraph', text } |
+  // { type:'list', items:[{ text, children:[{text}] }] }. Inline **bold**,
+  // *italic* and `code` markers are kept verbatim and rendered by js/ui.js.
+  /* HELP:GENERATED:BEGIN - do not edit; run tools/gen-help.js */
+  var HELP = [
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Goal"
+    },
+    {
+      "type": "paragraph",
+      "text": "Add a point to an empty or your own cell; when a cell fills past its capacity it **jumps**, sending a point to each neighbour and capturing them. Own the **entire** board to win."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Rules"
+    },
+    {
+      "type": "list",
+      "items": [
+        {
+          "text": "The board is a grid of cells. Each cell has a **capacity** equal to how many orthogonal neighbours it has:",
+          "children": [
+            {
+              "text": "corner cells → **2**"
+            },
+            {
+              "text": "edge cells → **3**"
+            },
+            {
+              "text": "interior cells → **4**"
+            }
+          ]
+        },
+        {
+          "text": "On your turn, click a cell that is **empty** or **already yours** to add one point (shown as dice-like pips). You **cannot** add to your opponent's cell.",
+          "children": []
+        },
+        {
+          "text": "When a cell's points **exceed its capacity**, it **overflows (\"jumps\")**: it sends one point to each neighbour and drops by capacity+1. Neighbours it spreads into become **your** colour — capturing the opponent's cells.",
+          "children": []
+        },
+        {
+          "text": "Overflows can **chain-react** across the board in a cascade.",
+          "children": []
+        },
+        {
+          "text": "You **win** by owning the **entire** board — no opponent cells **and** no empty/neutral cells left.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Controls"
+    },
+    {
+      "type": "list",
+      "items": [
+        {
+          "text": "**Add a point** — click an empty or your own cell on your turn.",
+          "children": []
+        },
+        {
+          "text": "**New Game** — click the tile-count readout in the top bar (it asks you to confirm).",
+          "children": []
+        },
+        {
+          "text": "**Rename a player** — click a player's name on their turn; press **Enter** to save or **Esc** to cancel. Renaming is purely cosmetic.",
+          "children": []
+        },
+        {
+          "text": "**Reset the win tally** — click the score tally (it asks you to confirm).",
+          "children": []
+        },
+        {
+          "text": "**Settings** — click the **⚙** icon in the top bar to set the propagation delay (how fast cascades animate) and choose who controls each player (human or an AI).",
+          "children": []
+        },
+        {
+          "text": "**Help** — click the **?** icon in the top bar to reopen this page.",
+          "children": []
+        }
+      ]
+    }
+  ];
+  /* HELP:GENERATED:END */
 
   // Owner sentinel for an empty/neutral cell.
   var EMPTY = 0;
@@ -756,6 +851,7 @@
     EMPTY: EMPTY,
     VERSION: VERSION,
     CHANGELOG: CHANGELOG,
+    HELP: HELP,
     WHATSNEW_MAX: WHATSNEW_MAX,
     createGame: createGame,
     idx: idx,
