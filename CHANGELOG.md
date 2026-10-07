@@ -70,9 +70,10 @@ Why / design:
 Internal:
 
 - Node test harness grows to **186 assertions** (+5 for the Help shape + drift
-  guard). Version wiring bumped to **41** (both `?v=` tags and the engine
-  `VERSION`); the oldest What's-new entry (v28) rolls off the 12-entry cap and
-  survives only here. New `tools/` directory for repo helper scripts.
+  guard). Version wiring bumped to **41** (all three `?v=` tags — `game.js`,
+  `agents.js`, `ui.js` — and the engine `VERSION`); the oldest What's-new entry
+  (v28) rolls off the 12-entry cap and survives only here. New `tools/`
+  directory for repo helper scripts.
 
 ---
 

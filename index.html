@@ -960,6 +960,12 @@
       min-height: 0;
       padding-right: 4px; /* keep text off the scrollbar */
     }
+    /* Visible focus ring when a keyboard user focuses the scroll region. */
+    #help-body:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 6px;
+    }
     #help-body h3 {
       margin: 14px 0 6px;
       font-size: clamp(15px, 3.8vw, 18px);
@@ -1480,8 +1486,12 @@
         <button id="help-close" title="Close" aria-label="Close help">✕</button>
       </div>
       <!-- Single scrollable page; content injected from the engine's HELP data
-           (mirrored from the README) by js/ui.js. -->
-      <div id="help-body"></div>
+           (mirrored from the README) by js/ui.js. tabindex="0" makes the scroll
+           container keyboard-focusable so a keyboard user (trapped in the card
+           by the focus manager) can reach it and use arrow/PageDown scrolling;
+           role=region + aria-label name it for assistive tech. -->
+      <div id="help-body" tabindex="0" role="region"
+           aria-label="How to play (scrollable)"></div>
     </div>
   </div>
 
