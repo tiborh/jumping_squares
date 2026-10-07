@@ -8,13 +8,22 @@ This project has **no build step** (the game is played by opening `index.html`
 directly). Opening it from `file://` loads the `<script>` files that
 `index.html` references, but the browser **cannot read `README.md` as runtime
 data** (a `fetch()` of a local file is blocked under `file://`). Because of
-that, several human-authored sources are **mirrored into `js/game.js`** and kept
-honest by **drift tests** rather than read from the doc at load time. When you
-edit one of those sources you MUST regenerate the mirror and commit it, or CI
-fails.
+that, some human-authored content is **embedded in `js/game.js`** and kept
+honest by **tests** rather than read from the doc at load time. The embedded
+copies come in two flavours — know which is which:
 
-Keep this list current: when a new mirrored source or generator is added, add it
-here so future work doesn't forget the regeneration step.
+- **Generated mirror (regenerate it):** the in-app **Help** block is produced
+  from the README by `tools/gen-help.js`. Editing the README source means
+  re-running the generator and committing the result; a drift test enforces it.
+- **Hand-maintained excerpt (no generator):** the `CHANGELOG` array in
+  `js/game.js` is a short, player-facing *What's new* list you edit by hand;
+  `CHANGELOG.md` is the fuller history. No script regenerates these — a test
+  only enforces their shape/cap/ordering.
+
+When you edit a *generated* source you MUST regenerate and commit, or CI fails.
+
+Keep this list current: when a new generated mirror or helper script is added,
+add it here so future work doesn't forget the regeneration step.
 
 ## Before you commit — mandatory steps
 
@@ -34,6 +43,10 @@ from the README and **fails if the embedded copy has drifted**. The expanded
 "More about playing" section is deliberately **outside** the markers, so it is
 *not* picked up into the dialog — edit it freely without regenerating.
 
+Note: regenerating the HELP block **changes `js/game.js`, a browser-loaded
+file**, so a HELP edit is a *browser-visible* change — do step 2 (version bump)
+as well. Only README edits that leave `js/game.js` untouched are docs-only.
+
 ### 2. Browser-visible change — bump the version and all cache-busting tags
 
 If the change touches anything the browser loads (`index.html`, `js/*.js`, CSS,
@@ -44,7 +57,11 @@ gameplay, UI), bump the version so caches don't serve stale files:
    — `js/game.js`, `js/agents.js`, **and** `js/ui.js`.
 
 The `version wiring` test fails if the `?v=` strings don't all match `VERSION`.
-Docs-only changes (README, comments, this file) skip this.
+(It checks the *value* of every `?v=` tag it finds against `VERSION`; it does
+**not** assert that all three script tags are present, so don't rely on it to
+catch a *missing* tag — update all three by hand.) Docs-only changes (README
+prose, comments, this file) skip this — but see the note in step 1: a README
+edit that regenerates `js/game.js` is **not** docs-only.
 
 ### 3. CHANGELOG / "What's new"
 
