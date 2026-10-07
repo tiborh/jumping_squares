@@ -68,6 +68,43 @@
       box-shadow: 0 0 0 2px rgba(255,255,255,0.15);
     }
 
+    /* Top-bar icon buttons (Help + Settings). Two compact glyph buttons that
+       together take no more room than the old "⚙ Settings" text button. The
+       glyph is sized to match the turn indicator's dot/text (1em of the #turn
+       font). A fixed min box RESERVES space so the layout never collapses even
+       if a device can't render the glyph (a tofu box keeps the same footprint);
+       the accessible name + tooltip live on the button, not the glyph. */
+    #topbar-icons {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    .icon-btn {
+      /* Match the turn indicator's scale so the glyphs read as the same size as
+         the Player dot. */
+      font-size: clamp(14px, 3.5vw, 20px);
+      line-height: 1;
+      padding: 6px;
+      min-width: 2em;   /* reserved footprint — survives a missing glyph */
+      min-height: 2em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-btn .icon-glyph {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      line-height: 1;
+      text-align: center;
+      font-size: 1em; /* = the turn dot's 1em */
+    }
+    .icon-btn:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 1px;
+    }
+
     /* The turn label is clickable to rename the current player on their turn.
        Understated: a subtle dotted underline hints at editability on hover/
        focus without shouting. */
@@ -873,6 +910,92 @@
       outline-offset: 2px;
     }
 
+    /* --- Help dialog ------------------------------------------------------
+       A single scrollable page of the concise "How to play" content, rendered
+       from the engine's HELP data (mirrored from the README). Shares the dark
+       card look of the other dialogs; the body scrolls while the heading stays
+       put. */
+    #help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 30;
+    }
+    #help-overlay.show { display: flex; }
+    #help-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 540px);
+      max-height: min(88dvh, 88vh);
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #help-card .help-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex: 0 0 auto;
+    }
+    #help-card .help-head h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 24px);
+    }
+    #help-close {
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+    }
+    /* The scrollable page. */
+    #help-body {
+      overflow-y: auto;
+      min-height: 0;
+      padding-right: 4px; /* keep text off the scrollbar */
+    }
+    /* Visible focus ring when a keyboard user focuses the scroll region. */
+    #help-body:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+      border-radius: 6px;
+    }
+    #help-body h3 {
+      margin: 14px 0 6px;
+      font-size: clamp(15px, 3.8vw, 18px);
+    }
+    #help-body h3:first-child { margin-top: 0; }
+    #help-body p {
+      margin: 0 0 10px;
+      font-size: clamp(13px, 3.4vw, 15px);
+      line-height: 1.5;
+      opacity: 0.92;
+    }
+    #help-body ul {
+      margin: 0 0 10px;
+      padding-left: 1.3em;
+      font-size: clamp(13px, 3.4vw, 15px);
+      line-height: 1.5;
+    }
+    #help-body li { margin: 0 0 6px; opacity: 0.92; }
+    #help-body ul ul { margin: 6px 0 0; }
+    #help-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      background: #12141a;
+      border: 1px solid #3a4150;
+      border-radius: 4px;
+      padding: 0 4px;
+    }
+    #help-body strong { font-weight: 700; }
+    #help-body em { font-style: italic; opacity: 0.95; }
+
     #about-overlay {
       position: fixed;
       inset: 0;
@@ -1100,7 +1223,16 @@
                 aria-label="Win tally; activate to reset it"></button>
       </div>
       <button id="step-btn" title="Advance one cascade step" hidden>&gt;</button>
-      <button id="settings-btn" title="Settings">⚙ Settings</button>
+      <div id="topbar-icons">
+        <button id="help-btn" class="icon-btn" type="button"
+                title="Help" aria-label="Help">
+          <span class="icon-glyph" aria-hidden="true">?</span>
+        </button>
+        <button id="settings-btn" class="icon-btn" type="button"
+                title="Settings" aria-label="Settings">
+          <span class="icon-glyph" aria-hidden="true">⚙</span>
+        </button>
+      </div>
     </div>
     <div id="board-wrap">
       <div id="board" role="grid" aria-label="Jumping Squares board"></div>
@@ -1347,6 +1479,22 @@
     </div>
   </div>
 
+  <div id="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div id="help-card">
+      <div class="help-head">
+        <h2 id="help-title">How to play</h2>
+        <button id="help-close" title="Close" aria-label="Close help">✕</button>
+      </div>
+      <!-- Single scrollable page; content injected from the engine's HELP data
+           (mirrored from the README) by js/ui.js. tabindex="0" makes the scroll
+           container keyboard-focusable so a keyboard user (trapped in the card
+           by the focus manager) can reach it and use arrow/PageDown scrolling;
+           role=region + aria-label name it for assistive tech. -->
+      <div id="help-body" tabindex="0" role="region"
+           aria-label="How to play (scrollable)"></div>
+    </div>
+  </div>
+
   <div id="about-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
     <div id="about-card">
       <div class="about-head">
@@ -1401,8 +1549,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=40"></script>
-  <script src="js/agents.js?v=40"></script>
-  <script src="js/ui.js?v=40"></script>
+  <script src="js/game.js?v=41"></script>
+  <script src="js/agents.js?v=41"></script>
+  <script src="js/ui.js?v=41"></script>
 </body>
 </html>

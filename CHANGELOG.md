@@ -29,6 +29,54 @@ the nearest user-facing entry.
 
 ---
 
+## v41 — In-app Help (sourced from the README)
+
+Player-facing:
+
+- **New: a Help button** — the **?** icon in the top bar, immediately left of
+  **⚙ Settings**. It opens a concise *How to play* page: the **Goal**, the
+  **Rules**, and the **Controls**, as a single scrollable dialog. Close it with
+  the ✕, Escape, or by clicking outside it.
+- The top-bar **Settings** control is now a **gear glyph icon** (no "Settings"
+  word), sized to match the Player turn dot. The two icons together take no more
+  room than the old text button, and both have tooltips/accessible names
+  ("Help", "Settings").
+
+Why / design:
+
+- **The README is the single source of truth for the Help text.** The dialog's
+  content is the block between the `HELP:BEGIN` / `HELP:END` markers in the
+  README's *How to play* section — not a second copy. A no-deps Node script
+  (`tools/gen-help.js`) extracts that block, parses the small Markdown subset
+  (`##`/`###` headings, paragraphs, one-level bullet lists, inline
+  `**bold**`/`*italic*`/`` `code` ``) into a structured block list, and mirrors
+  it into `js/game.js` as the exported `HELP`. This is the same
+  **mirror-with-a-drift-test** pattern already used for the changelog, chosen
+  for the same reason: there is no build step and a `file://` page can't fetch
+  the README at runtime.
+- **A drift test keeps them honest.** `node test/game.test.js` re-extracts from
+  the README with the exact code the generator uses and fails if the embedded
+  `HELP` has drifted — so a forgotten `node tools/gen-help.js` can't ship stale
+  help.
+- **README restructured** into a concise core (inside the markers, picked up by
+  Help) and an expanded **More about playing** section (outside the markers), so
+  the in-app dialog stays short while the long-form detail still lives in the
+  README.
+- The browser renderer builds the dialog with **text nodes only** (no
+  `innerHTML`), so nothing in the help content can be interpreted as markup.
+- The icon buttons reserve a fixed min box, so their footprint never collapses
+  even on a device that can't render a glyph.
+
+Internal:
+
+- Node test harness grows to **186 assertions** (+5 for the Help shape + drift
+  guard). Version wiring bumped to **41** (all three `?v=` tags — `game.js`,
+  `agents.js`, `ui.js` — and the engine `VERSION`); the oldest What's-new entry
+  (v28) rolls off the 12-entry cap and survives only here. New `tools/`
+  directory for repo helper scripts.
+
+---
+
 ## v40 — Reset to first-use state (Settings → Persistence)
 
 Player-facing:
