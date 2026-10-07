@@ -72,6 +72,31 @@ oldest to stay within the cap (it lives on in `CHANGELOG.md`). A test enforces
 the cap, the newest-first ordering, and that the newest entry's version does not
 exceed `VERSION`.
 
+### 4. Tag the release — once the version is merged to `main`
+
+Every version that gets a `## vN` section in `CHANGELOG.md` should also exist as
+a **git tag** `vN` on GitHub, so the sparse CHANGELOG list and the repo's tags
+stay in step (the CHANGELOG is deliberately sparse — only significant stages get
+an entry, and only those get a tag). After the PR that ships `vN` is **merged to
+`main`**, tag that merge commit and push the tag:
+
+```bash
+git checkout main && git pull --ff-only
+git tag -a vN -m "vN — <the CHANGELOG.md section title>"   # annotated
+git push origin vN
+```
+
+Notes:
+- Tag the commit **on `main`** where that `VERSION` shipped (the squash-merge
+  commit), not a feature-branch commit.
+- If a single merge bumped through several intermediate versions (e.g. a branch
+  that went v29→v30→v31 before merging), only the **final** version has an
+  unambiguous commit on `main` — tag that one and skip the intermediates
+  (they never existed as their own commit on `main`).
+- Tags are effectively permanent once pushed; create one only after the version
+  is merged.
+
+
 ## Always-run gate
 
 Run the test harness before every commit; it must pass:
