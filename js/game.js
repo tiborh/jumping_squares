@@ -135,7 +135,7 @@
           "children": []
         },
         {
-          "text": "You **win** by owning the **entire** board — no opponent cells **and** no empty/neutral cells left.",
+          "text": "You **win** by owning the **entire** board — no opponent cells **and** no empty/neutral cells left. A win is only declared once every player has taken at least one turn, so an opening cascade can't end the game prematurely.",
           "children": []
         }
       ]

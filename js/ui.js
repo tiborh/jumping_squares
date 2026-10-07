@@ -2187,7 +2187,7 @@
   // dialog's own <h2> is the title); paragraphs <p>; lists <ul>.
   function renderHelp() {
     var blocks = (G.HELP || []);
-    helpBody.innerHTML = '';
+    helpBody.replaceChildren(); // DOM-only clear (keeps the no-innerHTML invariant)
     blocks.forEach(function (b) {
       if (b.type === 'heading') {
         var h = document.createElement('h3');

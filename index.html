@@ -991,6 +991,15 @@
     #help-body em { font-style: italic; opacity: 0.95; }
 
     #about-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 25;
+    }
     #about-overlay.show { display: flex; }
 
     #about-card {
