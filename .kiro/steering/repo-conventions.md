@@ -78,17 +78,26 @@ Every version that gets a `## vN` section in `CHANGELOG.md` should also exist as
 a **git tag** `vN` on GitHub, so the sparse CHANGELOG list and the repo's tags
 stay in step (the CHANGELOG is deliberately sparse — only significant stages get
 an entry, and only those get a tag). After the PR that ships `vN` is **merged to
-`main`**, tag that merge commit and push the tag:
+`main`**, tag the **exact squash-merge commit** that shipped it — identify that
+SHA explicitly rather than relying on `HEAD`, so a later commit landing on
+`main` first can't move the tag to the wrong place:
 
 ```bash
 git checkout main && git pull --ff-only
-git tag -a vN -m "vN — <the CHANGELOG.md section title>"   # annotated
+
+# Find the commit that introduced VERSION = 'N' in js/game.js (the squash-merge
+# commit for that release), and sanity-check it before tagging:
+SHA=$(git log main -G "VERSION = 'N';" --format=%H -- js/game.js | tail -1)
+git show --stat "$SHA"            # confirm it bumps VERSION + the CHANGELOG
+
+git tag -a vN "$SHA" -m "vN — <the CHANGELOG.md section title>"   # annotated
 git push origin vN
 ```
 
 Notes:
 - Tag the commit **on `main`** where that `VERSION` shipped (the squash-merge
-  commit), not a feature-branch commit.
+  commit), **passed explicitly** — never the implicit post-pull `HEAD`, and
+  never a feature-branch commit.
 - If a single merge bumped through several intermediate versions (e.g. a branch
   that went v29→v30→v31 before merging), only the **final** version has an
   unambiguous commit on `main` — tag that one and skip the intermediates
