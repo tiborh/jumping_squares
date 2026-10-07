@@ -348,14 +348,16 @@ against that:
   becomes `Jumping Squares (vN)` and the console logs `Jumping Squares build vN
   loaded`. If you don't see the expected version, you're on a cached build.
 - **Cache-busting query strings** — the `<script>` tags in `index.html` load
-  `js/game.js?v=N` and `js/ui.js?v=N`. The browser only re-downloads a script
-  when its URL literally changes, so these must be edited by hand to match
+  `js/game.js?v=N`, `js/agents.js?v=N` and `js/ui.js?v=N`. The browser only
+  re-downloads a script when its URL literally changes, so these must be edited
+  by hand to match
   `VERSION`.
 
 When shipping a browser-visible change:
 
 1. Bump `VERSION` in `js/game.js`.
-2. Update both `?v=N` strings in `index.html` to the same number.
+2. Update all three `?v=N` strings in `index.html` to the same number
+   (`js/game.js`, `js/agents.js`, `js/ui.js`).
 3. Run `node test/game.test.js` — the **"version wiring"** test fails if the
    `?v=` strings don't match the engine `VERSION`, catching drift automatically.
 4. In the browser, confirm the tab title shows the expected `Jumping Squares (vN)`.
