@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiborh.github.io/jumping_squares/schema/jumping-squares-backup.v1.json",
+  "title": "Jumping Squares backup file (v1)",
+  "description": "Shape (structural) schema for a Jumping Squares Save/Load backup file. This describes the file FORMAT only. It cannot express game-rule (semantic) validity such as point conservation, the turn-gate, the winner rule, or the no-mid-cascade rule - those are checked separately by tools/validate-rules.js, which runs the board through the game engine's loadState. A file that passes THIS schema is well-formed; a file that also passes validate-rules.js is loadable by the app.",
+  "schemaVersion": 1,
+  "type": "object",
+  "required": ["format", "formatVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "format": {
+      "const": "jumping_squares/backup",
+      "description": "Fixed tag identifying the file as a Jumping Squares backup."
+    },
+    "formatVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1,
+      "description": "Backup wrapper format version this schema describes."
+    },
+    "engineVersion": {
+      "type": "string",
+      "description": "The game build (VERSION) that wrote the file. Informational."
+    },
+    "savedAt": {
+      "type": "string",
+      "description": "ISO-8601 timestamp when the file was written. Informational."
+    },
+    "board": {
+      "type": "object",
+      "description": "Optional game-board section (present when 'Game board' was selected on export).",
+      "required": ["format", "formatVersion", "state"],
+      "additionalProperties": true,
+      "properties": {
+        "format": {
+          "const": "jumping_squares/save",
+          "description": "Fixed tag identifying the board section's envelope."
+        },
+        "formatVersion": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1,
+          "description": "Board-section envelope format version."
+        },
+        "state": {
+          "type": "object",
+          "description": "The engine board state (an engine cloneState snapshot).",
+          "required": ["rows", "cols", "players", "current", "moveCount", "winner", "cells"],
+          "additionalProperties": true,
+          "properties": {
+            "rows": { "type": "integer", "minimum": 2, "maximum": 1000 },
+            "cols": { "type": "integer", "minimum": 2, "maximum": 1000 },
+            "players": { "type": "integer", "minimum": 2, "maximum": 100 },
+            "current": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "startingPlayer": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "moveCount": { "type": "integer", "minimum": 0 },
+            "winner": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "turnsTaken": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 },
+              "description": "Per-player turn counts; index 0 unused (so length is players+1)."
+            },
+            "cells": {
+              "type": "array",
+              "minItems": 4,
+              "description": "Flat row-major array of cells; length must equal rows*cols (a cross-field rule the validator checks beyond this schema).",
+              "items": {
+                "type": "object",
+                "required": ["owner", "value"],
+                "additionalProperties": true,
+                "properties": {
+                  "owner": { "type": "integer", "minimum": 0, "maximum": 100 },
+                  "value": { "type": "integer", "minimum": 0, "maximum": 1000 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "prefs": {
+      "type": "object",
+      "description": "Optional settings & scores section (present when 'Settings & scores' was selected on export). Adopted leniently by the app field-by-field, so only loosely constrained here; unknown fields are ignored on import.",
+      "additionalProperties": true,
+      "properties": {
+        "v": { "type": "integer", "minimum": 1 },
+        "playerNames": { "type": "object", "additionalProperties": true },
+        "score": { "type": "object", "additionalProperties": true },
+        "autoSave": { "type": "boolean" },
+        "playerType": { "type": "object", "additionalProperties": true },
+        "sharkDepth": { "type": "object", "additionalProperties": true },
+        "tutorLevel": { "type": "object", "additionalProperties": true },
+        "randomLevel": { "type": "object", "additionalProperties": true },
+        "startingPlayer": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "hintLightDelay": { "type": "integer", "minimum": -1 }
+      }
+    }
+  }
+}

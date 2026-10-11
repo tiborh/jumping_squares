@@ -25,6 +25,24 @@ When you edit a *generated* source you MUST regenerate and commit, or CI fails.
 Keep this list current: when a new generated mirror or helper script is added,
 add it here so future work doesn't forget the regeneration step.
 
+### Backup file: schema + validators (not a generated mirror)
+
+The Save/Load **backup file** has a **versioned JSON Schema** at
+`schema/jumping-squares-backup.v1.json` and two **zero-dependency** validators:
+`tools/validate-schema.js` (shape, driven by the schema) and
+`tools/validate-rules.js` (game-rule/semantic, driven by the engine's
+`loadState`). These are **not** browser-loaded (so editing them is **not** a
+version bump — see step 2), and the schema is **not** a generated mirror. Rules:
+
+- The schema is **versioned by filename**. If the backup wrapper's
+  `formatVersion` ever changes, add `…-backup.v2.json` rather than editing v1 in
+  a breaking way, so files made against v1 keep validating.
+- Keep the shape schema and the two validators in step with the app's
+  `buildBackupObject()` / `loadState()`. A drift test in `test/game.test.js`
+  ("backup validators") exports a sample the same way the app does and asserts
+  it passes **both** validators, and that crafted-broken samples fail the right
+  one — so a divergence fails CI.
+
 ## Before you commit — mandatory steps
 
 ### 1. In-app Help — if you edit the README "How to play" HELP block
