@@ -7,15 +7,22 @@
  * Squares backup file. This is deliberately SEPARATE from the schema validator
  * (tools/validate-schema.js): schema validity is about file shape; game-rule
  * validity is about whether the board is a legitimate, reachable, settled
- * position the app would actually load. Those invariants (point conservation,
- * the turn-gate, the winner rule, no mid-cascade overflow, a legal move for the
+ * position the ENGINE accepts. Those invariants (point conservation, the
+ * turn-gate, the winner rule, no mid-cascade overflow, a legal move for the
  * player to move, turn-order consistency with the opener) are NOT expressible
  * in JSON Schema - they are computed by the game engine. So this validator runs
  * the file's board section through the engine's own loadState(), the single
- * source of truth the app itself uses on import.
+ * source of truth for ENGINE-level validity.
  *
  * Recommended order: run validate-schema.js FIRST (shape), then this (rules).
- * A file that passes both will load in the app.
+ * A file passing both is ENGINE-valid: its board is a legitimate, settled
+ * position the rules accept. NOTE: that is not quite the same as "the current
+ * app will import it". The app's Save/Load import ALSO applies a UI dimension
+ * gate - today it only accepts the fixed 5x5, 2-player board (see
+ * fitsDimensions in js/ui.js). So a valid, engine-accepted board of a different
+ * size (e.g. 3x3) passes this validator but would still be refused on import
+ * until a board-size picker lands. This tool reports ENGINE validity on
+ * purpose, so it stays correct as the UI's accepted sizes grow.
  *
  * Zero dependencies - it only requires the engine module (../js/game.js), the
  * same DOM-free rules code the browser and tests use.

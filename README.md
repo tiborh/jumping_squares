@@ -300,15 +300,15 @@ node tools/validate-backup.js  mybackup.json   # BOTH, in order (convenience)
   **game-rule (semantic) validity**, which a schema *cannot* express: point
   conservation, the turn-gate, the winner rule, no mid-cascade/overflow board,
   and that the player to move has a legal move. It runs the board through the
-  **same engine `loadState`** the game uses on import, so a file that passes it
-  will load in the app.
+  **same engine `loadState`** the game uses, so a file that passes it is
+  **engine-valid**.
 
-Run shape first, then rules; a file passing both is well-formed **and** loadable.
-Or run **`tools/validate-backup.js`**, a convenience wrapper that runs both in
-that order and reports a combined result (it adds no checks of its own — the two
-scripts stay usable individually). All three print a human-readable report by
-default, accept **`--json`** for script-friendly output, read from a file
-argument or **stdin**, and exit `0`
+Run shape first, then rules; a file passing both is well-formed **and**
+engine-valid. Or run **`tools/validate-backup.js`**, a convenience wrapper that
+runs both in that order and reports a combined result (it adds no checks of its
+own — the two scripts stay usable individually). All three print a
+human-readable report by default, accept **`--json`** for script-friendly
+output, read from a file argument or **stdin**, and exit `0`
 (valid) / `1` (invalid). The schema is **versioned by filename**
 (`…-backup.v1.json`); a future wrapper change adds `…v2.json` rather than
 breaking files made against v1.

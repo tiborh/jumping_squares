@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tiborh.github.io/jumping_squares/schema/jumping-squares-backup.v1.json",
   "title": "Jumping Squares backup file (v1)",
-  "description": "Shape (structural) schema for a Jumping Squares Save/Load backup file. This describes the file FORMAT only. It cannot express game-rule (semantic) validity such as point conservation, the turn-gate, the winner rule, or the no-mid-cascade rule - those are checked separately by tools/validate-rules.js, which runs the board through the game engine's loadState. A file that passes THIS schema is well-formed; a file whose BOARD section also passes validate-rules.js is loadable by the app. Note on prefs: the app adopts the prefs section leniently (unknown or out-of-range fields are ignored and fall back to defaults rather than rejected), so this schema deliberately constrains prefs only to STRUCTURAL shape (container types), NOT to value enums - that keeps the 'passes schema => board is loadable' contract exact without flagging a prefs value the app would simply ignore.",
+  "description": "Shape (structural) schema for a Jumping Squares Save/Load backup file. This describes the file FORMAT only. It cannot express game-rule (semantic) validity such as point conservation, the turn-gate, the winner rule, or the no-mid-cascade rule - those are checked separately by tools/validate-rules.js, which runs the board through the game engine's loadState. A file that passes THIS schema is well-formed; a file whose BOARD section also passes validate-rules.js is ENGINE-valid (a legitimate, settled position the rules accept). Engine-valid is not identical to 'the current app will import it': the app's import also applies a UI dimension gate (today the fixed 5x5, 2-player board), so a valid board of another size passes validation but is refused on import until a board-size picker lands. Note on prefs: the app adopts the prefs section leniently (unknown or out-of-range fields are ignored and fall back to defaults rather than rejected), so this schema deliberately constrains prefs only to STRUCTURAL shape (container types), NOT to value enums - that keeps the 'passes schema => board is engine-valid' contract exact without flagging a prefs value the app would simply ignore.",
   "schemaVersion": 2,
   "type": "object",
   "required": ["format", "formatVersion"],
@@ -81,7 +81,7 @@
     },
     "prefs": {
       "type": "object",
-      "description": "Optional settings & scores section (present when 'Settings & scores' was selected on export). Adopted LENIENTLY by the app field-by-field: unknown or out-of-range fields are ignored and fall back to defaults, never rejected. So this schema constrains prefs only to STRUCTURAL shape (the right container TYPES), not to value enums - a wrong value here (e.g. an unknown difficulty) is tolerated by the app, so flagging it would wrongly break the 'passes schema => loadable' contract.",
+      "description": "Optional settings & scores section (present when 'Settings & scores' was selected on export). Adopted LENIENTLY by the app field-by-field: unknown or out-of-range fields are ignored and fall back to defaults, never rejected. So this schema constrains prefs only to STRUCTURAL shape (the right container TYPES), not to value enums - a wrong value here (e.g. an unknown difficulty) is tolerated by the app, so flagging it would wrongly break the 'passes schema => board is engine-valid' contract.",
       "additionalProperties": true,
       "properties": {
         "v": {

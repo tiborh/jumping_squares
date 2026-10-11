@@ -8,10 +8,14 @@
  *   1. SHAPE   (tools/validate-schema.js) - fields, types, ranges vs the schema
  *   2. RULES   (tools/validate-rules.js)  - game-rule validity via the engine
  *
- * A file that passes both is well-formed AND its board is loadable by the app.
- * This script just orchestrates the two existing validators (it adds no new
- * checks of its own) so a player can run one command instead of two. The two
- * underlying scripts remain usable individually.
+ * A file that passes both is well-formed AND its board is ENGINE-valid (a
+ * legitimate, settled position the rules accept). Note: engine-valid is not
+ * identical to "the current app will import it" - the app's Save/Load import
+ * also applies a UI dimension gate (today: the fixed 5x5, 2-player board), so a
+ * valid board of another size passes here but is refused on import until a
+ * board-size picker lands. This runner just orchestrates the two existing
+ * validators (it adds no new checks of its own) so a player can run one command
+ * instead of two. The two underlying scripts remain usable individually.
  *
  * Human output stops at the first failing stage (shape errors must be fixed
  * before the rules check is meaningful). --json always reports BOTH stages so a

@@ -288,7 +288,7 @@ function runCli(argv) {
       process.stdout.write('PASS (schema): ' + (file || '(stdin)') +
         ' conforms to ' + schemaRel + '.\n' +
         'Note: shape is valid. Run tools/validate-rules.js for game-rule ' +
-        'validity (whether the app would load it).\n');
+        '(engine) validity.\n');
     } else {
       process.stdout.write('FAIL (schema): ' + (file || '(stdin)') +
         ' does not conform to ' + schemaRel + '.\n');
