@@ -940,8 +940,10 @@
        A small in-app confirmation modal (reused wherever a yes/no is needed,
        e.g. resetting the win tally). Replaces window.confirm, which prefixes
        its text with the page origin ("file://…" locally). Same card language as
-       the other dialogs; sits above them (z-index) so it can confirm actions
-       initiated from within another dialog later. */
+       the other dialogs; sits ABOVE all of them (highest z-index) so it can
+       confirm an action initiated from within another dialog — e.g. the import
+       confirmation launched from the Save/Load panel (z-index 37) must paint on
+       top of it, not behind it. */
     #confirm-overlay {
       position: fixed;
       inset: 0;
@@ -950,7 +952,7 @@
       align-items: center;
       justify-content: center;
       padding: 16px;
-      z-index: 35;
+      z-index: 40; /* above every other dialog (Reset 36, Save/Load 37, …) */
     }
     #confirm-overlay.show { display: flex; }
     #confirm-card {
@@ -1114,6 +1116,132 @@
     #reset-cancel:focus-visible {
       outline: 2px solid #9fd0ff;
       outline-offset: 2px;
+    }
+
+    /* --- Save / Load (backup) panel ---------------------------------------
+       Shares the dark-card dialog look. The section checklist reuses the
+       reset-groups layout; two action buttons (Save / Load); a status line. */
+    #backup-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 37; /* above the settings dialog (opened from Persistence) */
+    }
+    #backup-overlay.show { display: flex; }
+    #backup-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 460px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #backup-card .backup-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #backup-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 22px);
+    }
+    #backup-close {
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+    }
+    #backup-card #backup-intro {
+      margin: 0;
+      font-size: clamp(13px, 3.4vw, 16px);
+      line-height: 1.45;
+      opacity: 0.9;
+    }
+    /* Section checklist — same layout language as the reset dialog's groups. */
+    #backup-card .backup-groups {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    #backup-card .backup-groups > li {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #backup-card .backup-groups label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+    #backup-card .backup-groups input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #3d7bd6;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    #backup-card .backup-groups input:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    #backup-card .backup-group-title {
+      font-size: clamp(14px, 3.6vw, 16px);
+      font-weight: 600;
+    }
+    #backup-card .backup-group-detail {
+      font-size: clamp(12px, 3vw, 13px);
+      line-height: 1.35;
+      opacity: 0.75;
+      padding-left: 26px; /* align under the title, past the checkbox */
+    }
+    #backup-card .backup-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #backup-card .backup-actions button {
+      flex: 1 1 auto;
+      font-weight: 600;
+    }
+    #backup-card .backup-actions button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    #backup-export:focus-visible,
+    #backup-import:focus-visible,
+    #backup-close:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    /* Status / result line: quiet by default; an .error variant for a rejected
+       load uses the same muted-red language as the persistence note. */
+    #backup-card .backup-status {
+      font-size: clamp(12px, 3vw, 14px);
+      line-height: 1.4;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(159,208,255,0.1);
+      border: 1px solid rgba(159,208,255,0.35);
+      color: #cfe4ff;
+    }
+    #backup-card .backup-status[hidden] { display: none; }
+    #backup-card .backup-status.error {
+      background: rgba(230,72,77,0.12);
+      border-color: rgba(230,72,77,0.4);
+      color: #ffb3b3;
     }
 
     /* --- Help dialog ------------------------------------------------------
@@ -1573,6 +1701,10 @@
              continuously overwritten by an active auto-save (i.e. auto-save OFF
              and a save exists). -->
         <button id="remove-save" type="button" disabled>Remove saved data</button>
+        <!-- Save / Load (backup): opens a panel to export the selected data to a
+             JSON file and import it back. File-based (good for sharing a board /
+             making puzzles, and full backups). Always enabled. -->
+        <button id="backup-open" type="button">Save / Load to file…</button>
         <!-- Reset to first-use state: opens a dialog listing exactly what will
              be erased (names/scores/settings, current game) with an optional
              reload to clear any in-memory/cached state afterwards. Always
@@ -1767,6 +1899,65 @@
     </div>
   </div>
 
+  <!-- Save / Load (backup) panel. Opened from Settings → Persistence. Exports
+       the selected sections to a JSON file and imports one back. Two optional,
+       independently-selectable sections (both checked by default):
+         - Game board: the saved board layout + status (shareable; puzzles).
+         - Settings & scores: the whole prefs record (names, tally, player
+           setup, preferences) — a full backup when combined with the board.
+       Import REPLACES only the sections present in the loaded file; everything
+       else is kept. The board is validated by the engine's strict loadState
+       (no mid-cascade / overflow positions). Layered above Settings (which
+       opened it), same nested-dialog pattern as Reset. -->
+  <div id="backup-overlay" role="dialog" aria-modal="true" aria-labelledby="backup-title">
+    <div id="backup-card">
+      <div class="backup-head">
+        <h2 id="backup-title">Save / Load to file</h2>
+        <button id="backup-close" title="Close" aria-label="Close save/load">✕</button>
+      </div>
+      <p id="backup-intro">
+        Save the selected data to a file, or load it back from one. Choose which
+        sections to include — both are selected by default (a full backup). A
+        file never leaves your browser except as the download you create.
+      </p>
+      <ul class="backup-groups">
+        <li>
+          <label>
+            <input type="checkbox" id="backup-group-board" checked
+                   aria-describedby="backup-detail-board" />
+            <span class="backup-group-title">Game board</span>
+          </label>
+          <span class="backup-group-detail" id="backup-detail-board">
+            The current board: tile layout, counts, and whose turn it is. Share
+            it with someone else, or craft a position / puzzle.
+          </span>
+        </li>
+        <li>
+          <label>
+            <input type="checkbox" id="backup-group-prefs" checked
+                   aria-describedby="backup-detail-prefs" />
+            <span class="backup-group-title">Settings &amp; scores</span>
+          </label>
+          <span class="backup-group-detail" id="backup-detail-prefs">
+            Player names, the win tally, who starts next, who controls each
+            player and their difficulty, and your preferences.
+          </span>
+        </li>
+      </ul>
+      <div class="backup-actions">
+        <button id="backup-export" type="button">Save to file…</button>
+        <button id="backup-import" type="button">Load from file…</button>
+      </div>
+      <!-- Result / status line (polite live region): what was saved / loaded,
+           or why a load was rejected. -->
+      <div class="backup-status" id="backup-status" role="status"
+           aria-live="polite" hidden></div>
+      <!-- Hidden file input used by "Load from file…". -->
+      <input type="file" id="backup-file" accept="application/json,.json"
+             hidden aria-hidden="true" tabindex="-1" />
+    </div>
+  </div>
+
   <div id="help-overlay" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <div id="help-card">
       <div class="help-head">
@@ -1837,8 +2028,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=43"></script>
-  <script src="js/agents.js?v=43"></script>
-  <script src="js/ui.js?v=43"></script>
+  <script src="js/game.js?v=44"></script>
+  <script src="js/agents.js?v=44"></script>
+  <script src="js/ui.js?v=44"></script>
 </body>
 </html>

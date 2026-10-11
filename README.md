@@ -251,6 +251,28 @@ page is still updated in place to match. (Reset does **not** change any code, so
 a plain reload is enough — no cache-busting is involved; see *Versioning* below
 for when `?v=` matters.)
 
+**Save / Load to file.** Under **Settings → Persistence**, the **Save / Load to
+file…** button opens a panel to **export** the selected data to a JSON file and
+**import** one back. It is **file-based** — nothing is uploaded anywhere; it is
+just a download/upload on your device — so you can **share a board** with
+someone, **make puzzles**, or keep a **full backup**. Two sections are
+selectable (both on by default):
+
+| Section | What it saves |
+| --- | --- |
+| **Game board** | The current board — tile layout, counts, and whose turn it is. The shareable / puzzle-making piece. |
+| **Settings & scores** | The whole preferences record — player names, the win tally, who starts next, who controls each player and their difficulty, and your preferences. |
+
+The download **filename reflects the contents**: a board-only file is
+`jumping-squares-board-<timestamp>.json`, settings-only is `…-settings-…`, and a
+full backup is `jumping-squares-<timestamp>.json`. **Loading replaces only the
+sections present in the file** and keeps everything else; the board is run
+through the same **strict** validation as any save (`loadState`), so a corrupt,
+wrong-size, or **mid-cascade** board is refused rather than loaded. Importing
+asks for confirmation first (it replaces the current game and/or your settings).
+A later **"load with trace"** mode (replaying a cascade from a saved start
+state) is noted in the roadmap but not built yet.
+
 How it works and its boundaries:
 
 - Stored via the browser's **`localStorage`** under two namespaced keys:
@@ -448,14 +470,19 @@ Status of the project and planned work. Done items reflect the current build.
       [`docs/strategy-notes.md`](docs/strategy-notes.md) and
       `test/agents.harness.js` (agent-vs-agent runner).
 - [ ] Undo / replay via per-move snapshots
-- [ ] **Persistence Phase 2** — explicit **Save As… / Load** to a file (export
-      the board as JSON, import it back), introducing a **Menu** (New Game /
-      Save As… / Load / Reset-with-confirmation) in the top bar. Useful
-      for bug reports and testing, not just play. A later **"load with trace"**
-      option could capture a cascade by replaying from the saved start state
-      (the engine is deterministic), rather than storing mid-cascade frames;
-      saving the settings in the file lets a reporter force **› Step** mode to
-      walk the cascade. (Phase 1 — auto-save/restore — is done above.)
+- [x] **Persistence Phase 2 — Save / Load to file** *(done)*: a **Save / Load to
+      file** panel under **Settings → Persistence** exports the selected data to
+      a JSON file and imports it back. Two selectable sections (both on by
+      default) — **Game board** (the shareable / puzzle-making position) and
+      **Settings & scores** (the whole prefs record) — in one self-describing
+      wrapper; the download filename marks a board-only or settings-only file.
+      Loading **replaces only the sections present** and keeps the rest; the
+      board passes the engine's strict `loadState` (no mid-cascade positions).
+      Useful for sharing boards, making puzzles, bug reports, and full backups.
+      Still **deferred**: a **"load with trace"** mode that replays a cascade
+      from a saved start state (the engine is deterministic), rather than
+      storing mid-cascade frames — saving the settings in the file lets a
+      reporter force **› Step** mode to walk the cascade.
 - [ ] Optional sound and haptic feedback on mobile
 - [ ] Icon buttons for the **Step** control to save top-bar space on narrow
       screens (Settings and Help are already glyph icons; portrait phones still

@@ -396,6 +396,52 @@ console.log('loadState: validates and rehydrates untrusted state');
   ok(fromJson.cells[0].value !== 99, 'loadState returns an independent copy');
 })();
 
+console.log('backup file: board section round-trips through loadState');
+(function () {
+  // Mirrors the Save/Load (backup) feature's board data path: the UI wraps the
+  // live cloneState inside a self-describing backup envelope, serialises it to a
+  // file, and on import pulls `board.state` back out and runs it through the
+  // engine's STRICT loadState (no mid-cascade / overflow positions). This test
+  // exercises exactly that boundary with the engine (the UI glue is DOM-bound).
+  var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(s, 1, 0, 0);   // p1 corner
+  G.applyMove(s, 2, 4, 4);   // p2 opposite corner
+  G.applyMove(s, 1, 2, 2);   // p1 interior
+
+  // Build the same wrapper shape the UI's buildBackupObject() produces.
+  var wrapper = {
+    format: 'jumping_squares/backup',
+    formatVersion: 1,
+    engineVersion: G.VERSION,
+    savedAt: new Date().toISOString(),
+    board: {
+      format: 'jumping_squares/save',
+      formatVersion: 1,
+      state: G.cloneState(s),
+    },
+  };
+
+  // Serialise + parse (a real file round-trip) then validate the board section.
+  var parsed = JSON.parse(JSON.stringify(wrapper));
+  ok(parsed.format === 'jumping_squares/backup' && parsed.formatVersion === 1,
+     'wrapper carries the backup format + version');
+  var loaded = G.loadState(parsed.board.state);
+  ok(loaded !== null, 'board section loads back (strict validation passes)');
+  eq(loaded, G.cloneState(s), 'imported board equals the exported live state');
+
+  // Strict guarantee the feature relies on: a contested board carrying an
+  // over-capacity (mid/pre-cascade) cell is rejected, so such a crafted file
+  // can never be imported and shown as a settled position. (loadState enforces
+  // several coupled invariants; this asserts the net contract — rejection —
+  // which is all the import path depends on. The settled-state check is
+  // exercised directly in the dedicated loadState test below.)
+  var bad = G.cloneState(s);
+  var i00 = G.idx(bad, 0, 0);
+  bad.cells[i00] = { owner: 1, value: 3 }; // corner capacity is 2 -> overflow
+  ok(G.loadState(bad) === null,
+     'an over-capacity contested board is rejected (strict import)');
+})();
+
 console.log('loadState: rejects malformed / out-of-range input');
 (function () {
   ok(G.loadState(null) === null, 'null -> null');

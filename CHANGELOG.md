@@ -29,7 +29,45 @@ the nearest user-facing entry.
 
 ---
 
-## v43 — Players panel (moved out of Settings)
+## v44 — Save / Load to file (backup & restore)
+
+Player-facing:
+
+- **New: Settings → Persistence → "Save / Load to file".** A panel to **export**
+  the selected data to a JSON file and **import** one back. File-based (nothing
+  is uploaded anywhere — it's just a download/upload on your device), so you can
+  **share a board** with someone, **make puzzles**, or keep a **full backup**.
+- **Two selectable sections, both on by default:**
+  - **Game board** — the current board (layout, counts, whose turn). This is the
+    shareable / puzzle-making piece.
+  - **Settings & scores** — the whole preferences record (names, win tally, who
+    starts next, who controls each player + difficulty, and your preferences).
+  Together they are a full backup; the board alone is a shareable position.
+- **Filename reflects the contents.** A board-only file is named
+  `jumping-squares-board-<timestamp>.json`, a settings-only file
+  `…-settings-…`, and a full backup `jumping-squares-<timestamp>.json`.
+- **Loading replaces only what's in the file**, keeping everything else. The
+  board is run through the engine's **strict** validator (`loadState`) — corrupt,
+  mismatched-size, or **mid-cascade** positions are refused — so an imported
+  board is always a legitimate, settled position. Importing asks for
+  confirmation first (it replaces the current game and/or your settings).
+
+Internal / why:
+
+- One self-describing wrapper, `format: 'jumping_squares/backup'`, `formatVersion`,
+  `engineVersion`, `savedAt`, with optional `board` / `prefs` sections — the
+  importer accepts any combination and reports what it found. The board section
+  reuses the on-disk board-save envelope shape so the two formats stay related.
+- The preferences module gained `exportAll()` (a deep copy for the file) and
+  `importRecord(parsed)` (reset to defaults, then adopt through the **same**
+  per-field validation/migration used for a stored record — so a partial, older,
+  or foreign object can't corrupt state). The field-by-field adoption used by
+  `load()` was extracted into a shared `adopt()` for exactly this reuse.
+- Deferred (as planned): a **"load with trace"** mode that replays a cascade from
+  a saved start state. Mid-cascade/pre-cascade positions remain out of scope by
+  design — loads are strictly settled states only.
+
+
 
 Player-facing:
 
