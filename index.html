@@ -940,8 +940,10 @@
        A small in-app confirmation modal (reused wherever a yes/no is needed,
        e.g. resetting the win tally). Replaces window.confirm, which prefixes
        its text with the page origin ("file://…" locally). Same card language as
-       the other dialogs; sits above them (z-index) so it can confirm actions
-       initiated from within another dialog later. */
+       the other dialogs; sits ABOVE all of them (highest z-index) so it can
+       confirm an action initiated from within another dialog — e.g. the import
+       confirmation launched from the Save/Load panel (z-index 37) must paint on
+       top of it, not behind it. */
     #confirm-overlay {
       position: fixed;
       inset: 0;
@@ -950,7 +952,7 @@
       align-items: center;
       justify-content: center;
       padding: 16px;
-      z-index: 35;
+      z-index: 40; /* above every other dialog (Reset 36, Save/Load 37, …) */
     }
     #confirm-overlay.show { display: flex; }
     #confirm-card {

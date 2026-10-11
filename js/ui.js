@@ -2700,6 +2700,20 @@
       setBackupStatus('Select at least one section to save.', true);
       return;
     }
+    // Refuse a BOARD export while a cascade is unsettled (an animated cascade is
+    // paused mid-flight behind the dialog, or a manual step is in progress). The
+    // live state then has over-capacity cells, so the exported board would fail
+    // the strict loadState on import — and in a full backup the prefs section
+    // would be lost too (validation aborts before anything is applied). Mirrors
+    // the auto-save guard, which likewise refuses to persist an unsettled board.
+    // (A prefs-only export is always fine — it doesn't touch the board.)
+    if (includeBoard && (busy || stepping.active)) {
+      setBackupStatus(
+        'Can\u2019t save the game board while a cascade is still resolving. ' +
+        'Let it finish (or finish stepping), then try again — or untick ' +
+        '\u201CGame board\u201D to save just your settings.', true);
+      return;
+    }
     var obj = buildBackupObject(includeBoard, includePrefs);
     var json = JSON.stringify(obj, null, 2);
     var name = backupFilename(includeBoard, includePrefs);
