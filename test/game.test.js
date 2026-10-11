@@ -1316,12 +1316,22 @@ console.log('backup validators: schema (shape) + rules (semantic)');
   var schema2 = schemaV.loadSchema();
   ok(schema2.schemaVersion === 2, 'schema metadata is schemaVersion 2');
 
-  // turnsTaken must have >= 3 items (players+1 for the minimum 2-player game).
+  // turnsTaken items must be non-negative integers (shape). Length is NOT
+  // constrained in the schema on purpose: the engine reconstructs it for an
+  // ongoing game, so a length rule would make the schema stricter than the
+  // engine (reject a board the rules accept).
   var badTurns = JSON.parse(JSON.stringify(full));
-  badTurns.board.state.turnsTaken = [0, 1];
+  badTurns.board.state.turnsTaken = [0, 'x', 1];
   var rT = schemaV.validate(badTurns, schema2);
-  ok(!rT.valid && rT.errors.some(function (e) { return e.rule === 'minItems'; }),
-     'turnsTaken shorter than players+1 fails the schema (minItems)');
+  ok(!rT.valid && rT.errors.some(function (e) {
+    return e.rule === 'type' && /turnsTaken/.test(e.path);
+  }), 'a non-integer turnsTaken entry fails the schema (type)');
+  // A short turnsTaken array is tolerated by the schema (length left to the
+  // engine), so it does NOT fail here.
+  var shortTurns = JSON.parse(JSON.stringify(full));
+  shortTurns.board.state.turnsTaken = [0, 1];
+  ok(schemaV.validate(shortTurns, schema2).valid,
+     'a short turnsTaken array still passes the schema (length is engine-checked)');
 
   // prefs.score.wins must be an object (structural), not an array.
   var badScore = JSON.parse(JSON.stringify(full));

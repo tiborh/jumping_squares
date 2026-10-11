@@ -66,7 +66,11 @@ function printHelp() {
     'Usage: node tools/validate-backup.js [--json] [<file.json>]\n\n' +
     'Check a Jumping Squares backup file with BOTH validators, in order:\n' +
     '  1. shape  (schema)  - fields, types, ranges\n' +
-    '  2. rules  (engine)  - game-rule validity (would the app load the board?)\n\n' +
+    '  2. rules  (engine)  - game-rule validity (would the engine accept the board?)\n\n' +
+    'Note: "engine accepts" is not the same as "the current app imports it" -\n' +
+    'the app also gates the board size on import (today 5x5, 2 players), so a\n' +
+    'valid board of another size passes here but is refused until a board-size\n' +
+    'picker lands.\n\n' +
     'This is a convenience wrapper around tools/validate-schema.js and\n' +
     'tools/validate-rules.js; run those directly if you want just one stage.\n\n' +
     'Options:\n' +
