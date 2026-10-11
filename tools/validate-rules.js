@@ -134,9 +134,11 @@ function printHelp() {
   process.stdout.write(
     'Usage: node tools/validate-rules.js [--json] [<file.json>]\n\n' +
     'Check the GAME-RULE (semantic) validity of a Jumping Squares backup file:\n' +
-    'whether its board is a legitimate, settled position the app would load.\n' +
+    'whether its board is a legitimate, settled position the ENGINE accepts.\n' +
     'This runs the board through the game engine\u2019s loadState - it is NOT a\n' +
-    'schema check. For file SHAPE, run tools/validate-schema.js first\n' +
+    'schema check. (Engine-valid is not quite "the current app will import it":\n' +
+    'the app also restricts the board size on import - today 5x5, 2 players.)\n' +
+    'For file SHAPE, run tools/validate-schema.js first\n' +
     '(' + SCHEMA_REL + ').\n\n' +
     'Options:\n' +
     '  --json     Machine-readable JSON result on stdout.\n' +
