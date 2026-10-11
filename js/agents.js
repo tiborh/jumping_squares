@@ -676,10 +676,37 @@
     };
   }
 
+  // ---- strongest-player "best move" helper --------------------------------
+  //
+  // A single place that answers "what is the strongest move here?" — used by
+  // the UI Hint button and available for future AI-move computation on variable
+  // board sizes. The strongest machine player in this game is the Shark search
+  // agent at its deepest difficulty (Hard). STRONGEST_SHARK_DEPTH names that
+  // depth so UI and tests agree on "strongest" without hard-coding a literal.
+  //
+  // bestMove(G, state, opts?) returns { r, c } (the move the strongest agent
+  // would play as state.current) or null when there is no legal move. It is a
+  // pure, DOM-free function: it clones nothing of the caller's and never mutates
+  // `state` (makeShark/chooseMove operate on internal clones). `opts.rng` is
+  // forwarded so a deterministic hint is possible in tests; `opts.depth` can
+  // override the depth (e.g. a cheaper hint on a huge future board), defaulting
+  // to STRONGEST_SHARK_DEPTH.
+  var STRONGEST_SHARK_DEPTH = 4; // Shark "Hard" — the deepest difficulty
+
+  function bestMove(G, state, opts) {
+    opts = opts || {};
+    var depth = (typeof opts.depth === 'number' && opts.depth >= 1)
+      ? Math.floor(opts.depth) : STRONGEST_SHARK_DEPTH;
+    var agent = makeShark(G, { depth: depth, rng: opts.rng });
+    return agent.chooseMove(state);
+  }
+
   return {
     legalMoves: legalMoves,
     makeRandom: makeRandom,
     makeTutor: makeTutor,
     makeShark: makeShark,
+    bestMove: bestMove,
+    STRONGEST_SHARK_DEPTH: STRONGEST_SHARK_DEPTH,
   };
 });

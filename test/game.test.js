@@ -968,6 +968,50 @@ console.log('random difficulty (easy / medium)');
      'Medium Random returns a legal move');
 })();
 
+console.log('bestMove helper (strongest-move entry point)');
+(function () {
+  // The engine-side "strongest move" helper used by the UI Hint and future
+  // AI-move computation. Contract: pure (does not mutate the passed state),
+  // returns a LEGAL move for the player to move, uses the deepest Shark depth
+  // by default, and forwards opts.rng/opts.depth.
+  ok(typeof A.bestMove === 'function', 'agents exports bestMove()');
+  ok(A.STRONGEST_SHARK_DEPTH === 4,
+     'STRONGEST_SHARK_DEPTH is 4 (Shark Hard)  (got ' + A.STRONGEST_SHARK_DEPTH + ')');
+
+  // Deterministic RNG so ties resolve reproducibly in the test.
+  function makeRng(seed) {
+    var s = seed >>> 0;
+    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(s, 1, 0, 0); // now player 2 to move
+  var snapshotBefore = JSON.stringify(s);
+  var mv = A.bestMove(G, s, { rng: makeRng(1) });
+  ok(mv && typeof mv.r === 'number' && typeof mv.c === 'number',
+     'bestMove returns an {r,c} move');
+  ok(mv && G.canPlay(s, s.current, mv.r, mv.c),
+     'bestMove returns a LEGAL move for the player to move');
+  eq(JSON.stringify(s), snapshotBefore,
+     'bestMove does not mutate the passed state');
+
+  // Default depth equals the strongest Shark: bestMove() should agree with a
+  // Shark built at STRONGEST_SHARK_DEPTH when driven by the same RNG seed.
+  var viaShark = A.makeShark(G, { depth: A.STRONGEST_SHARK_DEPTH, rng: makeRng(7) })
+    .chooseMove(s);
+  var viaBest = A.bestMove(G, s, { rng: makeRng(7) });
+  eq(viaBest, viaShark,
+     'bestMove matches a Shark at STRONGEST_SHARK_DEPTH with the same RNG');
+
+  // No legal move -> null (a full board owned by the mover has no empty/own
+  // playable cell for the opponent; use a terminal-ish board where current has
+  // nothing to play). Simplest: a decided board has no moves for the loser.
+  var full = G.createGame({ rows: 5, cols: 5, players: 2 });
+  for (var i = 0; i < full.cells.length; i++) { full.cells[i].owner = 1; full.cells[i].value = 1; }
+  full.current = 2; // player 2 owns nothing and no cell is empty -> no legal move
+  ok(A.bestMove(G, full) === null, 'bestMove returns null when there is no legal move');
+})();
+
 console.log('version wiring');
 (function () {
   var fs = require('fs');

@@ -246,6 +246,149 @@
       border-radius: 3px;
     }
 
+    /* --- Hint button (bottom-right) ----------------------------------------
+       A fixed floating button that flashes the strongest move for the current
+       (human) player. Mirrors the top-bar .icon-btn glyph family (a lightbulb
+       in the same emoji family as the AI markers) but sits in the bottom-right
+       corner, out of the board's main tap area and balancing the build tag in
+       the opposite corner. Hidden (display:none) whenever a hint is not
+       applicable (AI turn, cascade in progress, step mode, game over) so it
+       never offers a hint it can't give. */
+
+    /* Visually-hidden but screen-reader-available (for the hint live region).
+       Standard clip pattern: removed from the visual layout and off the normal
+       flow, yet still announced by assistive tech. */
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0; border: 0;
+      overflow: hidden; clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    #hint-btn {
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      z-index: 6;                 /* above board + build tag, below the modals */
+      font-size: clamp(16px, 4vw, 22px);
+      line-height: 1;
+      width: 2.4em;
+      height: 2.4em;
+      padding: 0;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      /* Resting state is QUIET: a near-transparent panel and soft border, so a
+         dim outline bulb barely draws the eye. The lit state (below) raises
+         both. */
+      background: rgba(44, 49, 60, 0.55);
+      border: 1px solid rgba(58, 65, 80, 0.6);
+      color: #8a92a0;             /* dim grey outline for the bulb at rest */
+      box-shadow: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 200ms ease, border-color 200ms ease,
+                  color 200ms ease, box-shadow 200ms ease, opacity 200ms ease,
+                  transform 80ms ease;
+    }
+    #hint-btn[hidden] { display: none; }
+    /* Fade/scale IN gently when the button first appears, so it arrives calmly
+       rather than popping. (Honours reduced-motion below.) */
+    #hint-btn.appearing {
+      animation: hintAppear 320ms ease-out 1;
+    }
+    @keyframes hintAppear {
+      0%   { opacity: 0; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    #hint-btn:hover {
+      background: rgba(52, 59, 71, 0.85);
+      color: #c7ccd4;
+    }
+    #hint-btn:active { transform: scale(0.94); }
+    #hint-btn:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    /* Disabled while a hint is being computed (prevents a queue of requests). */
+    #hint-btn:disabled {
+      cursor: default;
+      opacity: 0.85;
+    }
+
+    /* The outline bulb itself. At rest only the glass outline shows (dim); the
+       filament and rays are hidden, keeping it an unobtrusive line icon that
+       matches the stroked ? and gear in the top bar. */
+    .hint-bulb { display: block; }
+    .hint-bulb-filament,
+    .hint-bulb-rays { opacity: 0; transition: opacity 220ms ease; }
+
+    /* LIT state: added by JS once the idle delay elapses (or immediately in
+       "always on"). The whole button warms up — amber glass, visible filament
+       and rays, a soft glow — signalling "a hint is ready and might help now". */
+    #hint-btn.lit {
+      background: rgba(60, 52, 30, 0.85);
+      border-color: rgba(255, 214, 92, 0.65);
+      color: #ffd65c;            /* warm bulb colour */
+      box-shadow: 0 0 14px 2px rgba(255, 214, 92, 0.35),
+                  0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+    #hint-btn.lit .hint-bulb-filament,
+    #hint-btn.lit .hint-bulb-rays { opacity: 1; }
+    /* A one-shot soft pulse the moment it lights up, to catch the eye once
+       (then it just stays lit — no perpetual animation). */
+    #hint-btn.lit.just-lit {
+      animation: hintLightUp 600ms ease-out 1;
+    }
+    @keyframes hintLightUp {
+      0%   { box-shadow: 0 0 0 0 rgba(255, 214, 92, 0); }
+      40%  { box-shadow: 0 0 20px 6px rgba(255, 214, 92, 0.55),
+                         0 4px 14px rgba(0, 0, 0, 0.4); }
+      100% { box-shadow: 0 0 14px 2px rgba(255, 214, 92, 0.35),
+                         0 4px 14px rgba(0, 0, 0, 0.4); }
+    }
+
+    #hint-btn .hint-spinner,
+    #hint-btn.thinking .hint-bulb { display: none; }
+    #hint-btn.thinking .hint-spinner { display: block; }
+    .hint-spinner {
+      width: 1.1em;
+      height: 1.1em;
+      border: 0.16em solid rgba(255,255,255,0.25);
+      border-top-color: #9fd0ff;
+      border-radius: 50%;
+      animation: hintSpin 0.7s linear infinite;
+    }
+    @keyframes hintSpin { to { transform: rotate(360deg); } }
+
+    /* The suggested cell's flash: a distinct, repeated pulse (a few cycles) so
+       the hint reads differently from the single placement/propagation flash.
+       Uses a tinted gold ring to echo the lightbulb. Drawn on ::before so it
+       composes with the existing flash/shadow layers without conflict. */
+    .cell.hint-flash::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      border: 3px solid rgba(255, 214, 92, 0.98);
+      box-shadow: 0 0 14px 3px rgba(255, 214, 92, 0.6);
+      pointer-events: none;
+      animation: hintFlash 480ms ease-in-out 3; /* a few flashes */
+    }
+    @keyframes hintFlash {
+      0%, 100% { opacity: 0; transform: scale(0.95); }
+      50%      { opacity: 1; transform: scale(1.03); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #hint-btn.appearing,
+      #hint-btn.lit.just-lit { animation: none; }
+      .hint-spinner { animation-duration: 1.4s; }
+      /* Keep a steady highlight instead of a pulse for reduced-motion users. */
+      .cell.hint-flash::before { animation: none; opacity: 1; }
+    }
+
     button {
       font: inherit;
       color: #e8e8ea;
@@ -1243,6 +1386,45 @@
           title="About Jumping Squares (build version)"
           aria-label="About Jumping Squares"></button>
 
+  <!-- Hint button (bottom-right): flashes the strongest move for the current
+       human player, computed by the strongest machine player (Shark, Hard).
+       Hidden by js/ui.js whenever a hint doesn't apply (AI turn, cascade in
+       progress, step mode, game over). The spinner is shown only if the
+       computation runs long (set from JS), so a fast board never flickers.
+
+       The bulb is an inline SVG line-icon (outline), so it matches the stroked
+       look of the top-bar ? and gear glyphs and reads consistently across
+       platforms (unlike an emoji). It rests DIM (a quiet grey outline) and only
+       "lights up" (warm, glowing, filled) once the configured idle delay passes
+       with the player not having moved — gently nudging them to Help first and
+       offering the hint only when it might actually help. The button itself is
+       clickable the whole time, lit or not. -->
+  <button id="hint-btn" type="button" hidden
+          title="Hint: show a strong move"
+          aria-label="Hint: flash a strong move for the current player">
+    <svg class="hint-bulb" viewBox="0 0 24 24" aria-hidden="true"
+         width="1em" height="1em" fill="none"
+         stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round">
+      <!-- bulb glass -->
+      <path class="hint-bulb-glass"
+            d="M9 18h6M9.5 21h5M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>
+      <!-- filament (only visible when lit) -->
+      <path class="hint-bulb-filament" d="M10 9.5c.6.8 1.4.8 2 0M12 11v3"/>
+      <!-- rays (only visible when lit) -->
+      <g class="hint-bulb-rays">
+        <path d="M12 1v1.4M4.2 4.2l1 1M19.8 4.2l-1 1M2 9h1.4M20.6 9H22"/>
+      </g>
+    </svg>
+    <span class="hint-spinner" aria-hidden="true"></span>
+  </button>
+
+  <!-- Polite live region: announces the suggested cell to screen readers when
+       a hint flashes (the flash itself is purely visual). Kept visually hidden
+       but exposed to assistive tech; role=status + aria-live=polite so the
+       announcement doesn't interrupt. -->
+  <div id="hint-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
   <div id="endgame-bar">
     <button id="endgame-new" type="button">New Game</button>
   </div>
@@ -1277,6 +1459,26 @@
           longer delay (slower, easier to follow). At the far end
           (<strong>&gt; Step</strong>) you advance each step manually with a
           <strong>&gt;</strong> button.
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">
+          <label for="hint-delay-range">Hint light-up</label>
+          <span class="setting-value" id="hint-delay-value">10 s</span>
+        </div>
+        <!-- 8 stops: 0 = Always on; 1..6 = 5..30 s (5 s steps); 7 = Off/Never. -->
+        <input type="range" id="hint-delay-range" min="0" max="7" step="1" value="2" />
+        <div class="range-ends">
+          <span>Always</span>
+          <span>Off</span>
+        </div>
+        <div class="setting-hint" id="hint-delay-hint">
+          How long the bottom-right <strong>Hint</strong> bulb waits — with you
+          not moving — before it <em>lights up</em> to offer a strong move. The
+          button always works if you click it; this only controls the gentle
+          nudge. Far left (<strong>Always</strong>) lights it immediately; far
+          right (<strong>Off</strong>) keeps it dim and never auto-lights.
         </div>
       </div>
 
@@ -1549,8 +1751,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=41"></script>
-  <script src="js/agents.js?v=41"></script>
-  <script src="js/ui.js?v=41"></script>
+  <script src="js/game.js?v=42"></script>
+  <script src="js/agents.js?v=42"></script>
+  <script src="js/ui.js?v=42"></script>
 </body>
 </html>
