@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v43 — Hint button (strongest-move helper)
+## v42 — Hint button (strongest-move helper)
 
 Player-facing:
 

@@ -42,6 +42,7 @@
   var endgameNew = document.getElementById('endgame-new');
   var stepBtn = document.getElementById('step-btn');
   var hintBtn = document.getElementById('hint-btn');
+  var hintLive = document.getElementById('hint-live');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
 
@@ -1498,6 +1499,7 @@
   var hintToken = 0;        // bumped to cancel an in-flight hint (New Game/move)
   var hintLightTimer = null; // pending idle "light up" timer
   var hintWasVisible = false; // was the button shown on the previous sync?
+  var lastHintedEl = null;    // the cell currently showing a hint flash (if any)
 
   // Is a hint meaningful right now? Only on a HUMAN player's live turn, with the
   // agents module present (so a strongest move can be computed), and with no
@@ -1594,6 +1596,7 @@
       el._hintEnd = null;
     }
     el.classList.remove('hint-flash');
+    if (lastHintedEl === el) lastHintedEl = null;
   }
 
   function flashHint(el) {
@@ -1601,6 +1604,7 @@
     clearHintFlash(el);
     void el.offsetWidth; // reflow so re-adding restarts the animation
     el.classList.add('hint-flash');
+    lastHintedEl = el;   // remember so cancellation (move/New Game) can clear it
     var finish = function () { clearHintFlash(el); };
     el._hintEnd = finish;
     el.addEventListener('animationend', finish);
@@ -1609,13 +1613,35 @@
     el._hintTimer = window.setTimeout(finish, HINT_FLASH_MS);
   }
 
+  // Announce the suggested cell to screen readers via the polite live region.
+  // The flash is purely visual, so without this a screen-reader user could
+  // activate the Hint button but never learn which cell it suggested. Uses
+  // 1-based row/column so it reads naturally ("row 1, column 1" is the top-left
+  // corner). Re-set to '' first so an identical repeat hint still re-announces.
+  function announceHint(r, c) {
+    if (!hintLive) return;
+    hintLive.textContent = '';
+    hintLive.textContent =
+      'Hint: play row ' + (r + 1) + ', column ' + (c + 1) + '.';
+  }
+  function announceHintNone() {
+    if (!hintLive) return;
+    hintLive.textContent = '';
+    hintLive.textContent = 'No hint available.';
+  }
+
   function cancelPendingHint() {
     hintToken++;                 // invalidate any in-flight compute
     if (hintThinkTimer !== null) { clearTimeout(hintThinkTimer); hintThinkTimer = null; }
     if (hintBtn) hintBtn.classList.remove('thinking');
     hintBusy = false;
-    // A move / New Game / dialog ends this turn's idleness: stop the idle timer
-    // and extinguish the bulb so the next turn starts dim and the clock restarts.
+    // A move / New Game / dialog supersedes any VISIBLE suggestion: clear the
+    // flash (and its fallback timer) off the previously hinted cell so a gold
+    // ring can't keep pulsing over a board that has already changed.
+    if (lastHintedEl) clearHintFlash(lastHintedEl);
+    if (hintLive) hintLive.textContent = ''; // drop any stale SR announcement
+    // ...and end this turn's idleness: stop the idle timer and extinguish the
+    // bulb so the next turn starts dim and the clock restarts.
     cancelHintLight(true);
     hintWasVisible = false;
   }
@@ -1655,6 +1681,9 @@
       if (mv) {
         var el = cellEls[mv.r * state.cols + mv.c];
         flashHint(el);
+        announceHint(mv.r, mv.c);
+      } else {
+        announceHintNone();
       }
       // Re-evaluate the button (it may have become unavailable, e.g. the turn
       // changed — though a hint doesn't consume a turn, so normally it stays).

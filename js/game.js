@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '43';
+  var VERSION = '42';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,7 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
-    { v: '43', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.', experimental: true },
+    { v: '42', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.', experimental: true },
     { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
     { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },

@@ -254,6 +254,18 @@
        the opposite corner. Hidden (display:none) whenever a hint is not
        applicable (AI turn, cascade in progress, step mode, game over) so it
        never offers a hint it can't give. */
+
+    /* Visually-hidden but screen-reader-available (for the hint live region).
+       Standard clip pattern: removed from the visual layout and off the normal
+       flow, yet still announced by assistive tech. */
+    .visually-hidden {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      margin: -1px; padding: 0; border: 0;
+      overflow: hidden; clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
     #hint-btn {
       position: fixed;
       right: 10px;
@@ -1407,6 +1419,12 @@
     <span class="hint-spinner" aria-hidden="true"></span>
   </button>
 
+  <!-- Polite live region: announces the suggested cell to screen readers when
+       a hint flashes (the flash itself is purely visual). Kept visually hidden
+       but exposed to assistive tech; role=status + aria-live=polite so the
+       announcement doesn't interrupt. -->
+  <div id="hint-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
   <div id="endgame-bar">
     <button id="endgame-new" type="button">New Game</button>
   </div>
@@ -1733,8 +1751,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=43"></script>
-  <script src="js/agents.js?v=43"></script>
-  <script src="js/ui.js?v=43"></script>
+  <script src="js/game.js?v=42"></script>
+  <script src="js/agents.js?v=42"></script>
+  <script src="js/ui.js?v=42"></script>
 </body>
 </html>
