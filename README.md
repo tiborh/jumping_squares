@@ -67,8 +67,14 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
   choose **who controls** each one (Human or an AI), any time — even mid-game.
   Renaming is purely cosmetic; AI players can't be renamed.
 - **Reset the win tally** — click the score tally (it asks you to confirm).
+- **Hint** — click the **lightbulb** in the bottom-right to flash a strong move
+  for the current player (worked out by the strongest computer player). It's
+  advisory only — it never takes your turn. The bulb rests dim and *lights up*
+  on its own once you've paused without moving; set that delay (or turn it off)
+  under **Settings → Hint light-up**.
 - **Settings** — click the **⚙** icon in the top bar to set the propagation
-  delay (how fast cascades animate) and manage saved data.
+  delay (how fast cascades animate), the Hint light-up delay, and manage saved
+  data.
 - **Help** — click the **?** icon in the top bar to reopen this page.
 <!-- HELP:END -->
 
@@ -128,6 +134,21 @@ The slider is labelled **delay** (not speed) because a *higher* number means a
 Opening **Settings** while a cascade is animating **pauses** it (the board
 freezes); it resumes when you close the dialog. Changing the delay mid-cascade
 applies from that point on.
+
+**Hint (the lightbulb, bottom-right).** Press the **lightbulb** in the
+bottom-right corner to **flash a strong move** for the player to move: the
+suggested square pulses a few times (a gold ring). The move is worked out by the
+**strongest computer player** (the Shark search at its deepest setting), so it's
+the best move the built-in AI can find — independent of who you're actually
+playing. It is **advisory only**: it highlights a cell but never places a dot or
+takes your turn. The bulb appears only on a **human player's turn** (not during
+a cascade, a manual step, or after a win). It **rests dim** and **lights up** on
+its own once you've paused **without moving** for a while — nudging you to think
+(or check **Help**) first, and offering the hint only when it might help. Set
+that idle delay — **Always on**, **5–30 s**, or **Off** — under **Settings →
+Hint light-up** (default **10 s**). On a large/slow board the search may take a
+moment, so a brief *thinking* spinner can show on the bulb; on the current 5×5
+it's effectively instant.
 
 **Players — play against the computer.** Open the **Players** panel (click the
 **top-left area** — the coloured dot and player name), then set either player
@@ -486,9 +507,17 @@ Status of the project and planned work. Done items reflect the current build.
       into `js/game.js` by `tools/gen-help.js` and guarded by a drift test (the
       same pattern as the changelog). The top-bar Settings control became a
       matching **⚙** glyph icon (sized to the turn dot) to make room
+- [x] **Hint button** (the lightbulb, bottom-right): flashes a strong move for
+      the current human player, computed by the strongest AI (Shark at its
+      deepest depth) via a shared, DOM-free `bestMove` engine helper. Advisory
+      only; rests dim and *lights up* after a settable idle delay (**Settings →
+      Hint light-up**: Always / 5–30 s / Off)
+- [x] **Players panel** (click the top-left dot + name): the per-seat Human/AI
+      type, difficulty, and player **renaming** (both seats, human-only) moved
+      out of Settings into their own panel, decluttering the Settings menu
 - [x] Versioning: single-source `VERSION`, cache-busting `?v=`, on-page build
       tag, and a test that fails on version drift
-- [x] Node test harness (186 assertions, no dependencies)
+- [x] Node test harness (no dependencies; 230+ assertions and growing)
 - [x] Documented history, related games, and references
 
 **Planned / ideas (not yet implemented):**

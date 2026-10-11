@@ -28,6 +28,31 @@ files. If it's docs-only (`README`, this file, comments), skip to section B.
    `VERSION`; it does not check that all three tags exist, so update them all by
    hand.)
 
+### Also, depending on what you touched
+
+These mandatory steps live in full in
+[`.kiro/steering/repo-conventions.md`](.kiro/steering/repo-conventions.md); the
+short version:
+
+- **Edited the README `HELP:BEGIN…HELP:END` block?** Regenerate the in-app Help
+  mirror and commit the result (a drift test fails otherwise):
+  ```bash
+  node tools/gen-help.js          # rewrite the HELP block in js/game.js
+  node tools/gen-help.js --check  # verify (non-zero exit if out of date)
+  ```
+  Note: regenerating changes `js/game.js` (a browser-loaded file), so a HELP
+  edit is **browser-visible** — do the version bump above too.
+- **Player-facing change?** Add a newest-first entry to the `CHANGELOG` array in
+  `js/game.js` (drop the oldest to stay within the 12-entry cap) and a matching
+  `## vN` section in `CHANGELOG.md`. A test enforces the cap/order and that the
+  newest entry's version doesn't exceed `VERSION`.
+- **Touched the Save/Load backup format, its schema, or validators?** Keep
+  `schema/jumping-squares-backup.v1.json` and `tools/validate-schema.js` /
+  `tools/validate-rules.js` / `tools/validate-backup.js` in step with the app's
+  `buildBackupObject()` / `loadState()`; a drift test ("backup validators")
+  guards this. The schema is versioned by filename — add `…-backup.v2.json`
+  rather than breaking v1.
+
 ---
 
 ## B. Test locally

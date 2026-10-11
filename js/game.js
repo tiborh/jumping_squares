@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '44';
+  var VERSION = '45';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,9 +68,10 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '45', text: 'Docs: the in-app Help now lists the Hint button and the Hint light-up setting (it had been missed when Hint shipped). No gameplay change \u2014 just the Help text and the project\u2019s written docs catching up.' },
     { v: '44', text: 'New: Settings \u2192 Persistence has a \u201CSave / Load to file\u201D panel. Save the current game board and/or your settings & scores to a JSON file, and load one back \u2014 handy for sharing a board, making puzzles, or keeping a full backup. Pick which sections to include (both by default); a board-only file is marked in its name. Loading replaces only the sections in the file and keeps the rest; boards are strictly validated (no mid-cascade positions).' },
     { v: '43', text: 'The Players settings moved out of \u2699 Settings into their own panel: click the top-left area (the coloured dot and player name) to open it. There you set who controls each player (Human or an AI) and rename players \u2014 now BOTH players, any time, even mid-game. Only human players can be renamed; AI seats show their agent name. The top bar looks the same at rest; hovering the top-left shows a square outline (the old name underline is gone). Settings now holds just the propagation delay, the hint light-up, and saved-data options.' },
-    { v: '42', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.', experimental: true },
+    { v: '42', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.' },
     { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
     { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
@@ -79,7 +80,6 @@
     { v: '35', text: 'Follow-up to the Player-2 save fix: a freshly started Player-2-opening game is now also saved correctly on first load (an edge case could still discard it). Internal: more save/restore tests and changelog tidy-ups.' },
     { v: '34', text: 'Fix: a game opened by Player 2 (after turn-taking alternation) is now saved and restored correctly \u2014 previously reloading could discard it and start over. Plus small internal tidy-ups.' },
     { v: '33', text: 'Turn-taking: after a game ends, New Game / Play Again now lets the OTHER player open the next game (it alternates across completed games and is remembered). Resetting the win tally can also reset who starts \u2014 there\u2019s a checkbox for it in the reset dialog.' },
-    { v: '32', text: 'The \u201CWhat\u2019s new\u201D list now shows the 5 most recent entries; \u201CShow more\u201D expands the rest, and \u201CSee full changelog\u201D opens the complete history.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.
@@ -165,7 +165,11 @@
           "children": []
         },
         {
-          "text": "**Settings** — click the **⚙** icon in the top bar to set the propagation delay (how fast cascades animate) and manage saved data.",
+          "text": "**Hint** — click the **lightbulb** in the bottom-right to flash a strong move for the current player (worked out by the strongest computer player). It's advisory only — it never takes your turn. The bulb rests dim and *lights up* on its own once you've paused without moving; set that delay (or turn it off) under **Settings → Hint light-up**.",
+          "children": []
+        },
+        {
+          "text": "**Settings** — click the **⚙** icon in the top bar to set the propagation delay (how fast cascades animate), the Hint light-up delay, and manage saved data.",
           "children": []
         },
         {
