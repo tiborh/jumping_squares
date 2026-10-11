@@ -200,7 +200,19 @@
         if (!raw) return;
         var parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== 'object') return;
+        adopt(parsed);
+      } catch (e) { /* corrupt/blocked: keep defaults */ }
+    }
 
+    // Validate + migrate a PARSED prefs object into `mem`, field by field (the
+    // same per-field, defensive adoption used for a stored record). Extracted so
+    // it is shared by load() (reading localStorage) and importRecord() (adopting
+    // a prefs section from a backup file). Unknown/garbage fields are ignored
+    // and keep their current value, so a partial or foreign object can never
+    // corrupt the in-memory record.
+    function adopt(parsed) {
+      if (!parsed || typeof parsed !== 'object') return;
+      try {
         // Names: a stable field present since v1 — migrate forward unchanged.
         if (parsed.playerNames && typeof parsed.playerNames === 'object') {
           mem.playerNames = parsed.playerNames;
@@ -438,6 +450,24 @@
         var removed = sweepStorage(toKeep);
         mem = makeDefaults(); // live state now matches a brand-new install
         return removed;
+      },
+      // --- backup export / import (Save / Load to file) ---
+      // exportAll() returns a deep, plain-object COPY of the current prefs
+      // record (safe to serialise into a backup file; never a live reference).
+      exportAll: function () {
+        return JSON.parse(JSON.stringify(mem));
+      },
+      // importRecord(parsed) REPLACES the whole prefs record from a parsed
+      // backup section: reset to first-use defaults, then adopt the parsed
+      // object through the SAME per-field validation/migration as a stored
+      // record (so a partial, older, or garbage object can't corrupt state),
+      // then persist. "Replace" per the agreed semantics: anything the file
+      // omits reverts to its default rather than keeping the old value — the
+      // caller only invokes this when the file's prefs section is present.
+      importRecord: function (parsed) {
+        mem = makeDefaults();
+        adopt(parsed);
+        persist();
       },
     };
   })();
@@ -2555,6 +2585,315 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && resetOverlay.classList.contains('show')) {
       closeReset();
+    }
+  });
+
+  // --- Save / Load to file (backup / restore) ------------------------------
+  // A file-based backup: export the selected sections to a JSON file and import
+  // one back. Two optional, independently-selectable sections (both default on):
+  //   - board : the current game (engine cloneState), shareable / puzzle-making;
+  //   - prefs : the whole preferences record (names, tally, player setup, …).
+  // The unified wrapper is self-describing so a file is recognisable and future
+  // -proof; a board-only export also gets a filename marker. Import REPLACES
+  // only the sections present in the file (the board via the engine's STRICT
+  // loadState — no mid-cascade / overflow positions — and prefs via the same
+  // per-field validation as a stored record); everything else is kept.
+  var BACKUP_FORMAT = 'jumping_squares/backup';
+  var BACKUP_FORMAT_VERSION = 1;
+
+  var backupOverlay = document.getElementById('backup-overlay');
+  var backupCard = document.getElementById('backup-card');
+  var backupOpenBtn = document.getElementById('backup-open');
+  var backupCloseBtn = document.getElementById('backup-close');
+  var backupGroupBoard = document.getElementById('backup-group-board');
+  var backupGroupPrefs = document.getElementById('backup-group-prefs');
+  var backupExportBtn = document.getElementById('backup-export');
+  var backupImportBtn = document.getElementById('backup-import');
+  var backupStatus = document.getElementById('backup-status');
+  var backupFile = document.getElementById('backup-file');
+  var backupFocus = makeDialogFocusManager(backupOverlay, backupCard, 'backup-close');
+
+  // Show a status/result line in the panel (polite). `isError` switches to the
+  // muted-red styling for a rejected load.
+  function setBackupStatus(msg, isError) {
+    if (!backupStatus) return;
+    backupStatus.textContent = msg || '';
+    backupStatus.hidden = !msg;
+    backupStatus.classList.toggle('error', !!isError);
+  }
+
+  // At least one section must be selected for Export/Import to make sense;
+  // reflect that by disabling the actions when nothing is checked.
+  function syncBackupActions() {
+    var any = (backupGroupBoard && backupGroupBoard.checked) ||
+              (backupGroupPrefs && backupGroupPrefs.checked);
+    if (backupExportBtn) backupExportBtn.disabled = !any;
+    if (backupImportBtn) backupImportBtn.disabled = !any;
+  }
+
+  // Build the backup wrapper for the currently-selected sections. The board
+  // section stores the LIVE game (cloneState) so "save" captures what's on
+  // screen; the prefs section is a deep copy of the preferences record.
+  function buildBackupObject(includeBoard, includePrefs) {
+    var wrapper = {
+      format: BACKUP_FORMAT,
+      formatVersion: BACKUP_FORMAT_VERSION,
+      engineVersion: G.VERSION,
+      savedAt: new Date().toISOString(),
+    };
+    if (includeBoard) {
+      // Reuse the board-save envelope shape for the board section, so the two
+      // formats stay recognisably related and a future migrator can share code.
+      wrapper.board = {
+        format: SAVE_FORMAT,
+        formatVersion: SAVE_FORMAT_VERSION,
+        state: G.cloneState(state),
+      };
+    }
+    if (includePrefs) {
+      wrapper.prefs = prefs.exportAll();
+    }
+    return wrapper;
+  }
+
+  // Two-digit zero-pad for the filename timestamp.
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  // Download filename reflecting which sections are included: a board-only
+  // export gets a "-board" marker (it's the shareable/puzzle file); a prefs-only
+  // export gets "-settings"; a full backup gets neither marker.
+  function backupFilename(includeBoard, includePrefs) {
+    var d = new Date();
+    var stamp = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) +
+                '-' + pad2(d.getHours()) + pad2(d.getMinutes());
+    var marker = '';
+    if (includeBoard && !includePrefs) marker = '-board';
+    else if (includePrefs && !includeBoard) marker = '-settings';
+    return 'jumping-squares' + marker + '-' + stamp + '.json';
+  }
+
+  // Trigger a client-side download of `text` as `filename`. Best-effort: uses a
+  // Blob + object URL + a transient <a download>. No network involved.
+  function downloadTextFile(filename, text) {
+    try {
+      var blob = new Blob([text], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke on the next tick so the click has consumed the URL.
+      window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function exportBackup() {
+    var includeBoard = !!(backupGroupBoard && backupGroupBoard.checked);
+    var includePrefs = !!(backupGroupPrefs && backupGroupPrefs.checked);
+    if (!includeBoard && !includePrefs) {
+      setBackupStatus('Select at least one section to save.', true);
+      return;
+    }
+    var obj = buildBackupObject(includeBoard, includePrefs);
+    var json = JSON.stringify(obj, null, 2);
+    var name = backupFilename(includeBoard, includePrefs);
+    if (downloadTextFile(name, json)) {
+      var parts = [];
+      if (includeBoard) parts.push('game board');
+      if (includePrefs) parts.push('settings & scores');
+      setBackupStatus('Saved ' + parts.join(' + ') + ' to ' + name + '.', false);
+    } else {
+      setBackupStatus('Could not start the download in this browser.', true);
+    }
+  }
+
+  // Validate a parsed backup wrapper against the SELECTED sections. Returns
+  // { board, prefs, error }: board is a CLEAN engine state (via loadState) when
+  // a board section was requested and present; prefs is the raw prefs object to
+  // hand to prefs.importRecord(). On any problem, `error` is a user-facing
+  // message and board/prefs are null. "Requested but absent/invalid" is an
+  // error so the user isn't silently given nothing.
+  function validateBackupObject(parsed, wantBoard, wantPrefs) {
+    var out = { board: null, prefs: null, error: null };
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      out.error = 'That file is not a Jumping Squares backup.';
+      return out;
+    }
+    if (parsed.format !== BACKUP_FORMAT) {
+      out.error = 'Unrecognised file format (not a Jumping Squares backup).';
+      return out;
+    }
+    var fv = parsed.formatVersion;
+    if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+        fv < 1 || fv > BACKUP_FORMAT_VERSION) {
+      out.error = 'This backup was made by a newer version and can\u2019t be read.';
+      return out;
+    }
+
+    var haveBoard = parsed.board && typeof parsed.board === 'object';
+    var havePrefs = parsed.prefs && typeof parsed.prefs === 'object';
+    if (!haveBoard && !havePrefs) {
+      out.error = 'The file contains no board or settings to load.';
+      return out;
+    }
+
+    if (wantBoard) {
+      if (!haveBoard) {
+        out.error = 'This file has no game board to load (untick Game board, ' +
+          'or choose a file that has one).';
+        return out;
+      }
+      var rawState = parsed.board.state;
+      // Dimension gate first (cheap), then STRICT validation + rehydration.
+      if (!rawState || typeof rawState !== 'object' ||
+          !fitsDimensions(rawState.rows, rawState.cols, rawState.players)) {
+        out.error = 'The saved board doesn\u2019t fit this game (expected ' +
+          ROWS + '\u00d7' + COLS + ', ' + PLAYERS + ' players).';
+        return out;
+      }
+      var clean = G.loadState(rawState);
+      if (clean === null) {
+        out.error = 'The saved board failed validation (corrupt, mid-cascade, ' +
+          'or an impossible position) and was not loaded.';
+        return out;
+      }
+      out.board = clean;
+    }
+
+    if (wantPrefs) {
+      if (!havePrefs) {
+        out.error = 'This file has no settings to load (untick Settings & ' +
+          'scores, or choose a file that has them).';
+        return out;
+      }
+      out.prefs = parsed.prefs;
+    }
+    return out;
+  }
+
+  // Apply a validated import: REPLACE the selected sections, keep the rest.
+  function applyImport(validated) {
+    var changed = [];
+    if (validated.prefs) {
+      prefs.importRecord(validated.prefs);
+      changed.push('settings & scores');
+    }
+    if (validated.board) {
+      // Replace the live game with the imported, validated state, and persist
+      // it (when auto-save is on) so a reload keeps the loaded board. Cancel any
+      // in-flight cascade/AI/hint for the old board first (as New Game does).
+      playToken++;
+      if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
+      resumeAnimation = null;
+      cancelPendingHint();
+      busy = false;
+      stepping.active = false;
+      winRecorded = (validated.board.winner !== G.EMPTY); // a finished import is already tallied-equivalent
+      suppressWinnerModal = (validated.board.winner !== G.EMPTY); // show board, not the live-win modal
+      state = validated.board;
+      buildGrid();
+      sizeBoard();
+      autoSaveIfOn();
+      changed.push('game board');
+    }
+    // Reflect everything that changed: Players/difficulty rows, hint delay,
+    // persistence state, and the board/turn label.
+    syncPlayerTypeUI();
+    syncHintDelayUI();
+    syncPersistenceUI();
+    render();
+    return changed;
+  }
+
+  // Read + parse + validate + confirm + apply an imported file.
+  function handleImportFile(file) {
+    var wantBoard = !!(backupGroupBoard && backupGroupBoard.checked);
+    var wantPrefs = !!(backupGroupPrefs && backupGroupPrefs.checked);
+    if (!wantBoard && !wantPrefs) {
+      setBackupStatus('Select at least one section to load.', true);
+      return;
+    }
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onerror = function () {
+      setBackupStatus('Could not read that file.', true);
+    };
+    reader.onload = function () {
+      var parsed;
+      try {
+        parsed = JSON.parse(String(reader.result));
+      } catch (e) {
+        setBackupStatus('That file isn\u2019t valid JSON.', true);
+        return;
+      }
+      var v = validateBackupObject(parsed, wantBoard, wantPrefs);
+      if (v.error) { setBackupStatus(v.error, true); return; }
+
+      // Confirm — importing REPLACES the selected sections (the current game
+      // and/or your settings). Describe exactly what will be replaced.
+      var repl = [];
+      if (v.board) repl.push('the current game board');
+      if (v.prefs) repl.push('your settings & scores');
+      confirmDialog(
+        'Load this file? It will replace ' + repl.join(' and ') +
+        '. This cannot be undone.',
+        function () {
+          var changed = applyImport(v);
+          setBackupStatus('Loaded ' + changed.join(' + ') + '.', false);
+        });
+    };
+    reader.readAsText(file);
+  }
+
+  function openBackup() {
+    setBackupStatus('', false);
+    syncBackupActions();
+    backupOverlay.classList.add('show');
+    // onOpen() moves focus into this dialog FIRST, then inert the Settings
+    // layer beneath it (same nested-dialog pattern as Reset) so assistive tech
+    // doesn't see two active modal dialogs.
+    backupFocus.onOpen();
+    settingsOverlay.setAttribute('inert', '');
+    settingsOverlay.setAttribute('aria-hidden', 'true');
+  }
+  function closeBackup() {
+    backupOverlay.classList.remove('show');
+    settingsOverlay.removeAttribute('inert');
+    settingsOverlay.removeAttribute('aria-hidden');
+    backupFocus.onClose();
+  }
+
+  if (backupOpenBtn) backupOpenBtn.addEventListener('click', openBackup);
+  if (backupCloseBtn) backupCloseBtn.addEventListener('click', closeBackup);
+  if (backupGroupBoard) backupGroupBoard.addEventListener('change', syncBackupActions);
+  if (backupGroupPrefs) backupGroupPrefs.addEventListener('change', syncBackupActions);
+  if (backupExportBtn) backupExportBtn.addEventListener('click', exportBackup);
+  if (backupImportBtn) {
+    backupImportBtn.addEventListener('click', function () {
+      if (backupFile) { backupFile.value = ''; backupFile.click(); }
+    });
+  }
+  if (backupFile) {
+    backupFile.addEventListener('change', function () {
+      var f = this.files && this.files[0];
+      if (f) handleImportFile(f);
+    });
+  }
+  backupOverlay.addEventListener('click', function (e) {
+    if (e.target === backupOverlay) closeBackup(); // backdrop click = close
+  });
+  document.addEventListener('keydown', function (e) {
+    // Only close Backup on Escape when it is the topmost dialog AND the confirm
+    // dialog (which layers above it for the import confirmation) isn't open.
+    if (e.key === 'Escape' && backupOverlay.classList.contains('show') &&
+        !(confirmOverlay && confirmOverlay.classList.contains('show'))) {
+      closeBackup();
     }
   });
 
