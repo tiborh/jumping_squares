@@ -2190,8 +2190,14 @@
       if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
       else if (e.key === 'Escape') {
         e.preventDefault();
+        // Revert the field to the stored name, then CLOSE the panel — Escape in
+        // the dialog should dismiss it (the field-level revert is the first
+        // effect, the close the second). We stop propagation (so the document
+        // Escape handler doesn't also fire) and close here directly, because
+        // otherwise stopPropagation would swallow the only path that closes it.
         input.value = sanitizeName(prefs.getPlayerName(n));
-        input.blur();
+        input.blur(); // commits the (unchanged) value via the blur handler
+        closePlayers();
       }
       e.stopPropagation(); // don't let keys bubble to global handlers
     });
@@ -2284,9 +2290,15 @@
       if (input && document.activeElement === input) commitNameInput(n);
     });
     playersOverlay.classList.remove('show');
-    playersFocus.onClose();
     paused = false;
-    updateTurnRegionAffordance(); // region clickable again
+    // Restore the #turn region's focusability BEFORE onClose() tries to return
+    // focus to it. onClose() focuses the element that was active when the panel
+    // opened — the #turn region — but opening removed its tabindex (and the
+    // affordance only re-adds it once the overlay is no longer shown, which is
+    // now true). Restoring first means focus actually lands back on the trigger
+    // rather than silently failing on a non-focusable div.
+    updateTurnRegionAffordance(); // region clickable + focusable again
+    playersFocus.onClose();
     // Resume a paused animated cascade, if one was in progress.
     if (resumeAnimation) {
       var fn = resumeAnimation;
