@@ -229,7 +229,13 @@ function printHelp() {
     '  --json     Machine-readable JSON result on stdout.\n' +
     '  --help     Show this help.\n\n' +
     'Reads from <file.json>, or from stdin if no file is given.\n' +
-    'Exit code 0 = conforms, 1 = does not (or an error occurred).\n');
+    'Exit code 0 = conforms, 1 = does not (or an error occurred).\n\n' +
+    'Examples:\n' +
+    '  node tools/validate-schema.js my-board.json\n' +
+    '  node tools/validate-schema.js --json my-backup.json | jq .ok\n' +
+    '  cat my-backup.json | node tools/validate-schema.js\n\n' +
+    'Tip: to check BOTH shape and game-rule validity in one go, use\n' +
+    'tools/validate-backup.js.\n');
 }
 
 function runCli(argv) {

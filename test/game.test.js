@@ -1287,6 +1287,58 @@ console.log('backup validators: schema (shape) + rules (semantic)');
   var empty = JSON.parse(JSON.stringify(wrap({})));
   ok(!rulesV.validate(empty).valid,
      'a backup with no board/prefs section fails the rules validator');
+
+  // --- combined runner (tools/validate-backup.js) ------------------------
+  var backupV = require('../tools/validate-backup.js');
+
+  // Passing file: ok, with both stages valid and the expected result shape.
+  var cr1 = backupV.validate(full);
+  ok(cr1.ok === true, 'combined runner: a valid full backup is ok');
+  ok(cr1.schema && cr1.schema.valid === true, 'combined: schema stage valid');
+  ok(cr1.rules && cr1.rules.valid === true, 'combined: rules stage valid');
+  ok(Array.isArray(cr1.rules.checked) && cr1.rules.checked.indexOf('board') !== -1,
+     'combined: rules.checked lists the board section');
+
+  // Shape failure short-circuits: rules is null (not run on a broken shape).
+  var crShape = backupV.validate(badType);
+  ok(crShape.ok === false && crShape.schema.valid === false,
+     'combined: a shape-broken file is not ok and fails the schema stage');
+  ok(crShape.rules === null,
+     'combined: rules stage is skipped (null) when the shape is invalid');
+
+  // Shape OK but rules invalid: both stages ran; schema valid, rules invalid.
+  var crRules = backupV.validate(badRules);
+  ok(crRules.ok === false && crRules.schema.valid === true &&
+     crRules.rules && crRules.rules.valid === false,
+     'combined: an over-capacity board passes shape but fails rules (not ok)');
+
+  // --- schema tightenings (schemaVersion 2) ------------------------------
+  var schema2 = schemaV.loadSchema();
+  ok(schema2.schemaVersion === 2, 'schema metadata is schemaVersion 2');
+
+  // turnsTaken must have >= 3 items (players+1 for the minimum 2-player game).
+  var badTurns = JSON.parse(JSON.stringify(full));
+  badTurns.board.state.turnsTaken = [0, 1];
+  var rT = schemaV.validate(badTurns, schema2);
+  ok(!rT.valid && rT.errors.some(function (e) { return e.rule === 'minItems'; }),
+     'turnsTaken shorter than players+1 fails the schema (minItems)');
+
+  // prefs.score.wins must be an object (structural), not an array.
+  var badScore = JSON.parse(JSON.stringify(full));
+  badScore.prefs = { score: { wins: [1, 2] } };
+  var rS = schemaV.validate(badScore, schema2);
+  ok(!rS.valid && rS.errors.some(function (e) {
+    return e.rule === 'type' && e.path === '/prefs/score/wins';
+  }), 'prefs.score.wins as an array fails the schema (nested type)');
+
+  // Contract check: a prefs VALUE outside the known set (e.g. an unknown Tutor
+  // level) is deliberately NOT rejected by the schema - the app ignores it, so
+  // the schema stays lenient on prefs values to keep "passes schema => the app
+  // tolerates it" honest.
+  var oddPrefs = JSON.parse(JSON.stringify(full));
+  oddPrefs.prefs = { tutorLevel: { 1: 'legendary' } };
+  ok(schemaV.validate(oddPrefs, schema2).valid,
+     'an unknown prefs value is tolerated by the schema (prefs are advisory)');
 })();
 
 // ---------------------------------------------------------------------------
