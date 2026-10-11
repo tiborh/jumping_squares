@@ -41,6 +41,7 @@
   var endgameBar = document.getElementById('endgame-bar');
   var endgameNew = document.getElementById('endgame-new');
   var stepBtn = document.getElementById('step-btn');
+  var hintBtn = document.getElementById('hint-btn');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
 
@@ -103,7 +104,7 @@
   }
 
   var PREFS_KEY = STORAGE_PREFIX + 'prefs';
-  var PREFS_VERSION = 8; // v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 9; // v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -154,6 +155,16 @@
         // Defaults to 1; reset to 1 when the user resets the series (tally),
         // unless they opt to keep it via the reset dialog's checkbox.
         startingPlayer: 1,
+        // How long the bottom-right Hint bulb waits — idle, with the player not
+        // having moved — before it "lights up" to suggest a hint might help. The
+        // button is clickable the whole time; this only controls the visual
+        // nudge. Encoded as milliseconds with two sentinels:
+        //   0   -> "always on" (light immediately whenever a hint is available)
+        //  -1   -> "never" (stay dim; the user must know to click it)
+        //  else -> an idle delay in ms (5000..30000 in the Settings slider).
+        // Default 10000 ms (10 s): long enough to encourage trying Help/own
+        // thinking first, short enough to offer help before frustration.
+        hintLightDelay: 10000,
       };
     }
     var mem = makeDefaults();
@@ -255,6 +266,17 @@
             var rlv = parsed.randomLevel[n];
             if (rlv === 'easy' || rlv === 'medium') mem.randomLevel[n] = rlv;
           });
+        }
+
+        // hintLightDelay: introduced in schema v9; absent in older records
+        // (keep the default, 10000). Accept the two sentinels (0 = always on,
+        // -1 = never) and any finite non-negative millisecond value; anything
+        // else (NaN, non-number, negative other than -1) keeps the default so a
+        // bad value can't wedge the bulb in a weird state.
+        var hld = parsed.hintLightDelay;
+        if (hld === 0 || hld === -1 ||
+            (typeof hld === 'number' && isFinite(hld) && hld > 0)) {
+          mem.hintLightDelay = hld;
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -373,6 +395,21 @@
       },
       setRandomLevel: function (n, lv) {
         mem.randomLevel[n] = (lv === 'medium') ? 'medium' : 'easy';
+        persist();
+      },
+      // --- Hint bulb light-up delay (ms, or 0 = always on, -1 = never) ---
+      getHintLightDelay: function () {
+        var d = mem.hintLightDelay;
+        if (d === 0 || d === -1) return d;
+        return (typeof d === 'number' && isFinite(d) && d > 0) ? d : 10000;
+      },
+      setHintLightDelay: function (d) {
+        if (d === 0 || d === -1 ||
+            (typeof d === 'number' && isFinite(d) && d > 0)) {
+          mem.hintLightDelay = d;
+        } else {
+          mem.hintLightDelay = 10000;
+        }
         persist();
       },
       // --- Shark difficulty (search depth), per seat ---
@@ -1037,6 +1074,10 @@
     // when busy/stepping/paused or when the current player is human. maybeTrig-
     // gerAI is defined later in this IIFE (hoisted) and is runtime-only here.
     maybeTriggerAI();
+
+    // Reflect whether a Hint is available in the current state (human live turn,
+    // nothing in progress). Defined later in this IIFE; runtime-only here.
+    syncHintButton();
   }
 
   // --- rename current player (click the turn label on your turn) -----------
@@ -1183,6 +1224,9 @@
     var r = parseInt(this.dataset.r, 10);
     var c = parseInt(this.dataset.c, 10);
     if (!G.canPlay(state, state.current, r, c)) return;
+
+    // A move supersedes any pending/visible hint for the previous position.
+    cancelPendingHint();
 
     // Small tactile feedback.
     this.classList.add('bump');
@@ -1420,11 +1464,214 @@
     }, pace);
   }
 
+  // --- hint ----------------------------------------------------------------
+  // The bottom-right Hint button flashes the strongest move for the player to
+  // move, computed by the strongest machine player (the Shark search agent at
+  // its deepest difficulty) via the engine-side AGENTS.bestMove helper — the
+  // same "best move" entry point intended for future AI-move computation on
+  // variable board sizes. The hint never alters game state; it only highlights
+  // a cell. It is purely advisory, so it stays available for whatever delay/
+  // player settings are in effect, gated only by "is a hint meaningful now".
+  //
+  // Appearance / "light up": the button rests DIM (a quiet grey outline bulb)
+  // and is clickable the whole time. It only visually LIGHTS UP (warm, glowing)
+  // after the player has been idle — not moved — for the configured delay, so
+  // we nudge them toward Help / their own thinking first and offer the hint
+  // only when it might actually help. The delay is a persisted preference
+  // (prefs.hintLightDelay) set from a Settings slider:
+  //   0  -> always on (light the moment a hint becomes available)
+  //  -1  -> never (stay dim; the button still works if clicked)
+  //  ms  -> idle delay (5000..30000 in the slider) before lighting.
+  // The idle timer is (re)armed whenever the hint becomes available or the turn
+  // changes, and cancelled on a move / New Game / dialog, so "idle" means "this
+  // turn, untouched".
+  //
+  // Thinking indicator: the Shark search is synchronous and can briefly block
+  // the main thread. We show a spinner only if the computation is still running
+  // after HINT_THINK_MS, so a fast board (the current 5x5 resolves in well under
+  // that) never flickers a spinner, while a slow/large future board surfaces one
+  // automatically. To let the spinner actually paint before the blocking search
+  // runs, the compute is deferred one frame behind the "thinking" class.
+  var HINT_THINK_MS = 400;  // show the spinner only if a hint takes this long
+  var hintBusy = false;     // true while a hint is being computed/flashed
+  var hintThinkTimer = null;
+  var hintToken = 0;        // bumped to cancel an in-flight hint (New Game/move)
+  var hintLightTimer = null; // pending idle "light up" timer
+  var hintWasVisible = false; // was the button shown on the previous sync?
+
+  // Is a hint meaningful right now? Only on a HUMAN player's live turn, with the
+  // agents module present (so a strongest move can be computed), and with no
+  // cascade/step/dialog in progress. Mirrors the gates used elsewhere so the
+  // button never offers a hint the UI can't currently act on.
+  function hintAvailable() {
+    if (!AGENTS || !AGENTS.bestMove) return false;
+    if (state.winner !== G.EMPTY) return false;
+    if (busy || stepping.active || paused || renaming) return false;
+    if (hintBusy) return false;
+    return prefs.getPlayerType(state.current) === 'human';
+  }
+
+  // Cancel any pending idle light-up timer and (optionally) extinguish the bulb.
+  function cancelHintLight(extinguish) {
+    if (hintLightTimer !== null) { clearTimeout(hintLightTimer); hintLightTimer = null; }
+    if (extinguish && hintBtn) {
+      hintBtn.classList.remove('lit', 'just-lit');
+    }
+  }
+
+  // Turn the bulb on now (lit), with a one-shot pulse that is cleaned up so it
+  // doesn't re-run on later renders.
+  function lightHintBulb() {
+    if (!hintBtn) return;
+    if (hintBtn.classList.contains('lit')) return; // already on
+    hintBtn.classList.add('lit', 'just-lit');
+    window.setTimeout(function () {
+      if (hintBtn) hintBtn.classList.remove('just-lit');
+    }, 650);
+  }
+
+  // (Re)arm the idle light-up according to the saved delay preference:
+  //   -1 -> never: leave dim, no timer.
+  //    0 -> always on: light immediately.
+  //   ms -> light after `ms` of continued idleness (no move / turn change).
+  // Called from syncHintButton when the button is (or becomes) available.
+  function armHintLight() {
+    cancelHintLight(true); // start from dim; clear any stale timer
+    var delay = prefs.getHintLightDelay();
+    if (delay === -1) return;         // never auto-light
+    if (delay === 0) { lightHintBulb(); return; } // always on
+    hintLightTimer = window.setTimeout(function () {
+      hintLightTimer = null;
+      // Re-check availability at fire time: the turn may have changed while we
+      // waited (a move resets this anyway, but be defensive).
+      if (hintAvailable()) lightHintBulb();
+    }, delay);
+  }
+
+  // Show/hide the Hint button to match the current state, and manage the idle
+  // light-up. Called from render(). While a hint is computing we keep the
+  // button visible-but-disabled (the thinking state owns its appearance), so a
+  // mid-compute render doesn't hide the spinner out from under the user.
+  function syncHintButton() {
+    if (!hintBtn) return;
+    if (hintBusy) { hintBtn.hidden = false; return; }
+
+    var available = hintAvailable();
+    hintBtn.hidden = !available;
+    hintBtn.disabled = false;
+
+    if (!available) {
+      // Not applicable now: cancel the timer and reset to dim for next time.
+      cancelHintLight(true);
+      hintBtn.classList.remove('appearing');
+      hintWasVisible = false;
+      return;
+    }
+
+    // Available. If it JUST became visible (turn start / new availability),
+    // play the gentle appear animation and (re)arm the idle light-up from
+    // scratch. render() runs on every turn change and move resolution, so this
+    // naturally restarts the idle clock each turn — "idle" = untouched turn.
+    if (!hintWasVisible) {
+      hintBtn.classList.remove('appearing');
+      void hintBtn.offsetWidth; // restart the appear animation
+      hintBtn.classList.add('appearing');
+    }
+    hintWasVisible = true;
+    armHintLight();
+  }
+
+  // Flash the suggested cell a few times (the CSS .hint-flash runs the pulse
+  // for a fixed number of cycles). Reuses the same restart-the-animation trick
+  // as the placement flash so repeated hints on the same cell re-trigger.
+  var HINT_FLASH_MS = 480 * 3 + 120; // 3 cycles of the 480ms keyframe + margin
+
+  function clearHintFlash(el) {
+    if (!el) return;
+    if (el._hintTimer) { clearTimeout(el._hintTimer); el._hintTimer = null; }
+    if (el._hintEnd) {
+      el.removeEventListener('animationend', el._hintEnd);
+      el._hintEnd = null;
+    }
+    el.classList.remove('hint-flash');
+  }
+
+  function flashHint(el) {
+    if (!el) return;
+    clearHintFlash(el);
+    void el.offsetWidth; // reflow so re-adding restarts the animation
+    el.classList.add('hint-flash');
+    var finish = function () { clearHintFlash(el); };
+    el._hintEnd = finish;
+    el.addEventListener('animationend', finish);
+    // Fallback timer (reduced-motion disables the animation, so animationend
+    // never fires): clear the steady highlight after the same window.
+    el._hintTimer = window.setTimeout(finish, HINT_FLASH_MS);
+  }
+
+  function cancelPendingHint() {
+    hintToken++;                 // invalidate any in-flight compute
+    if (hintThinkTimer !== null) { clearTimeout(hintThinkTimer); hintThinkTimer = null; }
+    if (hintBtn) hintBtn.classList.remove('thinking');
+    hintBusy = false;
+    // A move / New Game / dialog ends this turn's idleness: stop the idle timer
+    // and extinguish the bulb so the next turn starts dim and the clock restarts.
+    cancelHintLight(true);
+    hintWasVisible = false;
+  }
+
+  function requestHint() {
+    if (!hintAvailable()) return;
+    hintBusy = true;
+    var token = ++hintToken;
+    if (hintBtn) hintBtn.disabled = true;
+    // The user explicitly asked: light the bulb now (if not already) and stop
+    // the idle timer — the hint is self-evidently wanted at this point.
+    cancelHintLight(false);
+    lightHintBulb();
+
+    // Arm the spinner: only paints if the compute below hasn't finished within
+    // HINT_THINK_MS (fast boards never show it).
+    hintThinkTimer = window.setTimeout(function () {
+      hintThinkTimer = null;
+      if (token === hintToken && hintBtn) hintBtn.classList.add('thinking');
+    }, HINT_THINK_MS);
+
+    // Defer the (synchronous, possibly slow) search so the "thinking" class —
+    // if armed — can paint first, and the click handler returns promptly.
+    window.setTimeout(function () {
+      if (token !== hintToken) return; // cancelled (New Game / move happened)
+      var mv = null;
+      try {
+        mv = AGENTS.bestMove(G, state);
+      } catch (e) {
+        mv = null; // never let a hint failure break the game
+      }
+      if (token !== hintToken) return; // cancelled while computing
+      // Tear down the thinking state regardless of outcome.
+      if (hintThinkTimer !== null) { clearTimeout(hintThinkTimer); hintThinkTimer = null; }
+      if (hintBtn) hintBtn.classList.remove('thinking');
+      hintBusy = false;
+      if (mv) {
+        var el = cellEls[mv.r * state.cols + mv.c];
+        flashHint(el);
+      }
+      // Re-evaluate the button (it may have become unavailable, e.g. the turn
+      // changed — though a hint doesn't consume a turn, so normally it stays).
+      syncHintButton();
+    }, 0);
+  }
+
+  if (hintBtn) {
+    hintBtn.addEventListener('click', requestHint);
+  }
+
   // --- new game ------------------------------------------------------------
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
     if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
     resumeAnimation = null; // drop any parked (paused) animation
+    cancelPendingHint();     // drop any in-flight/visible hint for the old board
     busy = false;  // unlock input
     stepping.active = false; // cancel any manual step-through in progress
     winRecorded = false;     // the next game's win hasn't been tallied yet
@@ -1564,12 +1811,16 @@
     settingsOverlay.classList.add('show');
     syncPersistenceUI(); // save-state may have changed since last opened
     syncPlayerTypeUI();  // reflect current player types
+    syncHintDelayUI();   // reflect the stored hint light-up delay
+    cancelPendingHint(); // a hint can't apply while the dialog pauses play
+    syncHintButton();    // hide the Hint button while Settings is open (paused)
     settingsFocus.onOpen();
   }
   function closeSettings() {
     settingsOverlay.classList.remove('show');
     settingsFocus.onClose();
     paused = false;
+    syncHintButton();    // restore the Hint button now that play resumes
     // Resume a paused animated cascade, if one was in progress.
     if (resumeAnimation) {
       var fn = resumeAnimation;
@@ -1649,6 +1900,68 @@
   sliderIndexToSetting(parseInt(delayRange.value, 10));
   updateDelayReadout();
 
+  // --- hint light-up delay slider ------------------------------------------
+  // Maps an 8-stop slider to the persisted hintLightDelay preference:
+  //   index 0        -> 0      ("Always" — light the bulb immediately)
+  //   index 1..6     -> 5000..30000 ms (5 s steps)
+  //   index 7        -> -1     ("Off" — never auto-light)
+  // The slider is the ONLY writer of the pref; the hint light-up logic reads it
+  // via prefs.getHintLightDelay() and re-arms on the next render.
+  var hintDelayRange = document.getElementById('hint-delay-range');
+  var hintDelayValue = document.getElementById('hint-delay-value');
+  var HINT_DELAY_OFF_INDEX = 7;
+
+  function hintSliderIndexToDelay(index) {
+    if (index <= 0) return 0;                 // Always on
+    if (index >= HINT_DELAY_OFF_INDEX) return -1; // Off / never
+    return index * 5000;                      // 1->5s, 2->10s, ... 6->30s
+  }
+
+  function hintDelayToSliderIndex(delay) {
+    if (delay === 0) return 0;
+    if (delay === -1) return HINT_DELAY_OFF_INDEX;
+    // Clamp a stored ms value to the nearest 5 s stop in [1..6].
+    var idx = Math.round(delay / 5000);
+    if (idx < 1) idx = 1;
+    if (idx > 6) idx = 6;
+    return idx;
+  }
+
+  function hintDelayLabel(delay) {
+    if (delay === 0) return 'Always';
+    if (delay === -1) return 'Off';
+    return (delay / 1000) + ' s';
+  }
+
+  function updateHintDelayReadout() {
+    if (hintDelayValue) {
+      hintDelayValue.textContent = hintDelayLabel(prefs.getHintLightDelay());
+    }
+  }
+
+  // Reflect the stored hint-delay preference in the slider + readout. Called on
+  // load, when Settings opens, and after a prefs reset so the control never
+  // shows a stale value.
+  function syncHintDelayUI() {
+    if (!hintDelayRange) return;
+    hintDelayRange.value = String(hintDelayToSliderIndex(prefs.getHintLightDelay()));
+    updateHintDelayReadout();
+  }
+
+  if (hintDelayRange) {
+    hintDelayRange.addEventListener('input', function () {
+      var delay = hintSliderIndexToDelay(parseInt(this.value, 10));
+      prefs.setHintLightDelay(delay);
+      updateHintDelayReadout();
+      // Re-arm the bulb immediately so the change is felt without closing
+      // Settings — but the dialog pauses play, so the bulb is hidden right now;
+      // syncHintButton() on the next render (after close) applies the new delay.
+      // Still, update the readout live for feedback.
+    });
+    // Reflect the stored preference in the control on load.
+    hintDelayRange.value = String(hintDelayToSliderIndex(prefs.getHintLightDelay()));
+    updateHintDelayReadout();
+  }
   // --- persistence controls (Settings > Persistence) -----------------------
   var autoSaveToggle = document.getElementById('autosave-toggle');
   var removeSaveBtn = document.getElementById('remove-save');
@@ -2083,6 +2396,9 @@
       // Preferences reset in place: resync the Players/difficulty controls and
       // the turn label so they show defaults rather than stale values.
       syncPlayerTypeUI();
+      // The hint light-up delay IS persisted, so clearAll() reset it to the
+      // default (10 s); reflect that in its slider/readout.
+      syncHintDelayUI();
       // The propagation delay is an in-memory session setting (not persisted),
       // so clearing storage doesn't touch it; a reload would reset it to the
       // default on its own. For an in-place reset, drive the change THROUGH the

@@ -29,7 +29,54 @@ the nearest user-facing entry.
 
 ---
 
-## v41 — In-app Help (sourced from the README)
+## v43 — Hint button (strongest-move helper)
+
+Player-facing:
+
+- **New: a Hint button** — in the **bottom-right** corner. It rests as a quiet,
+  **dim outline bulb** (a stroked line icon matching the top-bar **?** and gear,
+  not an emoji) and is clickable the whole time. Pressing it flashes a **strong
+  move** for the player to move: the suggested square pulses a few times (a gold
+  ring). It is **advisory only** — it never places a dot or takes your turn.
+- **"Light up" nudge.** Rather than shouting for attention, the bulb only
+  **lights up** (warm, glowing, with filament and rays) once you've paused
+  **without moving** for a configurable idle time — the idea being to encourage
+  trying **Help** / your own thinking first, and to offer the hint only when it
+  might actually help. A move, New Game, or opening Settings resets the clock
+  and dims it again.
+- **Settings → "Hint light-up"** sets that delay with a slider: far left
+  **Always** (light immediately whenever a hint applies), then **5 s → 30 s** in
+  5-second steps, and far right **Off** (stay dim; never auto-light). Default is
+  **10 s**. The choice is remembered in your browser.
+- The suggestion is computed by the **strongest machine player** (the Shark
+  search agent at its deepest difficulty), independent of which opponent you are
+  actually playing. The button appears only when a hint is meaningful: a **human
+  player's live turn**, no cascade animating, no manual step, Settings closed,
+  game not yet won.
+- If the search runs long it briefly shows a **"thinking" spinner** in place of
+  the bulb. On the current 5×5 board the search is near-instant, so the spinner
+  normally never appears — it is there for the larger boards planned next.
+
+Internal / why:
+
+- The "what is the strongest move here?" question now has a **single engine-side
+  entry point**, `JumpingSquaresAgents.bestMove(G, state, opts)`, with a named
+  `STRONGEST_SHARK_DEPTH` constant for "strongest" rather than a magic literal.
+  It is pure and DOM-free (it never mutates the passed state), so the UI Hint
+  and future **AI-move computation on variable board sizes** share one
+  definition of "best". `opts.rng` makes a deterministic hint testable; a test
+  asserts the helper returns a legal move for the player to move.
+- The hint compute is **deferred one turn of the event loop** behind an armed
+  "thinking" class, so the spinner can paint before the synchronous search runs,
+  and a token guard cancels an in-flight hint when a move or New Game happens —
+  a late result can never flash on a board that already changed.
+- The light-up delay is a persisted preference (`hintLightDelay`, prefs schema
+  **v9**) encoded as milliseconds with two sentinels — `0` = always on, `-1` =
+  never — migrated forward from older records (which keep the 10 s default). The
+  idle timer is re-armed on every render where the Hint is available (so "idle"
+  means "this turn, untouched") and cancelled on a move / New Game / dialog.
+
+
 
 Player-facing:
 
