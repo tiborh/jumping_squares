@@ -29,7 +29,45 @@ the nearest user-facing entry.
 
 ---
 
-## v42 — Hint button (strongest-move helper)
+## v43 — Players panel (moved out of Settings)
+
+Player-facing:
+
+- **The Players config moved into its own panel.** Click the **top-left area**
+  (the coloured dot and the player name) to open the **Players** panel. There
+  you set **who controls each player** (Human or an AI, with per-AI difficulty)
+  and **rename players** — now **both** players, any time, even mid-game. Only
+  **human** players can be renamed; an AI seat shows its agent name and its name
+  field is disabled.
+- **Settings is lighter.** With Players gone, **⚙ Settings** now holds just the
+  propagation delay, the hint light-up delay, and the saved-data / reset
+  controls.
+- **Top bar unchanged at rest.** The top-left looks exactly as before; only on
+  **hover/focus** does a **square outline** appear around the dot+name zone to
+  show it's clickable — this replaces the old username underline.
+- The former **inline top-bar rename** (click the name to edit it in place) is
+  **replaced** by the panel. Renaming is still purely cosmetic (no effect on the
+  win tally).
+- Like Settings, opening the Players panel **pauses** play while it's open and
+  resumes on close. It's reachable by keyboard (focus the top-left region and
+  press Enter/Space) and closes with ✕, Escape, or a backdrop click.
+
+Internal / why:
+
+- The Players controls (per-seat type selects + the conditional Random / Tutor /
+  Shark difficulty rows) were **relocated** from `#settings-card` into a new
+  `#players-overlay` / `#players-card` dialog, keeping the **same element ids**
+  so the existing show/hide and persistence wiring applies unchanged. The panel
+  adds a per-seat **name input** (`#p1-name` / `#p2-name`): editable for a human
+  seat (stored custom name, default as placeholder), disabled and showing the
+  agent label for an AI seat.
+- The `#turn` region became the single clickable hit-zone (a `region-active`
+  class carries the pointer/`role=button`/`aria-haspopup` affordance); the old
+  inline rename editor and its `.turn-name-input` / `#turn-label.editable`
+  styles were removed. The in-app **Help** controls list (sourced from the
+  README `HELP` block) was updated and regenerated accordingly.
+
+
 
 Player-facing:
 

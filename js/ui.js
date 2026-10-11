@@ -33,6 +33,7 @@
   var boardWrap = document.getElementById('board-wrap');
   var turnDot = document.getElementById('turn-dot');
   var turnLabel = document.getElementById('turn-label');
+  var turnRegion = document.getElementById('turn');
   var statusCountsEl = document.getElementById('status-counts');
   var tallyBtn = document.getElementById('tally-btn');
   var overlay = document.getElementById('winner-overlay');
@@ -996,13 +997,10 @@
     var color = getComputedStyle(document.documentElement)
       .getPropertyValue(playerColorVar[indicatorSeat]) || '#fff';
     turnDot.style.background = color.trim();
-    // While the inline rename editor is open, leave the label (input) alone.
-    if (!renaming) {
-      turnLabel.textContent = (state.winner !== G.EMPTY)
-        ? (playerName(state.winner) + ' wins')
-        : playerName(state.current);
-      updateTurnLabelAffordance();
-    }
+    turnLabel.textContent = (state.winner !== G.EMPTY)
+      ? (playerName(state.winner) + ' wins')
+      : playerName(state.current);
+    updateTurnRegionAffordance();
 
     // Record the win exactly once, the moment the engine declares a winner.
     // This sits here because state.winner is set via finalizeAfterCascade in
@@ -1081,94 +1079,61 @@
     syncHintButton();
   }
 
-  // --- rename current player (click the turn label on your turn) -----------
-  // Renaming is allowed only during a live turn: not while a cascade is
-  // animating/stepping (busy) and not after a win. The name is cosmetic and
-  // persisted via prefs; renaming never consumes a turn or changes game state.
-  var renaming = false; // true while the inline editor is open
+  // --- turn region → Players panel -----------------------------------------
+  // The top-left turn region (coloured dot + player name) is a single clickable
+  // zone that opens the Players panel (where names and Human/AI type are set).
+  // This replaces the old inline top-bar rename: there is no in-place editor
+  // anymore — renaming (of human seats) happens in the panel, which can also
+  // swap a seat to/from an AI mid-game. The panel opens ANY time (it pauses play
+  // like Settings), so the region is always active during normal use.
+  //
+  // The resting look of the top bar is unchanged; the affordance is a square
+  // OUTLINE drawn around the whole dot+name zone on hover/focus (see the
+  // #turn.region-active CSS), not the former username underline.
 
-  function canRenameNow() {
-    // AI-controlled seats aren't renamed (their label is the agent name).
-    if (prefs.getPlayerType(state.current) !== 'human') return false;
-    return !renaming && !busy && !stepping.active && state.winner === G.EMPTY;
+  function canOpenPlayers() {
+    // Openable whenever the Players panel isn't already the active dialog. We
+    // don't gate on turn/cascade: the panel pauses play while open (like
+    // Settings), and swapping a seat to/from AI mid-game is a supported use.
+    return !playersOverlay.classList.contains('show');
   }
 
-  // Reflect clickability on the label (pointer cursor + title) when live.
-  function updateTurnLabelAffordance() {
-    if (canRenameNow()) {
-      turnLabel.classList.add('editable');
-      turnLabel.title = 'Click to rename ' + playerName(state.current);
-      turnLabel.setAttribute('role', 'button');
-      turnLabel.setAttribute('tabindex', '0');
+  // Reflect the region's clickability (pointer cursor + button semantics). The
+  // region is active essentially always; kept as a function so a future gate
+  // (e.g. hiding it in some mode) is a one-line change.
+  function updateTurnRegionAffordance() {
+    if (!turnRegion) return;
+    if (canOpenPlayers()) {
+      turnRegion.classList.add('region-active');
+      turnRegion.title = 'Players — edit names and who controls each player';
+      turnRegion.setAttribute('role', 'button');
+      turnRegion.setAttribute('tabindex', '0');
+      turnRegion.setAttribute('aria-haspopup', 'dialog');
     } else {
-      turnLabel.classList.remove('editable');
-      turnLabel.removeAttribute('title');
-      turnLabel.removeAttribute('role');
-      turnLabel.removeAttribute('tabindex');
+      turnRegion.classList.remove('region-active');
+      turnRegion.removeAttribute('title');
+      turnRegion.removeAttribute('role');
+      turnRegion.removeAttribute('tabindex');
+      turnRegion.removeAttribute('aria-haspopup');
     }
   }
 
-  function beginRename() {
-    if (!canRenameNow()) return;
-    renaming = true;
-    var n = state.current;
-    var current = playerName(n);
-
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'turn-name-input';
-    input.maxLength = MAX_NAME_LEN;
-    input.value = current;
-    input.setAttribute('aria-label', 'Rename player ' + n);
-
-    // Swap the label for the input.
-    turnLabel.textContent = '';
-    turnLabel.appendChild(input);
-    // Drop the button-like semantics while the input is mounted (renaming is
-    // now true, so this removes .editable + role/tabindex/title). Avoids
-    // exposing a button that contains a textbox to assistive tech.
-    updateTurnLabelAffordance();
-    input.focus();
-    input.select();
-
-    var done = false;
-    function commit(save) {
-      if (done) return;
-      done = true;
-      renaming = false;
-      if (save) {
-        // Empty -> clear custom name (revert to default). Sanitised either way.
-        var clean = sanitizeName(input.value);
-        var def = defaultPlayerName(n);
-        prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
-        // Renaming is now PURELY cosmetic: it has no side effect on the win
-        // tally. The tally is reset only via its own control (click the tally
-        // pill in the status line, which asks for confirmation). This keeps
-        // "change a name" and "start a fresh series" as separate, deliberate
-        // actions.
-      }
-      render(); // rebuilds the label text (and affordance) from current state
-    }
-
-    input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); commit(true); }
-      else if (e.key === 'Escape') { e.preventDefault(); commit(false); }
-      // Don't let keys bubble to any global handlers while editing.
-      e.stopPropagation();
+  if (turnRegion) {
+    turnRegion.addEventListener('click', function () {
+      if (canOpenPlayers()) openPlayers();
     });
-    input.addEventListener('blur', function () { commit(true); });
-    // Clicks inside the input shouldn't retrigger the label handler.
-    input.addEventListener('click', function (e) { e.stopPropagation(); });
+    turnRegion.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (canOpenPlayers()) openPlayers();
+      }
+    });
   }
 
-  turnLabel.addEventListener('click', beginRename);
-  turnLabel.addEventListener('keydown', function (e) {
-    // Keyboard activation of the label-as-button (Enter/Space) when not editing.
-    if (!renaming && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault();
-      beginRename();
-    }
-  });
+  // `renaming` was the inline-editor flag; the editor is gone, but a few places
+  // still read it as "is a name being edited in the top bar right now" — always
+  // false now. Kept as a const so those reads stay valid without special-casing.
+  var renaming = false;
 
   // --- input ---------------------------------------------------------------
   var busy = false; // true while a cascade animation is playing (locks input)
@@ -1839,7 +1804,6 @@
     }
     settingsOverlay.classList.add('show');
     syncPersistenceUI(); // save-state may have changed since last opened
-    syncPlayerTypeUI();  // reflect current player types
     syncHintDelayUI();   // reflect the stored hint light-up delay
     cancelPendingHint(); // a hint can't apply while the dialog pauses play
     syncHintButton();    // hide the Hint button while Settings is open (paused)
@@ -2047,6 +2011,10 @@
   // --- player type selects (Human / Random / Tutor) ------------------------
   var p1TypeSel = document.getElementById('p1-type');
   var p2TypeSel = document.getElementById('p2-type');
+  var nameInputs = {
+    1: document.getElementById('p1-name'),
+    2: document.getElementById('p2-name'),
+  };
 
   // Reflect the stored player types in the selects. If the agents module is
   // missing (script not loaded), fall back to Human and disable the selects so
@@ -2173,13 +2141,65 @@
       if (!AGENTS) { sel.value = 'human'; sel.disabled = true; return; }
       sel.value = prefs.getPlayerType(n);
     });
+    syncNameInputs();
     syncSharkLevelUI();
     syncTutorLevelUI();
     syncRandomLevelUI();
   }
 
+  // Reflect the per-seat name inputs in the Players panel. A HUMAN seat shows
+  // its stored custom name (empty if none, with the default as placeholder) and
+  // is editable. An AI seat shows the agent name (e.g. "Tutor (AI)") and is
+  // DISABLED — machine players aren't renamed. Skips the input currently being
+  // edited so typing isn't clobbered by a concurrent sync.
+  function syncNameInputs() {
+    [1, 2].forEach(function (n) {
+      var input = nameInputs[n];
+      if (!input) return;
+      if (document.activeElement === input) return; // don't fight the typist
+      input.maxLength = MAX_NAME_LEN;
+      if (prefs.getPlayerType(n) === 'human') {
+        input.disabled = false;
+        input.value = sanitizeName(prefs.getPlayerName(n));
+        input.placeholder = defaultPlayerName(n);
+      } else {
+        input.disabled = true;
+        input.value = playerName(n);     // the agent label
+        input.placeholder = '';
+      }
+    });
+  }
+
+  // Persist a human seat's edited name. Empty -> clear (revert to the default).
+  // Purely cosmetic: never touches the win tally (that's its own control).
+  function commitNameInput(n) {
+    var input = nameInputs[n];
+    if (!input || input.disabled) return;
+    var clean = sanitizeName(input.value);
+    var def = defaultPlayerName(n);
+    prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
+    render(); // refresh the top-bar label / status counts to the new name
+  }
+
+  [1, 2].forEach(function (n) {
+    var input = nameInputs[n];
+    if (!input) return;
+    // Commit on blur and on Enter; Escape reverts to the stored value.
+    input.addEventListener('blur', function () { commitNameInput(n); });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') {
+        e.preventDefault();
+        input.value = sanitizeName(prefs.getPlayerName(n));
+        input.blur();
+      }
+      e.stopPropagation(); // don't let keys bubble to global handlers
+    });
+  });
+
   function onPlayerTypeChange(n, sel) {
     prefs.setPlayerType(n, sel.value);
+    syncNameInputs(); // enable/disable + relabel this seat's name field
     syncSharkLevelUI(); // show/hide the Shark difficulty row as needed
     syncTutorLevelUI(); // show/hide the Tutor difficulty row as needed
     syncRandomLevelUI(); // show/hide the Random difficulty row as needed
@@ -2230,6 +2250,65 @@
     });
   });
   syncPlayerTypeUI();
+
+  // --- players panel (opened from the top-left turn region) ----------------
+  // Hosts the per-seat name + Human/AI type + difficulty controls that used to
+  // live in Settings. Like Settings, opening it PAUSES any in-flight animated
+  // cascade (so the board doesn't resolve behind the dialog) and resumes on
+  // close. Openable any time — including to swap a seat to/from an AI mid-game.
+  var playersOverlay = document.getElementById('players-overlay');
+  var playersCard = document.getElementById('players-card');
+  var playersClose = document.getElementById('players-close');
+  var playersFocus = makeDialogFocusManager(playersOverlay, playersCard, null);
+
+  function openPlayers() {
+    // Pause any in-flight animated cascade (mirrors openSettings) so it doesn't
+    // resolve in the background while the dialog is open.
+    paused = true;
+    if (animTimer !== null) {
+      clearTimeout(animTimer);
+      animTimer = null;
+      if (busy) resumeAnimation = animSchedule;
+    }
+    cancelPendingHint(); // a hint can't apply while the dialog pauses play
+    playersOverlay.classList.add('show');
+    syncPlayerTypeUI();   // reflect current names / types / difficulty rows
+    syncHintButton();     // hide the Hint button while the panel is open (paused)
+    updateTurnRegionAffordance(); // region is now "open" — drop its button role
+    playersFocus.onOpen();
+  }
+  function closePlayers() {
+    // Commit any name the user left focused (defensive — blur usually fires).
+    [1, 2].forEach(function (n) {
+      var input = nameInputs[n];
+      if (input && document.activeElement === input) commitNameInput(n);
+    });
+    playersOverlay.classList.remove('show');
+    playersFocus.onClose();
+    paused = false;
+    updateTurnRegionAffordance(); // region clickable again
+    // Resume a paused animated cascade, if one was in progress.
+    if (resumeAnimation) {
+      var fn = resumeAnimation;
+      resumeAnimation = null;
+      fn();
+    } else {
+      // Nothing mid-cascade: if closing left an AI to move (e.g. the player just
+      // set the current seat to an AI), get it moving now that we're unpaused.
+      maybeTriggerAI();
+      syncHintButton(); // restore the Hint button (dim; re-arms its idle timer)
+    }
+  }
+
+  if (playersClose) playersClose.addEventListener('click', closePlayers);
+  playersOverlay.addEventListener('click', function (e) {
+    if (e.target === playersOverlay) closePlayers(); // backdrop click closes
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && playersOverlay.classList.contains('show')) {
+      closePlayers();
+    }
+  });
 
   // --- confirm dialog ------------------------------------------------------
   // A small in-app yes/no modal, used instead of window.confirm (which prefixes
