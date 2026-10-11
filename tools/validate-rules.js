@@ -33,7 +33,6 @@
 'use strict';
 
 var fs = require('fs');
-var path = require('path');
 var G = require('../js/game.js');
 
 var SCHEMA_REL = 'schema/jumping-squares-backup.v1.json';
