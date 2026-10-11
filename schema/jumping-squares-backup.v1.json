@@ -2,8 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tiborh.github.io/jumping_squares/schema/jumping-squares-backup.v1.json",
   "title": "Jumping Squares backup file (v1)",
-  "description": "Shape (structural) schema for a Jumping Squares Save/Load backup file. This describes the file FORMAT only. It cannot express game-rule (semantic) validity such as point conservation, the turn-gate, the winner rule, or the no-mid-cascade rule - those are checked separately by tools/validate-rules.js, which runs the board through the game engine's loadState. A file that passes THIS schema is well-formed; a file that also passes validate-rules.js is loadable by the app.",
-  "schemaVersion": 1,
+  "description": "Shape (structural) schema for a Jumping Squares Save/Load backup file. This describes the file FORMAT only. It CANNOT express game-rule (semantic) validity such as point conservation, the turn-gate, the winner rule, or the no-mid-cascade rule - those are checked SEPARATELY by tools/validate-rules.js, which runs the board through the game engine's loadState. Passing THIS schema means the file is well-formed SHAPE; it does NOT mean the board is engine-valid (a shape-valid board can still fail the rules check - e.g. a cell over capacity). To know a board is engine-valid, run validate-rules.js too; to know the current app will IMPORT it, note the app additionally gates the board size (today 5x5, 2 players). Note on prefs: the app adopts the prefs section leniently (unknown or out-of-range fields are ignored and fall back to defaults rather than rejected), so this schema deliberately constrains prefs only to STRUCTURAL shape (container types), NOT to value enums - a schema-valid prefs value outside the known set is simply tolerated by the app, which is why enforcing enums here would be wrong.",
+  "schemaVersion": 2,
   "type": "object",
   "required": ["format", "formatVersion"],
   "additionalProperties": true,
@@ -58,7 +58,7 @@
             "turnsTaken": {
               "type": "array",
               "items": { "type": "integer", "minimum": 0 },
-              "description": "Per-player turn counts; index 0 unused (so length is players+1)."
+              "description": "Per-player turn counts; index 0 unused, so a correct array has length players+1 (>= 3 for the minimum 2-player game). Length is intentionally NOT constrained here: the engine does not always require the exact length - for an ONGOING game it reconstructs the counts from moveCount when the array is missing/malformed, so a wrong-length array can still pass validate-rules.js; only a FINISHED game requires a faithful stored array. Constraining length in the schema would make it STRICTER than the engine (rejecting a board the rules accept), so this stays shape-only: items are non-negative integers."
             },
             "cells": {
               "type": "array",
@@ -80,19 +80,71 @@
     },
     "prefs": {
       "type": "object",
-      "description": "Optional settings & scores section (present when 'Settings & scores' was selected on export). Adopted leniently by the app field-by-field, so only loosely constrained here; unknown fields are ignored on import.",
+      "description": "Optional settings & scores section (present when 'Settings & scores' was selected on export). Adopted LENIENTLY by the app field-by-field: unknown or out-of-range fields are ignored and fall back to defaults, never rejected. So this schema constrains prefs only to STRUCTURAL shape (the right container TYPES), not to value enums - a schema-valid prefs value outside the known set (e.g. an unknown difficulty) is simply tolerated by the app, so enforcing enums here would wrongly flag a value the app accepts.",
       "additionalProperties": true,
       "properties": {
-        "v": { "type": "integer", "minimum": 1 },
-        "playerNames": { "type": "object", "additionalProperties": true },
-        "score": { "type": "object", "additionalProperties": true },
-        "autoSave": { "type": "boolean" },
-        "playerType": { "type": "object", "additionalProperties": true },
-        "sharkDepth": { "type": "object", "additionalProperties": true },
-        "tutorLevel": { "type": "object", "additionalProperties": true },
-        "randomLevel": { "type": "object", "additionalProperties": true },
-        "startingPlayer": { "type": "integer", "minimum": 1, "maximum": 100 },
-        "hintLightDelay": { "type": "integer", "minimum": -1 }
+        "v": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Prefs schema version the app understands and migrates forward."
+        },
+        "playerNames": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Map of seat id (\"1\"/\"2\") to a custom display name (string)."
+        },
+        "score": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Win tally for the active name pair.",
+          "properties": {
+            "pair": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Map of seat id to the name the wins belong to (string)."
+            },
+            "wins": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Map of seat id to a win count (non-negative integer)."
+            }
+          }
+        },
+        "autoSave": {
+          "type": "boolean",
+          "description": "Whether the board is auto-saved to localStorage between sessions."
+        },
+        "playerType": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Map of seat id to who controls it. Expected values (advisory - the app ignores unknown ones): \"human\", \"random\", \"tutor\", \"shark\"."
+        },
+        "sharkDepth": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Map of seat id to Shark search depth. Expected values (advisory): 2 (Easy), 3 (Medium), 4 (Hard)."
+        },
+        "tutorLevel": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Map of seat id to Tutor difficulty. Expected values (advisory): \"easy\", \"medium\"."
+        },
+        "randomLevel": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Map of seat id to Random difficulty. Expected values (advisory): \"easy\", \"medium\"."
+        },
+        "startingPlayer": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Which seat opens the next game."
+        },
+        "hintLightDelay": {
+          "type": "integer",
+          "minimum": -1,
+          "description": "Hint bulb idle light-up delay in ms; 0 = always on, -1 = never."
+        }
       }
     }
   }

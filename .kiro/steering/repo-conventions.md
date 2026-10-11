@@ -31,8 +31,10 @@ The Save/Load **backup file** has a **versioned JSON Schema** at
 `schema/jumping-squares-backup.v1.json` and two **zero-dependency** validators:
 `tools/validate-schema.js` (shape, driven by the schema) and
 `tools/validate-rules.js` (game-rule/semantic, driven by the engine's
-`loadState`). These are **not** browser-loaded (so editing them is **not** a
-version bump — see step 2), and the schema is **not** a generated mirror. Rules:
+`loadState`), plus `tools/validate-backup.js` (a convenience runner that calls
+both in order — it adds no checks of its own). These are **not** browser-loaded
+(so editing them is **not** a version bump — see step 2), and the schema is
+**not** a generated mirror. Rules:
 
 - The schema is **versioned by filename**. If the backup wrapper's
   `formatVersion` ever changes, add `…-backup.v2.json` rather than editing v1 in

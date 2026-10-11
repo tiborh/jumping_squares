@@ -1287,6 +1287,166 @@ console.log('backup validators: schema (shape) + rules (semantic)');
   var empty = JSON.parse(JSON.stringify(wrap({})));
   ok(!rulesV.validate(empty).valid,
      'a backup with no board/prefs section fails the rules validator');
+
+  // --- combined runner (tools/validate-backup.js) ------------------------
+  var backupV = require('../tools/validate-backup.js');
+
+  // Passing file: ok, with both stages valid and the expected result shape.
+  var cr1 = backupV.validate(full);
+  ok(cr1.ok === true, 'combined runner: a valid full backup is ok');
+  ok(cr1.schema && cr1.schema.valid === true, 'combined: schema stage valid');
+  ok(cr1.rules && cr1.rules.valid === true, 'combined: rules stage valid');
+  ok(Array.isArray(cr1.rules.checked) && cr1.rules.checked.indexOf('board') !== -1,
+     'combined: rules.checked lists the board section');
+
+  // Shape failure short-circuits: rules is null (not run on a broken shape).
+  var crShape = backupV.validate(badType);
+  ok(crShape.ok === false && crShape.schema.valid === false,
+     'combined: a shape-broken file is not ok and fails the schema stage');
+  ok(crShape.rules === null,
+     'combined: rules stage is skipped (null) when the shape is invalid');
+
+  // Shape OK but rules invalid: both stages ran; schema valid, rules invalid.
+  var crRules = backupV.validate(badRules);
+  ok(crRules.ok === false && crRules.schema.valid === true &&
+     crRules.rules && crRules.rules.valid === false,
+     'combined: an over-capacity board passes shape but fails rules (not ok)');
+
+  // --- schema tightenings (schemaVersion 2) ------------------------------
+  var schema2 = schemaV.loadSchema();
+  ok(schema2.schemaVersion === 2, 'schema metadata is schemaVersion 2');
+
+  // turnsTaken items must be non-negative integers (shape). Length is NOT
+  // constrained in the schema on purpose: the engine reconstructs it for an
+  // ongoing game, so a length rule would make the schema stricter than the
+  // engine (reject a board the rules accept).
+  var badTurns = JSON.parse(JSON.stringify(full));
+  badTurns.board.state.turnsTaken = [0, 'x', 1];
+  var rT = schemaV.validate(badTurns, schema2);
+  ok(!rT.valid && rT.errors.some(function (e) {
+    return e.rule === 'type' && /turnsTaken/.test(e.path);
+  }), 'a non-integer turnsTaken entry fails the schema (type)');
+  // A short turnsTaken array is tolerated by the schema (length left to the
+  // engine), so it does NOT fail here.
+  var shortTurns = JSON.parse(JSON.stringify(full));
+  shortTurns.board.state.turnsTaken = [0, 1];
+  ok(schemaV.validate(shortTurns, schema2).valid,
+     'a short turnsTaken array still passes the schema (length is engine-checked)');
+
+  // prefs.score.wins must be an object (structural), not an array.
+  var badScore = JSON.parse(JSON.stringify(full));
+  badScore.prefs = { score: { wins: [1, 2] } };
+  var rS = schemaV.validate(badScore, schema2);
+  ok(!rS.valid && rS.errors.some(function (e) {
+    return e.rule === 'type' && e.path === '/prefs/score/wins';
+  }), 'prefs.score.wins as an array fails the schema (nested type)');
+
+  // Contract check: a prefs VALUE outside the known set (e.g. an unknown Tutor
+  // level) is deliberately NOT rejected by the schema - the app ignores it, so
+  // the schema stays lenient on prefs values to keep "passes schema => the app
+  // tolerates it" honest.
+  var oddPrefs = JSON.parse(JSON.stringify(full));
+  oddPrefs.prefs = { tutorLevel: { 1: 'legendary' } };
+  ok(schemaV.validate(oddPrefs, schema2).valid,
+     'an unknown prefs value is tolerated by the schema (prefs are advisory)');
+})();
+
+console.log('backup validators: CLI (exit codes, --json, stdin)');
+(function () {
+  // Exercise the actual command-line paths of the three scripts (not just the
+  // exported validate()), so regressions in exit status, --json output, the
+  // human short-circuit, and stdin input are caught. Uses Node's built-in
+  // child_process (zero dependency), writing fixtures to a temp file.
+  var cp = require('child_process');
+  var fs = require('fs');
+  var os = require('os');
+  var path = require('path');
+
+  var root = path.join(__dirname, '..');
+  function tool(name) { return path.join(root, 'tools', name); }
+
+  // Build fixtures the way the app exports them.
+  var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(s, 1, 0, 0); G.applyMove(s, 2, 4, 4); G.applyMove(s, 1, 2, 2);
+  function wrap(obj) {
+    obj.format = 'jumping_squares/backup'; obj.formatVersion = 1;
+    obj.engineVersion = G.VERSION; obj.savedAt = new Date().toISOString();
+    return obj;
+  }
+  var boardSection = { format: 'jumping_squares/save', formatVersion: 1, state: G.cloneState(s) };
+  var okObj = wrap({ board: boardSection });
+  var badShapeObj = JSON.parse(JSON.stringify(okObj)); badShapeObj.board.state.cells[0].value = 'x';
+  var badRulesObj = JSON.parse(JSON.stringify(okObj)); badRulesObj.board.state.cells[0] = { owner: 1, value: 3 };
+
+  var dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsq-cli-'));
+  var okFile = path.join(dir, 'ok.json');
+  var badShapeFile = path.join(dir, 'badshape.json');
+  var badRulesFile = path.join(dir, 'badrules.json');
+  fs.writeFileSync(okFile, JSON.stringify(okObj));
+  fs.writeFileSync(badShapeFile, JSON.stringify(badShapeObj));
+  fs.writeFileSync(badRulesFile, JSON.stringify(badRulesObj));
+
+  function run(script, args, input) {
+    return cp.spawnSync('node', [tool(script)].concat(args), {
+      input: input, encoding: 'utf8',
+    });
+  }
+
+  try {
+    // Combined runner: valid file -> exit 0, human PASS.
+    var r1 = run('validate-backup.js', [okFile]);
+    ok(r1.status === 0, 'validate-backup CLI: valid file exits 0');
+    ok(/^PASS/.test(r1.stdout), 'validate-backup CLI: valid file prints PASS');
+
+    // Combined runner: shape-broken -> exit 1, FAIL (shape).
+    var r2 = run('validate-backup.js', [badShapeFile]);
+    ok(r2.status === 1, 'validate-backup CLI: shape-broken file exits 1');
+    ok(/FAIL \(shape\)/.test(r2.stdout),
+       'validate-backup CLI: shape-broken prints FAIL (shape)');
+
+    // Combined runner: shape OK but rules-broken -> exit 1, PASS(shape) FAIL(rules).
+    var r3 = run('validate-backup.js', [badRulesFile]);
+    ok(r3.status === 1, 'validate-backup CLI: rules-broken file exits 1');
+    ok(/PASS \(shape\), FAIL \(rules\)/.test(r3.stdout),
+       'validate-backup CLI: rules-broken prints PASS (shape), FAIL (rules)');
+
+    // --json combined: on shape failure, rules is null and ok is false.
+    var r4 = run('validate-backup.js', ['--json', badShapeFile]);
+    var j4 = JSON.parse(r4.stdout);
+    ok(r4.status === 1 && j4.ok === false && j4.schema.ok === false && j4.rules === null,
+       'validate-backup CLI --json: shape failure -> ok=false, rules=null');
+
+    // --json combined: valid file -> ok=true, both stages ok.
+    var r5 = run('validate-backup.js', ['--json', okFile]);
+    var j5 = JSON.parse(r5.stdout);
+    ok(r5.status === 0 && j5.ok === true && j5.schema.ok === true && j5.rules.ok === true,
+       'validate-backup CLI --json: valid -> ok=true, both stages ok');
+
+    // Schema CLI alone: exit 0 on valid, 1 on shape-broken.
+    ok(run('validate-schema.js', [okFile]).status === 0,
+       'validate-schema CLI: valid file exits 0');
+    ok(run('validate-schema.js', [badShapeFile]).status === 1,
+       'validate-schema CLI: shape-broken file exits 1');
+
+    // Rules CLI alone: a shape-broken file is still JSON the engine rejects -> 1.
+    ok(run('validate-rules.js', [badRulesFile]).status === 1,
+       'validate-rules CLI: rules-broken file exits 1');
+
+    // stdin path (no file arg): pipe the valid file in -> exit 0.
+    var r6 = run('validate-backup.js', [], fs.readFileSync(okFile, 'utf8'));
+    ok(r6.status === 0 && /\(stdin\)/.test(r6.stdout),
+       'validate-backup CLI: reads from stdin and exits 0');
+
+    // Not-JSON input -> non-zero exit, no crash.
+    var r7 = run('validate-schema.js', [], '{ not json ');
+    ok(r7.status === 1, 'validate-schema CLI: non-JSON stdin exits 1');
+  } finally {
+    // Clean up the temp fixtures.
+    try {
+      fs.unlinkSync(okFile); fs.unlinkSync(badShapeFile); fs.unlinkSync(badRulesFile);
+      fs.rmdirSync(dir);
+    } catch (e) { /* best-effort cleanup */ }
+  }
 })();
 
 // ---------------------------------------------------------------------------
