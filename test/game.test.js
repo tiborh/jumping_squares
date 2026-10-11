@@ -1212,6 +1212,83 @@ console.log('help content: README <-> embedded HELP (drift + shape)');
      'embedded HELP matches a fresh extraction from README (run tools/gen-help.js if this fails)');
 })();
 
+console.log('backup validators: schema (shape) + rules (semantic)');
+(function () {
+  var schemaV = require('../tools/validate-schema.js');
+  var rulesV = require('../tools/validate-rules.js');
+
+  // Build a backup wrapper exactly as the app's buildBackupObject() does, so a
+  // freshly-exported file is proven to pass BOTH validators (drift guard: if
+  // the export shape, the schema, or the engine rules ever diverge, this fails).
+  var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+  G.applyMove(s, 1, 0, 0);
+  G.applyMove(s, 2, 4, 4);
+  G.applyMove(s, 1, 2, 2);
+  function wrap(obj) {
+    obj.format = 'jumping_squares/backup';
+    obj.formatVersion = 1;
+    obj.engineVersion = G.VERSION;
+    obj.savedAt = new Date().toISOString();
+    return obj;
+  }
+  var boardSection = {
+    format: 'jumping_squares/save', formatVersion: 1, state: G.cloneState(s),
+  };
+  var prefsSection = {
+    v: 9, playerNames: { 1: 'Alice', 2: 'Bob' }, autoSave: true,
+    startingPlayer: 1, hintLightDelay: 10000,
+  };
+  // Round-trip through JSON, like a real file.
+  var full = JSON.parse(JSON.stringify(wrap({ board: boardSection, prefs: prefsSection })));
+  var boardOnly = JSON.parse(JSON.stringify(wrap({ board: boardSection })));
+  var prefsOnly = JSON.parse(JSON.stringify(wrap({ prefs: prefsSection })));
+
+  // The bundled schema must be valid JSON and loadable.
+  var schema = schemaV.loadSchema();
+  ok(schema && schema.format === undefined && schema.$id,
+     'schema loads and carries an $id');
+
+  // A freshly-exported file passes shape AND rules, in every section combo.
+  ok(schemaV.validate(full, schema).valid, 'full backup passes the schema');
+  ok(rulesV.validate(full).valid, 'full backup passes game-rule validation');
+  ok(schemaV.validate(boardOnly, schema).valid, 'board-only passes the schema');
+  ok(rulesV.validate(boardOnly).valid, 'board-only passes game-rule validation');
+  ok(schemaV.validate(prefsOnly, schema).valid, 'prefs-only passes the schema');
+  ok(rulesV.validate(prefsOnly).valid, 'prefs-only passes game-rule validation');
+
+  // Broken SHAPE: wrong format tag -> schema fails (and names the const rule).
+  var badFormat = JSON.parse(JSON.stringify(full)); badFormat.format = 'nope';
+  var r1 = schemaV.validate(badFormat, schema);
+  ok(!r1.valid && r1.errors.some(function (e) { return e.rule === 'const'; }),
+     'wrong format tag fails the schema (const rule)');
+
+  // Broken SHAPE: a cell value of the wrong type -> schema fails (type rule).
+  var badType = JSON.parse(JSON.stringify(full)); badType.board.state.cells[0].value = 'x';
+  var r2 = schemaV.validate(badType, schema);
+  ok(!r2.valid && r2.errors.some(function (e) { return e.rule === 'type'; }),
+     'a non-integer cell value fails the schema (type rule)');
+
+  // Broken SHAPE cross-field: cells length != rows*cols -> schema fails.
+  var badLen = JSON.parse(JSON.stringify(full)); badLen.board.state.cells.pop();
+  var r3 = schemaV.validate(badLen, schema);
+  ok(!r3.valid && r3.errors.some(function (e) { return e.rule === 'cellsLength'; }),
+     'cells length != rows*cols fails the schema (cellsLength rule)');
+
+  // SHAPE ok but RULES invalid: an over-capacity corner on a contested board.
+  // Schema passes (it's structurally fine); the semantic validator rejects it.
+  var badRules = JSON.parse(JSON.stringify(full));
+  badRules.board.state.cells[0] = { owner: 1, value: 3 }; // corner cap 2 -> overflow
+  ok(schemaV.validate(badRules, schema).valid,
+     'an over-capacity board still passes the SHAPE schema');
+  ok(!rulesV.validate(badRules).valid,
+     'an over-capacity board FAILS game-rule validation (loadState)');
+
+  // A file with no sections at all: rules validator reports nothing to check.
+  var empty = JSON.parse(JSON.stringify(wrap({})));
+  ok(!rulesV.validate(empty).valid,
+     'a backup with no board/prefs section fails the rules validator');
+})();
+
 // ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

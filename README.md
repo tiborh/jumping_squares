@@ -171,6 +171,9 @@ js/ui.js            # DOM renderer + input wiring
 test/game.test.js   # Node rule-verification harness (no dependencies)
 test/agents.harness.js  # Agent-vs-agent win-rate harness (stats, not pass/fail)
 tools/gen-help.js   # Regenerates the in-app Help from the README (no deps)
+tools/validate-schema.js  # Backup-file SHAPE validator (JSON Schema; no deps)
+tools/validate-rules.js   # Backup-file GAME-RULE validator (engine; no deps)
+schema/jumping-squares-backup.v1.json  # Versioned backup-file JSON Schema
 ```
 
 The game logic in `js/game.js` is intentionally **DOM-free** and dual-exported
@@ -272,6 +275,38 @@ wrong-size, or **mid-cascade** board is refused rather than loaded. Importing
 asks for confirmation first (it replaces the current game and/or your settings).
 A later **"load with trace"** mode (replaying a cascade from a saved start
 state) is noted in the roadmap but not built yet.
+
+**Validating a backup file (for hand-edits / your own scripts).** Because the
+files are plain JSON, you can edit one by hand or generate it from your own
+script — handy for building puzzles. Two **zero-dependency** Node validators let
+you check a file *before* loading it in the game, and they deliberately check
+two different things:
+
+```
+node tools/validate-schema.js  mybackup.json   # SHAPE: fields, types, ranges
+node tools/validate-rules.js   mybackup.json   # GAME RULES: is the board legal?
+```
+
+- **`tools/validate-schema.js`** checks the file **shape** against a **versioned
+  JSON Schema**, [`schema/jumping-squares-backup.v1.json`](schema/jumping-squares-backup.v1.json)
+  — field presence, types, ranges, the fixed `format` tags, cell object shape,
+  and that `cells` length equals `rows*cols`. On failure it names the exact
+  path, the rule, and the schema location that rejected it. (The schema is
+  standard JSON Schema, so you can also run it through a full validator such as
+  `ajv` yourself.)
+- **`tools/validate-rules.js`** is **separate on purpose** — it checks
+  **game-rule (semantic) validity**, which a schema *cannot* express: point
+  conservation, the turn-gate, the winner rule, no mid-cascade/overflow board,
+  and that the player to move has a legal move. It runs the board through the
+  **same engine `loadState`** the game uses on import, so a file that passes it
+  will load in the app.
+
+Run shape first, then rules; a file passing both is well-formed **and** loadable.
+Both print a human-readable report by default, accept **`--json`** for
+script-friendly output, read from a file argument or **stdin**, and exit `0`
+(valid) / `1` (invalid). The schema is **versioned by filename**
+(`…-backup.v1.json`); a future wrapper change adds `…v2.json` rather than
+breaking files made against v1.
 
 How it works and its boundaries:
 
