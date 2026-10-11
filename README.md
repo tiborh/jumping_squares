@@ -62,12 +62,13 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
 - **Add a point** — click an empty or your own cell on your turn.
 - **New Game** — click the tile-count readout in the top bar (it asks you to
   confirm).
-- **Rename a player** — click a player's name on their turn; press **Enter** to
-  save or **Esc** to cancel. Renaming is purely cosmetic.
+- **Players** — click the **top-left area** (the coloured dot and player name)
+  to open the **Players** panel. There you can **rename** each human player and
+  choose **who controls** each one (Human or an AI), any time — even mid-game.
+  Renaming is purely cosmetic; AI players can't be renamed.
 - **Reset the win tally** — click the score tally (it asks you to confirm).
 - **Settings** — click the **⚙** icon in the top bar to set the propagation
-  delay (how fast cascades animate) and choose who controls each player (human
-  or an AI).
+  delay (how fast cascades animate) and manage saved data.
 - **Help** — click the **?** icon in the top bar to reopen this page.
 <!-- HELP:END -->
 
@@ -97,16 +98,17 @@ choice is remembered in your browser. Starting a New Game **mid-play**
 tally (below) can also reset the opener to Player 1 — a checkbox in the reset
 dialog, on by default.
 
-**Player names & score.** Click a player's **name** (the turn indicator at the
-top) **on their turn** to rename them: type a name, then press **Enter** or
-**click away** to save, or **Esc** to cancel. Renaming is **purely cosmetic** —
-it has no effect on the score. A **win tally** for the current pair is shown
-next to the tile counts (e.g. `Alice: 10, Bob: 9   (1 - 0)`) and prominently in
-the end-of-round dialog; it accumulates across rounds (New Game keeps the
-score). Both the names and the tally are **remembered in your browser** (see
-*Persistence* below). To start a fresh series, **click the tally** (it's a
-button): you'll be asked to **confirm**, and on confirm the score resets to
-**0 : 0**.
+**Player names & score.** Click the **top-left area** (the coloured dot and
+player name) to open the **Players** panel, then edit a player's **name** there:
+type a name and press **Enter** or **click away** to save, or **Esc** to revert.
+Only **human** players can be renamed — an AI seat shows its agent name.
+Renaming is **purely cosmetic** — it has no effect on the score. A **win tally**
+for the current pair is shown next to the tile counts (e.g.
+`Alice: 10, Bob: 9   (1 - 0)`) and prominently in the end-of-round dialog; it
+accumulates across rounds (New Game keeps the score). Both the names and the
+tally are **remembered in your browser** (see *Persistence* below). To start a
+fresh series, **click the tally** (it's a button): you'll be asked to
+**confirm**, and on confirm the score resets to **0 : 0**.
 
 **Propagation delay (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
@@ -127,10 +129,10 @@ Opening **Settings** while a cascade is animating **pauses** it (the board
 freezes); it resumes when you close the dialog. Changing the delay mid-cascade
 applies from that point on.
 
-**Players — play against the computer (Settings).** Under **⚙ Settings →
-Players**, set either player (or both) to an AI. Each AI has its own
-**difficulty** (set per player; when both seats are the same AI, the two
-difficulty rows are labelled by seat):
+**Players — play against the computer.** Open the **Players** panel (click the
+**top-left area** — the coloured dot and player name), then set either player
+(or both) to an AI. Each AI has its own **difficulty** (set per player; when
+both seats are the same AI, the two difficulty rows are labelled by seat):
 
 - **Random** — mostly chaotic, a gentle sparring partner.
   - *Easy* — plays any legal move, uniformly.
@@ -154,8 +156,8 @@ Easy Shark). See [`docs/strategy-notes.md`](docs/strategy-notes.md) for the
 measured match-ups and how each AI "thinks".
 
 AI moves use the chosen **propagation delay**, so you can watch their cascades;
-two AIs play each other automatically. You can open **Settings** at any time
-mid-game to change who controls a player (it pauses play while open). See
+two AIs play each other automatically. You can open the **Players** panel at any
+time mid-game to change who controls a player (it pauses play while open). See
 [`docs/strategy-notes.md`](docs/strategy-notes.md) for how the Tutor's
 heuristics and the Shark's search relate to human vs. machine play.
 
@@ -441,7 +443,8 @@ Status of the project and planned work. Done items reflect the current build.
       and **Shark**, each **per-player and per-difficulty**: Random (Easy pure /
       Medium reactive-hit-back), Tutor (Easy positional / Medium adds
       1-cell-radius race-contesting), Shark (minimax + alpha-beta, Easy/Medium/
-      Hard depth). Selectable per player under Settings → Players. See
+      Hard depth). Selectable per player in the **Players** panel (click the
+      top-left dot + name). See
       [`docs/strategy-notes.md`](docs/strategy-notes.md) and
       `test/agents.harness.js` (agent-vs-agent runner).
 - [ ] Undo / replay via per-move snapshots

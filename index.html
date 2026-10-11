@@ -58,6 +58,28 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      /* The whole dot+name region is a single clickable zone that opens the
+         Players panel. Resting appearance is unchanged (transparent border +
+         matching negative-free padding), so the top bar looks exactly as
+         before; only hover/focus reveals a square outline around the zone. */
+      padding: 3px 6px;
+      margin: -3px -6px;         /* cancel the padding so layout doesn't shift */
+      border: 1px solid transparent;
+      border-radius: 8px;
+      transition: border-color 120ms ease, background-color 120ms ease;
+    }
+    /* Clickable affordance for the region (added by JS when the panel can be
+       opened — effectively always, since the panel opens any time). The square
+       OUTLINE on hover/focus replaces the former username underline. */
+    #turn.region-active { cursor: pointer; }
+    #turn.region-active:hover,
+    #turn.region-active:focus-visible {
+      border-color: rgba(255,255,255,0.35);
+      background: rgba(255,255,255,0.05);
+      outline: none;
+    }
+    #turn.region-active:focus-visible {
+      border-color: #9fd0ff;
     }
 
     .turn-dot {
@@ -104,37 +126,6 @@
       outline: 2px solid #9fd0ff;
       outline-offset: 1px;
     }
-
-    /* The turn label is clickable to rename the current player on their turn.
-       Understated: a subtle dotted underline hints at editability on hover/
-       focus without shouting. */
-    #turn-label.editable {
-      cursor: text;
-      border-radius: 4px;
-    }
-    #turn-label.editable:hover,
-    #turn-label.editable:focus-visible {
-      text-decoration: underline dotted;
-      text-underline-offset: 3px;
-      outline: none;
-    }
-    #turn-label.editable:focus-visible {
-      outline: 2px solid rgba(255,255,255,0.35);
-      outline-offset: 2px;
-    }
-    /* Inline rename editor: inherits the label's font so it doesn't reflow. */
-    .turn-name-input {
-      font: inherit;
-      font-weight: 600;
-      color: #e8e8ea;
-      background: #12141a;
-      border: 1px solid #3a4150;
-      border-radius: 6px;
-      padding: 1px 6px;
-      width: 9ch;
-      max-width: 48vw;
-    }
-    .turn-name-input:focus { outline: 2px solid #3d7bd6; outline-offset: 1px; }
 
     #status {
       font-size: clamp(12px, 3vw, 16px);
@@ -791,6 +782,78 @@
     .setting-players select:focus-visible {
       outline: 2px solid #9fd0ff;
       outline-offset: 1px;
+    }
+
+    /* Per-seat name input in the Players panel. Flexes between the colour dot
+       and the type select; sits where the "Player N" label used to be. When the
+       seat is an AI it is disabled and shows the agent name (dimmed). */
+    .setting-players .player-name-input {
+      font: inherit;
+      color: #e8e8ea;
+      background: #12141a;
+      border: 1px solid #3a4150;
+      border-radius: 8px;
+      padding: 6px 10px;
+      flex: 1 1 auto;
+      min-width: 0;      /* allow it to shrink next to the select */
+      max-width: 12em;
+    }
+    .setting-players .player-name-input:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 1px;
+    }
+    .setting-players .player-name-input:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* --- Players panel ------------------------------------------------------
+       Opened from the top-left turn region. Reuses the shared dialog card look
+       (dark card over a dimmed backdrop) and the .setting-players row styles. */
+    #players-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 22;   /* same family as Settings (20); distinct dialog */
+    }
+    #players-overlay.show { display: flex; }
+    #players-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(92vw, 460px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #players-card .players-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #players-card h2 {
+      margin: 0;
+      font-size: clamp(18px, 4.5vw, 24px);
+    }
+    #players-close {
+      font-size: 18px;
+      line-height: 1;
+      padding: 6px 12px;
+    }
+    /* Inside the panel the Players block has no top separator rule (it's the
+       whole content, not a sub-section as it was in Settings). */
+    #players-card .setting-players {
+      border-top: 0;
+      padding-top: 0;
     }
 
     /* Slide switch: an accessible checkbox visually rendered as an on/off
@@ -1482,13 +1545,66 @@
         </div>
       </div>
 
-      <div class="setting setting-players">
+      <div class="setting setting-persistence">
         <div class="setting-label">
-          <label for="p1-type">Players</label>
+          <label for="autosave-toggle" id="autosave-label">Auto-save game</label>
+          <!-- Slide switch: a checkbox styled as an on/off toggle. The label is
+               associated via for=; the visual track/knob is drawn with CSS. -->
+          <span class="switch">
+            <input type="checkbox" id="autosave-toggle" checked role="switch"
+                   aria-describedby="autosave-hint" />
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-knob"></span>
+            </span>
+          </span>
         </div>
+        <div class="setting-hint" id="autosave-hint">
+          Keeps your current game in this browser so it survives a reload or a
+          reopened tab, and restores it automatically. Nothing leaves your
+          browser. Turn it off to stop saving; use <strong>New Game</strong> any
+          time to start over.
+        </div>
+        <!-- Attention note: shown only when auto-save is OFF but a saved game
+             still exists (so a silent restore next time isn't surprising). -->
+        <div class="persistence-note" id="persistence-note" role="status" aria-live="polite" hidden>
+          There is saved game data that will be restored next time.
+        </div>
+        <!-- Enabled only when there is removable saved data that isn't being
+             continuously overwritten by an active auto-save (i.e. auto-save OFF
+             and a save exists). -->
+        <button id="remove-save" type="button" disabled>Remove saved data</button>
+        <!-- Reset to first-use state: opens a dialog listing exactly what will
+             be erased (names/scores/settings, current game) with an optional
+             reload to clear any in-memory/cached state afterwards. Always
+             enabled — unlike "Remove saved data", a reset is meaningful even
+             when auto-save is on (it also clears names, scores and settings). -->
+        <button id="reset-firstuse" type="button">Reset to first-use state…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Players panel. Opened by clicking the top-left turn region (the coloured
+       dot + player name). Moved here out of Settings to declutter that menu.
+       Mirrors the old Settings → Players block (per-seat Human/AI type + the
+       conditional difficulty rows) but ALSO lets each seat's name be edited —
+       both seats, not just the current player. A seat set to an AI shows the
+       agent name and its name field is disabled (machine players aren't
+       renamed). The level rows keep the SAME ids as before so the existing
+       show/hide + persistence wiring in js/ui.js applies unchanged. Openable
+       any time; like Settings it pauses play while open. -->
+  <div id="players-overlay" role="dialog" aria-modal="true" aria-labelledby="players-title">
+    <div id="players-card">
+      <div class="players-head">
+        <h2 id="players-title">Players</h2>
+        <button id="players-close" title="Close" aria-label="Close players">✕</button>
+      </div>
+
+      <div class="setting setting-players">
         <div class="player-row">
           <label class="player-dot p1" for="p1-type" aria-hidden="true"></label>
-          <label for="p1-type">Player 1</label>
+          <input type="text" id="p1-name" class="player-name-input"
+                 aria-label="Player 1 name" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" />
           <select id="p1-type" aria-label="Player 1 type">
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
@@ -1498,7 +1614,9 @@
         </div>
         <div class="player-row">
           <label class="player-dot p2" for="p2-type" aria-hidden="true"></label>
-          <label for="p2-type">Player 2</label>
+          <input type="text" id="p2-name" class="player-name-input"
+                 aria-label="Player 2 name" autocomplete="off"
+                 autocapitalize="off" spellcheck="false" />
           <select id="p2-type" aria-label="Player 2 type">
             <option value="human">Human</option>
             <option value="random">Random (AI)</option>
@@ -1557,55 +1675,23 @@
           </select>
         </div>
         <div class="setting-hint">
-          Choose who controls each player. <strong>Random</strong> plays mostly
-          random moves (chaos); <strong>Tutor</strong> plays a simple human-style
-          strategy (good for learning); <strong>Shark</strong> searches ahead
-          and plays strongly (it exploits cascades a human can't easily read).
+          Edit each player's <strong>name</strong> and choose who controls them.
+          You can change these any time, even mid-game (play pauses while this is
+          open). Only <strong>human</strong> players can be renamed — an AI seat
+          shows its agent name. <strong>Random</strong> plays mostly random moves
+          (chaos); <strong>Tutor</strong> plays a simple human-style strategy
+          (good for learning); <strong>Shark</strong> searches ahead and plays
+          strongly (it exploits cascades a human can't easily read).
           <strong>Random</strong> has an <em>Easy</em> level (pure random) and a
           <em>Medium</em> level (mostly random, but hits back when the opponent
-          is about to capture one of its cells). <strong>Tutor</strong> has an <em>Easy</em> level (a gentle first
-          opponent) and a <em>Medium</em> level that watches the cells next to
-          its own pieces and contests local build-ups, so you can't quietly
-          surround and out-build it. Shark difficulty sets how many moves
-          it looks ahead — higher is stronger (and thinks a little longer).
-          Both are set per AI player. AI moves use the propagation delay above.
+          is about to capture one of its cells). <strong>Tutor</strong> has an
+          <em>Easy</em> level (a gentle first opponent) and a <em>Medium</em>
+          level that watches the cells next to its own pieces and contests local
+          build-ups, so you can't quietly surround and out-build it. Shark
+          difficulty sets how many moves it looks ahead — higher is stronger
+          (and thinks a little longer). Both are set per AI player. AI moves use
+          the propagation delay in Settings.
         </div>
-      </div>
-
-      <div class="setting setting-persistence">
-        <div class="setting-label">
-          <label for="autosave-toggle" id="autosave-label">Auto-save game</label>
-          <!-- Slide switch: a checkbox styled as an on/off toggle. The label is
-               associated via for=; the visual track/knob is drawn with CSS. -->
-          <span class="switch">
-            <input type="checkbox" id="autosave-toggle" checked role="switch"
-                   aria-describedby="autosave-hint" />
-            <span class="switch-track" aria-hidden="true">
-              <span class="switch-knob"></span>
-            </span>
-          </span>
-        </div>
-        <div class="setting-hint" id="autosave-hint">
-          Keeps your current game in this browser so it survives a reload or a
-          reopened tab, and restores it automatically. Nothing leaves your
-          browser. Turn it off to stop saving; use <strong>New Game</strong> any
-          time to start over.
-        </div>
-        <!-- Attention note: shown only when auto-save is OFF but a saved game
-             still exists (so a silent restore next time isn't surprising). -->
-        <div class="persistence-note" id="persistence-note" role="status" aria-live="polite" hidden>
-          There is saved game data that will be restored next time.
-        </div>
-        <!-- Enabled only when there is removable saved data that isn't being
-             continuously overwritten by an active auto-save (i.e. auto-save OFF
-             and a save exists). -->
-        <button id="remove-save" type="button" disabled>Remove saved data</button>
-        <!-- Reset to first-use state: opens a dialog listing exactly what will
-             be erased (names/scores/settings, current game) with an optional
-             reload to clear any in-memory/cached state afterwards. Always
-             enabled — unlike "Remove saved data", a reset is meaningful even
-             when auto-save is on (it also clears names, scores and settings). -->
-        <button id="reset-firstuse" type="button">Reset to first-use state…</button>
       </div>
     </div>
   </div>
@@ -1751,8 +1837,8 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=42"></script>
-  <script src="js/agents.js?v=42"></script>
-  <script src="js/ui.js?v=42"></script>
+  <script src="js/game.js?v=43"></script>
+  <script src="js/agents.js?v=43"></script>
+  <script src="js/ui.js?v=43"></script>
 </body>
 </html>
