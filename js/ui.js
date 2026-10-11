@@ -2178,6 +2178,13 @@
     var clean = sanitizeName(input.value);
     var def = defaultPlayerName(n);
     prefs.setPlayerName(n, (clean && clean !== def) ? clean : '');
+    // Reflect the SANITISED/stored value back into the field, so what's shown
+    // matches what was saved (e.g. trimmed whitespace, length cap, or a cleared
+    // name reverting to blank) without waiting for the panel to be reopened.
+    // Skipped if focus already moved elsewhere via syncNameInputs's own guard.
+    if (document.activeElement !== input) {
+      input.value = (clean && clean !== def) ? clean : '';
+    }
     render(); // refresh the top-bar label / status counts to the new name
   }
 
