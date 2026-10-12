@@ -90,7 +90,15 @@ of magnitude). Plan it as a project, not a one-off script:
    (`owner:value` per cell + `current` + `turnsTaken`) is correct but verbose.
    For 4×4:
    - Encode each cell compactly (owner in 2 bits, value in a few bits) into a
-     fixed-width integer / `BigInt` or a short typed-array hash.
+     **lossless, reversible** fixed-width integer / `BigInt` / typed-array key —
+     one where distinct positions always map to distinct keys. **Do not use a
+     truncated or short hash as the sole transposition key:** a hash collision
+     would merge two different positions and can silently turn an *exact*
+     forced-winner verdict into a false one. If you hash for speed, keep the
+     canonical state (or a full-width key) alongside and compare it on a hash
+     hit to reject collisions. (The small-board solver sidestepped this by
+     keying on the full serialized state; the only change for 4×4 is making that
+     key *compact*, not making it *lossy*.)
    - **Exploit board symmetry.** The square board's symmetry group (D4: 4
      rotations × 2 reflections = **8**) plus the **2-colour swap** means up to
      **16×** fewer distinct states. Canonicalize each state to the
@@ -103,9 +111,16 @@ of magnitude). Plan it as a project, not a one-off script:
 3. **Bound and iterate rather than go fully exhaustive first.**
    - Start with **iterative deepening** (depth-limited minimax) to get *partial*
      verdicts and a feel for tree size before committing to a full solve.
-   - Add **alpha-beta pruning** with the engine's own move ordering heuristics
-     (the project already has a `bestMove` / Shark search in `js/agents.js` —
-     reuse its ordering to try strong moves first and prune hard).
+   - Add **alpha-beta pruning** with good move ordering (try likely-strong moves
+     first so cut-offs happen sooner). Shark already uses exactly such a
+     heuristic, but it is **not reusable as-is**: the ordering lives in a
+     *private* nested `orderedMoves` inside `makeShark` (`js/agents.js`), and the
+     exported `bestMove` returns only a single chosen move — neither exposes the
+     ordered move list. So treat **extracting/exporting a shared ordering
+     helper** (e.g. `orderMoves(G, state, player)`) as an explicit prerequisite;
+     reuse it in both Shark and the solver so the two cannot drift. Until then
+     the solver would have to duplicate the heuristic (capturing moves and
+     low-capacity corner/edge cells first).
    - Use a **transposition table** keyed on the canonical state, storing the
      resolved result (win/loss/draw) and, if depth-limited, a bound + depth.
 
@@ -147,7 +162,9 @@ function moves(s) {
   return out;
 }
 
-// TODO for 4x4: replace with a canonical, symmetry-reduced, compact key.
+// TODO for 4x4: replace with a canonical, symmetry-reduced, compact — and
+// LOSSLESS — key. Distinct positions must map to distinct keys; a bare/short
+// hash risks collisions that merge positions and corrupt the exact result.
 function key(s) {
   return s.cells.map(x => x.owner + ':' + x.value).join('|') +
          '#' + s.current + '#' + s.turnsTaken.join(',');
