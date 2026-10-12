@@ -45,6 +45,27 @@ both in order — it adds no checks of its own). These are **not** browser-loade
   it passes **both** validators, and that crafted-broken samples fail the right
   one — so a divergence fails CI.
 
+### AI think-time calibration: one shared cost model (not a generated mirror)
+
+The board-size feature's think-time estimates come from a single **DOM-free**
+cost model, `js/calibrate.js` (dual-exported like the engine/agents). It is
+reused by **both** the in-app Board-size panel (`js/ui.js`) and the
+`tools/calibrate.js` CLI, with `tools/calibrate-sample-worker.js` as the bounded
+single-move timer the CLI spawns. Rules:
+
+- **`js/calibrate.js` IS browser-loaded** (via a `<script>` tag in
+  `index.html`), so editing it **is a version bump** (step 2) — unlike the
+  `tools/` scripts, which are not browser-loaded.
+- Keep the panel and the CLI driven by the **same** helper functions
+  (`projectTable`, `isOverThreshold`, `largestSafeSize`, the slider-stop maps).
+  A drift test in `test/game.test.js` ("calibration CLI / helper agreement")
+  runs the CLI with `--no-measure --json` and asserts its numbers and
+  over-threshold flags equal `projectTable({})` from the helper — so the two
+  can never diverge.
+- The model is deliberately **approximate and conservative** (measures cheap
+  sizes, extrapolates the rest, rounds up). Document that wherever estimates are
+  surfaced; don't present them as guarantees.
+
 ## Before you commit — mandatory steps
 
 ### 1. In-app Help — if you edit the README "How to play" HELP block

@@ -182,16 +182,64 @@ time mid-game to change who controls a player (it pauses play while open). See
 [`docs/strategy-notes.md`](docs/strategy-notes.md) for how the Tutor's
 heuristics and the Shark's search relate to human vs. machine play.
 
+**Board size & AI timing (Settings).** Click **⚙ Settings → Board size** to open
+the **Board size & AI timing** panel. A slider picks any **square** board from
+**2×2 up to 12×12** (5×5 is the classic default). The size takes effect on your
+next **New Game** — it is never changed under an in-progress board.
+
+Bigger boards make the **strongest AI** (Shark on *Hard*) think *much* longer —
+and *how* long depends on your device. So the panel can **calibrate** that for
+you:
+
+- Press **Calibrate now**. It measures the AI on *your* machine (a few seconds —
+  the button shows an estimate) and fills an **estimate table**: every AI and
+  difficulty down the side, board sizes above 5×5 across the top, each cell the
+  estimated **worst-case think time per move**.
+- Set a **max acceptable wait** with the second slider (**0.5 s … 60 s**). Any
+  estimate **longer** than that wait is shown in **red**, so you can see at a
+  glance which size / AI combinations will feel sluggish before you commit to
+  them.
+- There is deliberately **no hard limit** — the table is a **guide**, and you
+  choose. Random and Tutor stay near-instant at every size; only Shark (and
+  mostly its *Hard* depth) climbs into the red on large boards.
+
+**The estimates are approximate — and that is by design.** Calibration
+*measures* a couple of cheap sizes on your device and **extrapolates** the
+expensive ones with a conservative growth curve (it rounds **up**, so it tends
+to warn rather than lull). The numbers therefore depend on your **device and how
+busy it is** — a result saved on a fast desktop will understate a phone, and
+even the same machine varies under load. The result is **saved** so you don't
+re-calibrate every session, but the **Calibrate** button stays available: re-run
+it **when your hardware changes, when you move to a different device, or if moves
+feel slower than the table claims**.
+
+**From the command line.** `tools/calibrate.js` prints the same table in a
+terminal (handy for comparing machines or scripting). With no arguments it shows
+every AI for sizes above 5×5; `--size N` restricts to one board, `--max-wait S`
+flags over-limit times and reports the largest safe size per AI, `--json` emits
+machine-readable output, and `--no-measure` skips measuring to show the generic
+fallback model instantly. It shares the exact same cost model
+(`js/calibrate.js`) as the in-app panel — a test asserts the two never drift.
+
+```
+node tools/calibrate.js                 # full table, measured on this machine
+node tools/calibrate.js --max-wait 3     # mark/flag anything slower than 3 s
+node tools/calibrate.js --size 10 --json # just 10×10, machine-readable
+```
+
 ## Project structure
 
 ```
 index.html          # UI shell + responsive board styling (open this to play)
 js/game.js          # Pure game logic (no DOM) — rules, overflow, win check
 js/agents.js        # AI opponents (Random / Tutor / Shark), DOM-free
+js/calibrate.js     # AI think-time cost model + projection (DOM-free, shared)
 js/ui.js            # DOM renderer + input wiring
 test/game.test.js   # Node rule-verification harness (no dependencies)
 test/agents.harness.js  # Agent-vs-agent win-rate harness (stats, not pass/fail)
 tools/gen-help.js   # Regenerates the in-app Help from the README (no deps)
+tools/calibrate.js  # CLI: estimated AI think times per board size (shares js/calibrate.js)
+tools/calibrate-sample-worker.js  # Bounded single-move timer (child-process primitive)
 tools/validate-schema.js  # Backup-file SHAPE validator (JSON Schema; no deps)
 tools/validate-rules.js   # Backup-file GAME-RULE validator (engine; no deps)
 tools/validate-backup.js  # Runs both validators in order (convenience; no deps)
@@ -522,12 +570,17 @@ Status of the project and planned work. Done items reflect the current build.
 
 **Planned / ideas (not yet implemented):**
 
-- [ ] Board-size and player-count picker in the UI (engine already supports it).
-      On larger boards, Shark's higher difficulties get slow and timing is
-      device-dependent, so this needs a **per-device calibration** + time hint
-      for Shark difficulty — see
+- [x] **Board-size picker in the UI** *(done)* — a **Board size & AI timing**
+      panel (Settings → Board size): any square board **2×2 … 12×12**, applied on
+      New Game. Because the strongest AI slows down on big boards (and timing is
+      device-dependent), it ships with a **per-device calibration** that measures
+      cheap sizes and extrapolates the rest (conservatively), an estimate table
+      with a user-set **max-wait** red threshold, and a sharing CLI
+      (`tools/calibrate.js`). See *Board size & AI timing* above and
       [`docs/strategy-notes.md`](docs/strategy-notes.md) (*Shark performance,
       difficulty, and device calibration*).
+- [ ] **Player-count picker in the UI** (engine already supports it; needs the
+      3–4-player colours/classes below).
 - [ ] Support for 3–4 players (add `--p3`/`--p4` colours + classes)
 - [x] Animated cascades — settable delay + manual step mode (see Done above)
 - [x] AI opponent using `cloneState()` for lookahead — **Random**, **Tutor**,

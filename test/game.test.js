@@ -1450,5 +1450,180 @@ console.log('backup validators: CLI (exit codes, --json, stdin)');
 })();
 
 // ---------------------------------------------------------------------------
+console.log('calibration helper (js/calibrate.js)');
+(function () {
+  var C = require('../js/calibrate.js');
+
+  // --- shape / constants --------------------------------------------------
+  ok(typeof C.projectTable === 'function', 'calibrate exports projectTable()');
+  ok(C.MIN_SIZE === 2 && C.MAX_SIZE === 12 && C.STANDARD_SIZE === 5,
+     'size bounds: MIN 2, MAX 12, STANDARD 5');
+  eq(C.tableSizes(), [6, 7, 8, 9, 10, 11, 12],
+     'tableSizes() is the sizes above the standard 5x5');
+
+  // --- max-wait slider: 9 stops, rightmost 60 s, round-trips --------------
+  ok(C.MAXWAIT_STOPS_MS.length === 9, 'max-wait slider has 9 stops');
+  ok(C.MAXWAIT_STOPS_MS[8] === 60000, 'rightmost max-wait stop is 60 s');
+  // Ascending stops.
+  var ascending = C.MAXWAIT_STOPS_MS.every(function (v, i) {
+    return i === 0 || C.MAXWAIT_STOPS_MS[i - 1] < v;
+  });
+  ok(ascending, 'max-wait stops are strictly ascending');
+  // index <-> ms round-trips at every stop.
+  var rt = C.MAXWAIT_STOPS_MS.every(function (ms, i) {
+    return C.maxWaitIndexToMs(i) === ms && C.maxWaitMsToIndex(ms) === i;
+  });
+  ok(rt, 'maxWait index<->ms round-trips at every stop');
+  // msToIndex snaps UP to the next stop (never a looser cap than requested).
+  ok(C.maxWaitMsToIndex(1500) === 2 && C.maxWaitIndexToMs(2) === 2000,
+     'maxWaitMsToIndex snaps up to the next stop (1500ms -> 2000ms)');
+  // Out-of-range indices clamp.
+  ok(C.maxWaitIndexToMs(-5) === 500 && C.maxWaitIndexToMs(99) === 60000,
+     'maxWaitIndexToMs clamps out-of-range indices');
+
+  // --- power-law fit -------------------------------------------------------
+  var fit = C.fitPowerLaw({ 64: 2800, 100: 9000 });
+  ok(fit && isFinite(fit.a) && isFinite(fit.b),
+     'fitPowerLaw returns finite {a,b} for two points');
+  // Fit reproduces its own anchors (within rounding).
+  ok(Math.abs(fit.a * Math.pow(64, fit.b) - 2800) < 1 &&
+     Math.abs(fit.a * Math.pow(100, fit.b) - 9000) < 1,
+     'fitPowerLaw reproduces its anchor points');
+  ok(C.fitPowerLaw({ 64: 2800 }) === null,
+     'fitPowerLaw needs >=2 points (one point -> null)');
+
+  // --- projection monotonicity --------------------------------------------
+  // Using the built-in fallback model (no device samples), every row's
+  // estimate must be non-decreasing in board size (bigger board, >= time).
+  var table = C.projectTable({});
+  var sizes = C.tableSizes();
+  var allMonotone = table.every(function (t) {
+    var prev = -Infinity, monotone = true;
+    sizes.forEach(function (s) {
+      if (t.cells[s] < prev) monotone = false;
+      prev = t.cells[s];
+    });
+    return monotone;
+  });
+  ok(allMonotone, 'projected times are monotonic non-decreasing in board size');
+
+  // Shark Hard must be the most expensive row at the largest size.
+  var byLabel = {};
+  table.forEach(function (t) { byLabel[t.row.label] = t; });
+  var hard12 = byLabel['Shark — Hard'].cells[12];
+  var othersAll = table.every(function (t) {
+    return t.row.label === 'Shark — Hard' || t.cells[12] <= hard12;
+  });
+  ok(othersAll, 'Shark — Hard is the slowest row at 12x12');
+
+  // Random/Tutor are near-instant everywhere (well under 1 s even at 12x12).
+  var fastRows = ['Random — Easy', 'Tutor — Easy'].every(function (lbl) {
+    return byLabel[lbl].cells[12] < 1000;
+  });
+  ok(fastRows, 'Random/Tutor estimates stay well under 1 s at 12x12');
+
+  // --- red-threshold correctness ------------------------------------------
+  ok(C.isOverThreshold(3000, 2000) === true, 'isOverThreshold: 3s over a 2s cap');
+  ok(C.isOverThreshold(2000, 2000) === false, 'isOverThreshold: exactly at cap is NOT over');
+  ok(C.isOverThreshold(1000, 2000) === false, 'isOverThreshold: under cap is not over');
+
+  // largestSafeSize is monotone and consistent with the threshold: the size it
+  // returns is within the cap, and the next size up (if any) is over.
+  var row = byLabel['Shark — Hard'].row;
+  [1000, 3000, 5000, 10000, 60000].forEach(function (cap) {
+    var safe = C.largestSafeSize(row, {}, cap);
+    if (safe >= C.STANDARD_SIZE + 1) {
+      ok(!C.isOverThreshold(C.estimateMs(row, safe, {}), cap),
+         'largestSafeSize(' + cap + 'ms): returned size ' + safe + ' is within cap');
+      if (safe < C.MAX_SIZE) {
+        ok(C.isOverThreshold(C.estimateMs(row, safe + 1, {}), cap),
+           'largestSafeSize(' + cap + 'ms): size ' + (safe + 1) + ' is over cap');
+      }
+    }
+  });
+
+  // --- device samples OVERRIDE the fallback -------------------------------
+  // A fabricated slow sample set must push the projection UP vs the fallback.
+  var slow = { shark: { 4: { 36: 2000, 64: 8000 } }, flatMs: 1 };
+  var fastDefault = C.estimateMs(row, 12, {});
+  var slowDevice = C.estimateMs(row, 12, slow);
+  ok(slowDevice > fastDefault,
+     'device samples reproject: a slower device yields a larger 12x12 estimate');
+
+  // --- measureCheapSizes with an injected runner --------------------------
+  // Inject a deterministic fake runner (no real search) to verify the sampler
+  // shape without timing anything.
+  var calls = [];
+  var samples = C.measureCheapSizes(function (size, depth) {
+    calls.push([size, depth]);
+    return size * size * depth; // arbitrary deterministic ms
+  }, { sampleSizes: [6, 8], depths: [2, 4], at: 'T', device: 'D' });
+  ok(samples.at === 'T' && samples.device === 'D',
+     'measureCheapSizes carries the at/device metadata');
+  ok(samples.shark[4] && samples.shark[4][64] === 64 * 4,
+     'measureCheapSizes records samples keyed by cell count');
+  ok(calls.length === 4, 'measureCheapSizes called runOne for each size x depth');
+  // A runner that returns null (timeout) drops that point rather than throwing.
+  var sparse = C.measureCheapSizes(function () { return null; },
+    { sampleSizes: [6, 8], depths: [4] });
+  ok(!sparse.shark[4] || Object.keys(sparse.shark[4]).length === 0,
+     'measureCheapSizes drops null (timed-out) samples');
+})();
+
+// ---------------------------------------------------------------------------
+console.log('calibration CLI / helper agreement (drift guard)');
+(function () {
+  var cp = require('child_process');
+  var path = require('path');
+  var C = require('../js/calibrate.js');
+
+  // The CLI must produce the SAME numbers as the shared helper for the same
+  // inputs, so the two can never drift (same pattern as the backup-validator
+  // drift test). Run the CLI with --no-measure (fallback model, deterministic,
+  // instant) + --json and compare against projectTable({}) directly.
+  var res = cp.spawnSync(process.execPath,
+    [path.join(__dirname, '..', 'tools', 'calibrate.js'),
+     '--no-measure', '--json', '--max-wait', '3'],
+    { encoding: 'utf8' });
+  ok(res.status === 0, 'calibrate CLI --no-measure --json exits 0');
+
+  var parsed = null;
+  try { parsed = JSON.parse(res.stdout); } catch (e) { /* leave null */ }
+  ok(parsed && Array.isArray(parsed.rows), 'calibrate CLI emits JSON rows');
+
+  if (parsed) {
+    var helper = C.projectTable({}, C.tableSizes());
+    // Same number of rows, same labels, same per-size ms (fallback model).
+    var sameRows = parsed.rows.length === helper.length;
+    ok(sameRows, 'CLI row count matches the helper');
+
+    var allAgree = parsed.rows.every(function (cliRow, i) {
+      var hRow = helper[i];
+      if (!hRow || cliRow.label !== hRow.row.label) return false;
+      return C.tableSizes().every(function (s) {
+        // JSON numbers are exact copies of the helper's doubles.
+        return cliRow.cells[s] && cliRow.cells[s].ms === hRow.cells[s];
+      });
+    });
+    ok(allAgree, 'CLI per-size estimates equal the helper (no drift)');
+
+    // The CLI's "over" flag must match isOverThreshold at the same max-wait.
+    var overAgree = parsed.rows.every(function (cliRow, i) {
+      return C.tableSizes().every(function (s) {
+        var want = C.isOverThreshold(helper[i].cells[s], 3000);
+        return cliRow.cells[s].over === want;
+      });
+    });
+    ok(overAgree, 'CLI over-threshold flags match the helper at a 3 s cap');
+  }
+
+  // A bad --size is rejected with exit 1 (bounds come from the helper).
+  var bad = cp.spawnSync(process.execPath,
+    [path.join(__dirname, '..', 'tools', 'calibrate.js'), '--no-measure', '--size', '99'],
+    { encoding: 'utf8' });
+  ok(bad.status === 1, 'calibrate CLI rejects an out-of-range --size with exit 1');
+})();
+
+// ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

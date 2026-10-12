@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '45';
+  var VERSION = '47';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '47', text: 'New: a \u201CBoard size & AI timing\u201D panel (\u2699 Settings \u2192 Board size). Play on bigger boards \u2014 anything from 2\u00D72 up to 12\u00D712 (square). Because the strongest AI thinks longer on bigger boards, the panel lets you CALIBRATE estimated think times on your own device (it takes a few seconds) and shows a table of each AI\u2019s estimated worst-case move time per size; anything slower than a \u201Cmax acceptable wait\u201D you set is shown in red. Estimates are approximate and device-dependent \u2014 re-calibrate if your hardware or system load changes. A size change applies on your next New Game. A command-line tool (tools/calibrate.js) gives the same table in a terminal.' },
     { v: '45', text: 'Docs: the in-app Help now lists the Hint button and the Hint light-up setting (it had been missed when Hint shipped). No gameplay change \u2014 just the Help text and the project\u2019s written docs catching up.' },
     { v: '44', text: 'New: Settings \u2192 Persistence has a \u201CSave / Load to file\u201D panel. Save the current game board and/or your settings & scores to a JSON file, and load one back \u2014 handy for sharing a board, making puzzles, or keeping a full backup. Pick which sections to include (both by default); a board-only file is marked in its name. Loading replaces only the sections in the file and keeps the rest; boards are strictly validated (no mid-cascade positions).' },
     { v: '43', text: 'The Players settings moved out of \u2699 Settings into their own panel: click the top-left area (the coloured dot and player name) to open it. There you set who controls each player (Human or an AI) and rename players \u2014 now BOTH players, any time, even mid-game. Only human players can be renamed; AI seats show their agent name. The top bar looks the same at rest; hovering the top-left shows a square outline (the old name underline is gone). Settings now holds just the propagation delay, the hint light-up, and saved-data options.' },
@@ -79,7 +80,6 @@
     { v: '37', text: 'Tutor now has two levels (Settings \u2192 Players, per Tutor): Easy (the original gentle opponent, the default) and Medium \u2014 Medium defends its position and won\u2019t hand you an easy chain-reaction, narrowing the gap toward Shark. When both players are the same AI, each difficulty row is labelled by seat (Player 1 / Player 2).' },
     { v: '35', text: 'Follow-up to the Player-2 save fix: a freshly started Player-2-opening game is now also saved correctly on first load (an edge case could still discard it). Internal: more save/restore tests and changelog tidy-ups.' },
     { v: '34', text: 'Fix: a game opened by Player 2 (after turn-taking alternation) is now saved and restored correctly \u2014 previously reloading could discard it and start over. Plus small internal tidy-ups.' },
-    { v: '33', text: 'Turn-taking: after a game ends, New Game / Play Again now lets the OTHER player open the next game (it alternates across completed games and is remembered). Resetting the win tally can also reset who starts \u2014 there\u2019s a checkbox for it in the reset dialog.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.
