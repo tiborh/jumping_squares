@@ -110,7 +110,7 @@
   }
 
   var PREFS_KEY = STORAGE_PREFIX + 'prefs';
-  var PREFS_VERSION = 10; // v10: board-size + AI-time calibration (`boardSize`, `calibMaxWaitMs`, `calibration`); v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 10; // v10: board-size + AI-time calibration (`boardSize`, `pendingBoardSize`, `calibMaxWaitMs`, `calibration`); v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -172,10 +172,17 @@
         // thinking first, short enough to offer help before frustration.
         hintLightDelay: 10000,
         // --- Board size + AI think-time calibration (schema v10) ------------
-        // The chosen square board size (rows === cols). Default STANDARD (5),
-        // the classic game. The Board-size panel (Settings) sets it; it applies
-        // on the next New Game. Clamped to the engine's supported 2..12.
+        // ACTIVE square board size (rows === cols) — the size of the live /
+        // auto-saved board. Default STANDARD (5). This is what restoreSavedGame
+        // matches against, so it only ever changes when a New Game actually
+        // opens a board of a new size (committed from pendingBoardSize below).
+        // Clamped to the engine's supported 2..12.
         boardSize: 5,
+        // PENDING board size — the slider's chosen size, applied on the NEXT
+        // New Game (and only then copied into boardSize). Kept separate so that
+        // changing the slider and then RELOADING (without pressing New Game)
+        // does NOT discard the in-progress game: restore uses the ACTIVE size.
+        pendingBoardSize: 5,
         // The user's "max acceptable wait" for the strongest AI, in ms — the
         // threshold that paints over-limit cells RED in the estimate table.
         // One of the discrete slider stops (0.5..60 s); default 5 s.
@@ -320,6 +327,16 @@
         if (typeof bs === 'number' && isFinite(bs) &&
             Math.floor(bs) === bs && bs >= 2 && bs <= 12) {
           mem.boardSize = bs;
+        }
+        // Pending (slider) size — same validation. Defaults to the active size
+        // when absent (older records / first use), so the slider opens on the
+        // current board's size.
+        var pbs = parsed.pendingBoardSize;
+        if (typeof pbs === 'number' && isFinite(pbs) &&
+            Math.floor(pbs) === pbs && pbs >= 2 && pbs <= 12) {
+          mem.pendingBoardSize = pbs;
+        } else {
+          mem.pendingBoardSize = mem.boardSize;
         }
 
         // Calibration max-wait threshold (ms): schema v10. Accept any finite
@@ -484,6 +501,27 @@
         n = parseInt(n, 10);
         mem.boardSize = (isFinite(n) && n >= 2 && n <= 12) ? n : 5;
         persist();
+      },
+      // Pending (slider) size — the choice that takes effect on the NEXT New
+      // Game. Written by the slider; read to populate the slider and the table
+      // highlight. Does NOT change the live/saved board until commitBoardSize().
+      getPendingBoardSize: function () {
+        var n = mem.pendingBoardSize;
+        return (typeof n === 'number' && isFinite(n) &&
+                Math.floor(n) === n && n >= 2 && n <= 12) ? n : this.getBoardSize();
+      },
+      setPendingBoardSize: function (n) {
+        n = parseInt(n, 10);
+        mem.pendingBoardSize = (isFinite(n) && n >= 2 && n <= 12) ? n : 5;
+        persist();
+      },
+      // Promote the pending size to the ACTIVE size. Called by New Game, the
+      // one moment the board actually changes dimensions. Returns the committed
+      // size for convenience.
+      commitBoardSize: function () {
+        mem.boardSize = this.getPendingBoardSize();
+        persist();
+        return mem.boardSize;
       },
       // The user's max-acceptable-wait threshold (ms) for the red cells.
       getCalibMaxWaitMs: function () {
@@ -1794,9 +1832,11 @@
     //
     // The board SIZE is also taken from prefs here (set in the Board-size
     // panel), so a size change applies on the next New Game — never mid-game.
-    // Update the module ROWS/COLS so dimension-dependent helpers
-    // (fitsDimensions, rendering) agree with the live board.
-    var chosen = prefs.getBoardSize();
+    // commitBoardSize() promotes the pending (slider) choice to the ACTIVE
+    // size; a mere slider change without New Game leaves the active size (and
+    // thus the restorable save) untouched. Update ROWS/COLS so dimension-
+    // dependent helpers (fitsDimensions, rendering) agree with the live board.
+    var chosen = prefs.commitBoardSize();
     ROWS = chosen;
     COLS = chosen;
     state = G.createGame({
@@ -2124,10 +2164,16 @@
   }
 
   // Inject-able runner: time ONE worst-case Shark move at (size, depth). Returns
-  // ms, or null if a position couldn't be built. Calibration only calls this
-  // for CHEAP sizes (6×6, 8×8), so running it inline cannot hang the tab.
+  // ms, or null if a position couldn't be built OR the size exceeds the browser
+  // sampling ceiling. The browser runs this SYNCHRONOUSLY (no worker/timeout can
+  // interrupt a running search here), so it is bounded BY CONSTRUCTION: it only
+  // ever runs genuinely cheap sizes. Larger sizes are extrapolated, and the
+  // tools/calibrate.js CLI (child process + hard timeout) is the place to
+  // measure big boards. BROWSER_SAMPLE_MAX is the ceiling.
+  var BROWSER_SAMPLE_MAX = 8; // 8x8 depth-4 is a couple of seconds even on slow devices
   function runOneInline(size, depth) {
     if (!AGENTS || !AGENTS.bestMove) return null;
+    if (size > BROWSER_SAMPLE_MAX) return null; // refuse to block the tab
     var st = buildWorstCasePosition(size);
     if (!st) return null;
     var t0 = (typeof performance !== 'undefined' && performance.now)
@@ -2146,14 +2192,14 @@
     var samples = prefs.getCalibration() || {};
     var sizes = CALIB.tableSizes();
     var maxWaitMs = prefs.getCalibMaxWaitMs();
-    var selSize = prefs.getBoardSize();
+    var selSize = prefs.getPendingBoardSize();
 
     // Header: short label column, then one compact column per size.
     // Size headers drop the spaces around "×" to save width ("10×10").
-    var headHtml = '<th>AI</th>';
+    var headHtml = '<th scope="col">AI</th>';
     sizes.forEach(function (s) {
       var cls = (s === selSize) ? ' class="sel-size"' : '';
-      headHtml += '<th' + cls + '>' + s + '\u00D7' + s + '</th>';
+      headHtml += '<th scope="col"' + cls + '>' + s + '\u00D7' + s + '</th>';
     });
     calibTableHead.innerHTML = headHtml;
 
@@ -2167,8 +2213,8 @@
     var waitLabel = (maxWaitMs < 1000) ? (maxWaitMs + ' ms') : ((maxWaitMs / 1000) + ' s');
     var bodyHtml = '';
     table.forEach(function (t) {
-      bodyHtml += '<tr><td title="' + t.row.label + '">' +
-                  compactLabel(t.row.label) + '</td>';
+      bodyHtml += '<tr><th scope="row" title="' + t.row.label + '">' +
+                  compactLabel(t.row.label) + '</th>';
       sizes.forEach(function (s) {
         var ms = t.cells[s];
         var over = CALIB.isOverThreshold(ms, maxWaitMs);
@@ -2194,9 +2240,17 @@
   }
 
   function updateBoardsizeReadout() {
-    var n = prefs.getBoardSize();
-    if (boardsizeValue) boardsizeValue.textContent = sizeLabel(n);
-    if (boardsizeCurrent) boardsizeCurrent.textContent = sizeLabel(n);
+    var pending = prefs.getPendingBoardSize();
+    var active = prefs.getBoardSize();
+    // The panel slider readout reflects the PENDING choice being previewed.
+    if (boardsizeValue) boardsizeValue.textContent = sizeLabel(pending);
+    // The Settings summary shows the ACTIVE size (what's on the board now); if
+    // a different size is pending, note that it applies on the next New Game.
+    if (boardsizeCurrent) {
+      boardsizeCurrent.textContent = (pending !== active)
+        ? (sizeLabel(active) + ' (→ ' + sizeLabel(pending) + ' next game)')
+        : sizeLabel(active);
+    }
   }
 
   function updateMaxwaitReadout() {
@@ -2208,7 +2262,7 @@
   // Reflect stored prefs in the panel controls + table. Called on open and
   // after a prefs reset so nothing shows a stale value.
   function syncBoardsizeUI() {
-    if (boardsizeRange) boardsizeRange.value = String(prefs.getBoardSize());
+    if (boardsizeRange) boardsizeRange.value = String(prefs.getPendingBoardSize());
     if (maxwaitRange && CALIB) {
       maxwaitRange.value = String(CALIB.maxWaitMsToIndex(prefs.getCalibMaxWaitMs()));
     }
@@ -2270,7 +2324,7 @@
 
   if (boardsizeRange) {
     boardsizeRange.addEventListener('input', function () {
-      prefs.setBoardSize(parseInt(this.value, 10));
+      prefs.setPendingBoardSize(parseInt(this.value, 10));
       updateBoardsizeReadout();
       renderCalibTable(); // re-outline the selected size column
     });
@@ -2298,7 +2352,8 @@
         var samples;
         try {
           samples = CALIB.measureCheapSizes(runOneInline,
-            { at: new Date().toISOString(), device: device });
+            { at: new Date().toISOString(), device: device,
+              sampleSizes: [6, BROWSER_SAMPLE_MAX] });
         } catch (err) {
           samples = null;
         }
