@@ -1568,6 +1568,36 @@ console.log('calibration helper (js/calibrate.js)');
     { sampleSizes: [6, 8], depths: [4] });
   ok(!sparse.shark[4] || Object.keys(sparse.shark[4]).length === 0,
      'measureCheapSizes drops null (timed-out) samples');
+
+  // --- fitForDepth: graceful degradation (review findings) ----------------
+  // Exactly ONE valid measured point must still be used (anchored through the
+  // fallback exponent), not discarded for the generic desktop numbers.
+  var fallback4 = { a: 0.052688, b: 2.6163 };
+  var oneFit = C.fitForDepth({ 64: 5000 }, 4); // one slow 8x8 sample
+  ok(Math.abs(oneFit.b - fallback4.b) < 1e-9,
+     'fitForDepth keeps the fallback exponent for a single sample');
+  ok(Math.abs(oneFit.a * Math.pow(64, oneFit.b) - 5000) < 1,
+     'fitForDepth anchors the single sample through the measured point');
+  // That single slow sample should push the 12x12 estimate ABOVE the generic.
+  var genericRow = { agent: 'Shark', difficulty: 'hard', depth: 4 };
+  ok(C.estimateMs(genericRow, 12, { shark: { 4: { 64: 5000 } } }) >
+     C.estimateMs(genericRow, 12, {}),
+     'a single slow sample reprojects a slower device (vs generic)');
+
+  // A fitted exponent FLATTER than the fallback must be floored (so the
+  // projection never DECREASES with size and clears warnings wrongly).
+  var flat = C.fitForDepth({ 36: 1000, 144: 1000 }, 4); // equal times -> b~0
+  ok(flat.b >= fallback4.b - 1e-9,
+     'fitForDepth floors a too-flat fitted exponent to the fallback');
+  // Monotonic non-decreasing after flooring.
+  ok(C.estimateMs(genericRow, 12, { shark: { 4: { 36: 1000, 144: 1000 } } }) >=
+     C.estimateMs(genericRow, 6, { shark: { 4: { 36: 1000, 144: 1000 } } }),
+     'floored fit keeps estimates non-decreasing in size');
+
+  // Zero valid points -> generic fallback.
+  var none = C.fitForDepth({}, 4);
+  ok(Math.abs(none.a - fallback4.a) < 1e-9 && Math.abs(none.b - fallback4.b) < 1e-9,
+     'fitForDepth returns the generic fallback when no points are given');
 })();
 
 // ---------------------------------------------------------------------------

@@ -154,6 +154,51 @@
     return { a: Math.exp(lnA), b: b };
   }
 
+  // Choose the (a, b) power law for a given Shark depth from the device sample
+  // map, degrading gracefully:
+  //   >=2 valid points -> least-squares fit, but FLOOR the exponent at the
+  //       fallback's b. A flat or (worse) negative fitted exponent — possible
+  //       from noisy or near-equal cheap measurements — would make the
+  //       projection DECREASE with board size and wrongly clear the red
+  //       warnings; flooring keeps it conservatively steep while still using
+  //       the device's measured magnitude (a is re-derived through the points).
+  //   exactly 1 valid point -> keep the fallback EXPONENT but ANCHOR it through
+  //       the measured point (so a one-success/one-timeout calibration still
+  //       reflects this device, instead of discarding the sample).
+  //   0 valid points -> the generic fallback coefficients.
+  function fitForDepth(pointMap, depth) {
+    var base = FALLBACK[depth] || FALLBACK[4];
+    // Collect valid points once (cells -> ms).
+    var pts = [];
+    Object.keys(pointMap || {}).forEach(function (k) {
+      var cells = parseFloat(k), ms = pointMap[k];
+      if (isFinite(cells) && cells > 0 && isFinite(ms) && ms > 0) {
+        pts.push({ cells: cells, ms: ms });
+      }
+    });
+
+    if (pts.length >= 2) {
+      var fit = fitPowerLaw(pointMap);
+      if (fit) {
+        if (!(fit.b >= base.b)) {
+          // Fitted curve is flatter than the conservative baseline: keep the
+          // baseline exponent, re-anchor `a` through the largest measured
+          // point so the device magnitude is preserved.
+          var anchor = pts[pts.length - 1];
+          fit = { a: anchor.ms / Math.pow(anchor.cells, base.b), b: base.b };
+        }
+        return fit;
+      }
+    }
+
+    if (pts.length === 1) {
+      var p = pts[0];
+      return { a: p.ms / Math.pow(p.cells, base.b), b: base.b };
+    }
+
+    return base;
+  }
+
   // Estimated worst-case ms for one move of `row` on an N x N board, given the
   // device `samples`. Random/Tutor use the flat near-instant cost; Shark uses
   // the fitted (or fallback) power law times the conservative factor.
@@ -167,11 +212,8 @@
       return flat * (cells / (STANDARD_SIZE * STANDARD_SIZE));
     }
     var depth = row.depth;
-    var fit = null;
-    if (samples.shark && samples.shark[depth]) {
-      fit = fitPowerLaw(samples.shark[depth]);
-    }
-    if (!fit) fit = FALLBACK[depth] || FALLBACK[4];
+    var pointMap = (samples.shark && samples.shark[depth]) ? samples.shark[depth] : {};
+    var fit = fitForDepth(pointMap, depth);
     return CONSERVATIVE_FACTOR * fit.a * Math.pow(cells, fit.b);
   }
 
@@ -273,6 +315,7 @@
     maxWaitIndexToMs: maxWaitIndexToMs,
     maxWaitMsToIndex: maxWaitMsToIndex,
     fitPowerLaw: fitPowerLaw,
+    fitForDepth: fitForDepth,
     estimateMs: estimateMs,
     projectTable: projectTable,
     isOverThreshold: isOverThreshold,

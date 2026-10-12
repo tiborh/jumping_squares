@@ -94,13 +94,13 @@ If the change touches anything the browser loads (`index.html`, `js/*.js`, CSS,
 gameplay, UI), bump the version so caches don't serve stale files:
 
 1. Bump `VERSION` in `js/game.js` by one (e.g. `'41'` → `'42'`).
-2. Update **all three** `?v=` query strings in `index.html` to the same number
-   — `js/game.js`, `js/agents.js`, **and** `js/ui.js`.
+2. Update **all four** `?v=` query strings in `index.html` to the same number
+   — `js/game.js`, `js/agents.js`, `js/calibrate.js`, **and** `js/ui.js`.
 
 The `version wiring` test fails if the `?v=` strings don't all match `VERSION`.
 (It checks the *value* of every `?v=` tag it finds against `VERSION`; it does
-**not** assert that all three script tags are present, so don't rely on it to
-catch a *missing* tag — update all three by hand.) Docs-only changes (README
+**not** assert that all four script tags are present, so don't rely on it to
+catch a *missing* tag — update all four by hand.) Docs-only changes (README
 prose, comments, this file) skip this — but see the note in step 1: a README
 edit that regenerates `js/game.js` is **not** docs-only.
 

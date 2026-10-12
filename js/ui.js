@@ -2164,6 +2164,7 @@
     }
 
     var table = CALIB.projectTable(samples, sizes);
+    var waitLabel = (maxWaitMs < 1000) ? (maxWaitMs + ' ms') : ((maxWaitMs / 1000) + ' s');
     var bodyHtml = '';
     table.forEach(function (t) {
       bodyHtml += '<tr><td title="' + t.row.label + '">' +
@@ -2174,8 +2175,18 @@
         var cls = [];
         if (over) cls.push('over');
         if (s === selSize) cls.push('sel-size');
-        bodyHtml += '<td' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') +
-                    '>' + fmtEstMs(ms) + '</td>';
+        var text = fmtEstMs(ms);
+        var attrs = (cls.length ? ' class="' + cls.join(' ') + '"' : '');
+        if (over) {
+          // Don't rely on colour alone (accessibility): a visible warning glyph
+          // plus a spoken label and tooltip convey "over your max wait".
+          var label = t.row.label + ' on ' + s + '\u00D7' + s + ': ~' + text +
+                      ', over your ' + waitLabel + ' limit';
+          attrs += ' title="over your ' + waitLabel + ' limit"' +
+                   ' aria-label="' + label + '"';
+          text += ' \u26A0'; // warning sign, visible regardless of colour
+        }
+        bodyHtml += '<td' + attrs + '>' + text + '</td>';
       });
       bodyHtml += '</tr>';
     });
@@ -2218,17 +2229,27 @@
     renderCalibTable();
   }
 
+  // Nested focus manager so Tab stays trapped within THIS overlay while it is
+  // layered above the open Settings dialog (otherwise settingsFocus.onTab
+  // intercepts Tab and bounces focus back to Settings). Pushed on open, popped
+  // on close — the same pattern as the Players/backup/reset panels.
+  var boardsizeFocus = (boardsizeOverlay && boardsizeCard)
+    ? makeDialogFocusManager(boardsizeOverlay, boardsizeCard, 'boardsize-close')
+    : null;
+
   function openBoardsize() {
     if (!boardsizeOverlay) return;
     syncBoardsizeUI();
     boardsizeOverlay.classList.add('show');
-    if (boardsizeCloseBtn) boardsizeCloseBtn.focus();
+    if (boardsizeFocus) boardsizeFocus.onOpen(); // moves focus in + traps Tab
+    else if (boardsizeCloseBtn) boardsizeCloseBtn.focus();
   }
   function closeBoardsize() {
     if (!boardsizeOverlay) return;
     boardsizeOverlay.classList.remove('show');
     updateBoardsizeReadout(); // refresh the Settings summary value
-    if (boardsizeOpenBtn) boardsizeOpenBtn.focus();
+    if (boardsizeFocus) boardsizeFocus.onClose(); // pops + restores focus
+    else if (boardsizeOpenBtn) boardsizeOpenBtn.focus();
   }
 
   if (boardsizeOpenBtn) boardsizeOpenBtn.addEventListener('click', openBoardsize);
@@ -3077,11 +3098,26 @@
         return out;
       }
       var rawState = parsed.board.state;
+      // Which dimensions must the board match? Normally the CURRENT board, but
+      // when this same file ALSO carries a prefs section whose boardSize will be
+      // applied on import, the board should be judged against THAT size (a full
+      // backup made on a 10x10 board carries both a 10x10 board and boardSize:10;
+      // gating it against the current 5x5 would wrongly reject it). So peek at
+      // the incoming boardSize when a prefs section is being imported too.
+      var expectR = ROWS, expectC = COLS;
+      if (wantPrefs && havePrefs && parsed.prefs && typeof parsed.prefs === 'object') {
+        var bs = parsed.prefs.boardSize;
+        if (typeof bs === 'number' && isFinite(bs) &&
+            Math.floor(bs) === bs && bs >= 2 && bs <= 12) {
+          expectR = bs; expectC = bs;
+        }
+      }
       // Dimension gate first (cheap), then STRICT validation + rehydration.
       if (!rawState || typeof rawState !== 'object' ||
-          !fitsDimensions(rawState.rows, rawState.cols, rawState.players)) {
+          rawState.rows !== expectR || rawState.cols !== expectC ||
+          rawState.players !== PLAYERS) {
         out.error = 'The saved board doesn\u2019t fit this game (expected ' +
-          ROWS + '\u00d7' + COLS + ', ' + PLAYERS + ' players).';
+          expectR + '\u00d7' + expectC + ', ' + PLAYERS + ' players).';
         return out;
       }
       var clean = G.loadState(rawState);
@@ -3124,15 +3160,21 @@
       winRecorded = (validated.board.winner !== G.EMPTY); // a finished import is already tallied-equivalent
       suppressWinnerModal = (validated.board.winner !== G.EMPTY); // show board, not the live-win modal
       state = validated.board;
+      // Keep the module dimensions in step with the imported board, so
+      // fitsDimensions / rendering / a later auto-save all agree with its size
+      // (an imported board may be a different size than the one on screen).
+      ROWS = state.rows;
+      COLS = state.cols;
       buildGrid();
       sizeBoard();
       autoSaveIfOn();
       changed.push('game board');
     }
     // Reflect everything that changed: Players/difficulty rows, hint delay,
-    // persistence state, and the board/turn label.
+    // persistence state, board-size summary/panel, and the board/turn label.
     syncPlayerTypeUI();
     syncHintDelayUI();
+    syncBoardsizeUI();
     syncPersistenceUI();
     render();
     return changed;
