@@ -29,6 +29,93 @@ the nearest user-facing entry.
 
 ---
 
+## v47 — Board-size picker with on-device AI think-time calibration
+
+Player-facing:
+
+- **New: a "Board size & AI timing" panel** (⚙ Settings → *Board size*). You can
+  now play on any **square board from 2×2 up to 12×12** (the engine already
+  supported arbitrary sizes; this surfaces it in the UI). The chosen size
+  applies on your next **New Game** — never mid-game — so an in-progress board
+  is never resized under you.
+- **Self-calibrating think-time estimates.** The strongest AI (Shark "Hard")
+  gets dramatically slower on bigger boards, and *how* slow depends on your
+  device. The panel has a **Calibrate** button that measures the AI on *your*
+  machine (a few seconds) and fills an **estimate table**: each AI and
+  difficulty × each board size above 5×5, showing the estimated worst-case
+  think time per move. Set a **max acceptable wait** (a slider, 0.5 s … 60 s);
+  any estimate **over** that wait is shown in **red**, so you can see at a glance
+  which size/AI combinations will feel sluggish. There is deliberately **no hard
+  lock** — you decide, with the table as a guide. The result is **saved**, so you
+  don't re-calibrate every session.
+- **Approximate by design.** Calibration *measures* a couple of cheap sizes and
+  **extrapolates** the expensive ones with a conservative growth curve (it
+  rounds up, so it warns rather than lulls). Estimates are **device- and
+  load-dependent** — the panel says so, and the Calibrate button stays available
+  to re-run when your hardware or system load changes.
+- **A command-line tool**, `tools/calibrate.js`, prints the same table in a
+  terminal — all AIs for sizes above 5×5 by default, with `--size N`,
+  `--max-wait S`, and `--json` options. It shares the exact same cost model as
+  the in-app panel.
+
+Why / lessons:
+
+- This landed the roadmap's long-standing *"board-size picker needs a per-device
+  calibration + time hint for Shark"* item. The trigger was concrete: a naïve
+  "measure the strongest AI on the largest board across a full game" benchmark
+  **ran for over an hour without finishing a single 12×12 move** (depth-4
+  minimax on 144 cells is enormous). The lesson shaped the whole design:
+  **never run an open-ended full-game measurement**. Instead, worst-case
+  per-move time is sampled on a few dense positions with a **hard timeout**, and
+  large sizes are **extrapolated**, not brute-forced. Reference measurements:
+  Shark-Hard worst-case ≈ 2.8 s at 8×8, ≈ 9 s at 10×10, and **≥ 20 s at 12×12**
+  — hence red warnings, not silent slow play.
+- **One shared cost model.** The projection/threshold logic is a new DOM-free
+  helper, `js/calibrate.js`, dual-exported like the engine and agents and used
+  by **both** the browser panel and the CLI, with a **drift test** asserting the
+  two agree (the same mirror-with-a-drift-test pattern as the changelog, Help,
+  and backup validators). The bounded measurement primitive is
+  `tools/calibrate-sample-worker.js` (times one worst-case move in a child
+  process so a slow case can be killed, never hang).
+
+Internal:
+
+- `prefs` schema → **v10**: adds `boardSize`, `calibMaxWaitMs`, and the saved
+  `calibration` samples (with per-field defensive adoption/migration, like every
+  prior field). The reset/sweep and backup export/import pick these up with no
+  extra wiring.
+- Added test coverage (projection monotonicity, red-threshold correctness,
+  slider-stop round-trip, device-sample override, and the CLI↔helper drift
+  guard). Suite grew to 273 assertions.
+
+## v45 — Docs catch-up: Hint in Help, restored changelog headers
+
+Player-facing:
+
+- **The in-app Help now documents the Hint button.** When the Hint feature
+  (v42) shipped, its control was never added to the *How to play* dialog — the
+  Help listed New Game, Players, the tally, Settings and Help, but not the
+  bottom-right lightbulb. Help now has a **Hint** entry, and the **Settings**
+  entry mentions the **Hint light-up** delay. Sourced from the README `HELP`
+  block and regenerated into `js/game.js` as usual.
+
+Internal / docs:
+
+- Restored the `## v41`, `## v42`, `## v43` section **headings** in this file.
+  They had been accidentally consumed by successive section-insert edits (each
+  new `## vN` replace swallowed the previous heading), leaving v41–v43's bodies
+  orphaned under newer headings even though the tags `v41`/`v42`/`v43` existed.
+  The content was intact; only the headers were missing.
+- README prose gained a **Hint** paragraph under *More about playing* and a Hint
+  entry in the roadmap's **Done** list (it was only in the changelog before);
+  the stale "186 assertions" count was generalised to "230+ and growing".
+- Dropped the now-stale `experimental` flag on the v42 Hint What's-new entry
+  (the feature has been shipped and stable for two releases).
+- This is a docs/Help change; because regenerating the Help mirror touches the
+  browser-loaded `js/game.js`, it carries a normal version bump (44 → 45).
+
+---
+
 ## v44 — Save / Load to file (backup & restore)
 
 Player-facing:
@@ -67,7 +154,9 @@ Internal / why:
   a saved start state. Mid-cascade/pre-cascade positions remain out of scope by
   design — loads are strictly settled states only.
 
+---
 
+## v43 — Players panel (moved out of Settings)
 
 Player-facing:
 
@@ -105,7 +194,9 @@ Internal / why:
   styles were removed. The in-app **Help** controls list (sourced from the
   README `HELP` block) was updated and regenerated accordingly.
 
+---
 
+## v42 — Hint button (strongest-move helper)
 
 Player-facing:
 
@@ -152,7 +243,9 @@ Internal / why:
   idle timer is re-armed on every render where the Hint is available (so "idle"
   means "this turn, untouched") and cancelled on a move / New Game / dialog.
 
+---
 
+## v41 — In-app Help (sourced from the README)
 
 Player-facing:
 

@@ -20,6 +20,10 @@
   // AI agents module (optional): present when js/agents.js is loaded. Guarded so
   // the UI still works (all-human) if the script is missing.
   var AGENTS = window.JumpingSquaresAgents || null;
+  // AI think-time calibration helper (optional): present when js/calibrate.js
+  // is loaded. Guarded so the UI degrades gracefully (board-size panel simply
+  // shows no estimates) if the script is missing.
+  var CALIB = window.JumpingSquaresCalibrate || null;
 
   // --- configuration (Iteration 1: fixed 5x5, two human players) ----------
   var ROWS = 5;
@@ -106,7 +110,7 @@
   }
 
   var PREFS_KEY = STORAGE_PREFIX + 'prefs';
-  var PREFS_VERSION = 9; // v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 10; // v10: board-size + AI-time calibration (`boardSize`, `pendingBoardSize`, `calibMaxWaitMs`, `calibration`); v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -167,6 +171,29 @@
         // Default 10000 ms (10 s): long enough to encourage trying Help/own
         // thinking first, short enough to offer help before frustration.
         hintLightDelay: 10000,
+        // --- Board size + AI think-time calibration (schema v10) ------------
+        // ACTIVE square board size (rows === cols) — the size of the live /
+        // auto-saved board. Default STANDARD (5). This is what restoreSavedGame
+        // matches against, so it only ever changes when a New Game actually
+        // opens a board of a new size (committed from pendingBoardSize below).
+        // Clamped to the engine's supported 2..12.
+        boardSize: 5,
+        // PENDING board size — the slider's chosen size, applied on the NEXT
+        // New Game (and only then copied into boardSize). Kept separate so that
+        // changing the slider and then RELOADING (without pressing New Game)
+        // does NOT discard the in-progress game: restore uses the ACTIVE size.
+        pendingBoardSize: 5,
+        // The user's "max acceptable wait" for the strongest AI, in ms — the
+        // threshold that paints over-limit cells RED in the estimate table.
+        // One of the discrete slider stops (0.5..60 s); default 5 s.
+        calibMaxWaitMs: 5000,
+        // The last self-calibration result: the on-device Shark time samples
+        // (used to project the estimate table) plus metadata so the user knows
+        // when/where it was taken. null until the user runs Calibrate. Shape:
+        //   { shark:{ <depth>:{ <cells>:ms } }, flatMs, at:<ISO>, device:<str> }
+        // The estimates are APPROXIMATE and device/load dependent (documented);
+        // re-calibrate when the hardware or system load changes.
+        calibration: null,
       };
     }
     var mem = makeDefaults();
@@ -291,6 +318,42 @@
         if (hld === 0 || hld === -1 ||
             (typeof hld === 'number' && isFinite(hld) && hld > 0)) {
           mem.hintLightDelay = hld;
+        }
+
+        // Board size: schema v10; absent in older records (keep default 5).
+        // Only adopt an integer in the engine's supported 2..12 range so a bad
+        // value can never create an out-of-range board.
+        var bs = parsed.boardSize;
+        if (typeof bs === 'number' && isFinite(bs) &&
+            Math.floor(bs) === bs && bs >= 2 && bs <= 12) {
+          mem.boardSize = bs;
+        }
+        // Pending (slider) size — same validation. Defaults to the active size
+        // when absent (older records / first use), so the slider opens on the
+        // current board's size.
+        var pbs = parsed.pendingBoardSize;
+        if (typeof pbs === 'number' && isFinite(pbs) &&
+            Math.floor(pbs) === pbs && pbs >= 2 && pbs <= 12) {
+          mem.pendingBoardSize = pbs;
+        } else {
+          mem.pendingBoardSize = mem.boardSize;
+        }
+
+        // Calibration max-wait threshold (ms): schema v10. Accept any finite
+        // positive number (the panel snaps it to a slider stop); anything else
+        // keeps the default so a bad value can't disable the red-threshold.
+        var mw = parsed.calibMaxWaitMs;
+        if (typeof mw === 'number' && isFinite(mw) && mw > 0) {
+          mem.calibMaxWaitMs = mw;
+        }
+
+        // Saved calibration samples: schema v10. A lightweight shape check only
+        // (it is consumed defensively by the projection helper, which ignores
+        // non-numeric points). Must be an object with a `shark` sub-object; else
+        // keep null (treated as "not yet calibrated"). Never throws on garbage.
+        var cal = parsed.calibration;
+        if (cal && typeof cal === 'object' && cal.shark && typeof cal.shark === 'object') {
+          mem.calibration = cal;
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -426,7 +489,59 @@
         }
         persist();
       },
-      // --- Shark difficulty (search depth), per seat ---
+      // --- Board size + AI think-time calibration (schema v10) ---
+      // The chosen square board size (applies on next New Game). Clamped to the
+      // engine's supported 2..12 on read so a corrupt stored value is safe.
+      getBoardSize: function () {
+        var n = mem.boardSize;
+        return (typeof n === 'number' && isFinite(n) &&
+                Math.floor(n) === n && n >= 2 && n <= 12) ? n : 5;
+      },
+      setBoardSize: function (n) {
+        n = parseInt(n, 10);
+        mem.boardSize = (isFinite(n) && n >= 2 && n <= 12) ? n : 5;
+        persist();
+      },
+      // Pending (slider) size — the choice that takes effect on the NEXT New
+      // Game. Written by the slider; read to populate the slider and the table
+      // highlight. Does NOT change the live/saved board until commitBoardSize().
+      getPendingBoardSize: function () {
+        var n = mem.pendingBoardSize;
+        return (typeof n === 'number' && isFinite(n) &&
+                Math.floor(n) === n && n >= 2 && n <= 12) ? n : this.getBoardSize();
+      },
+      setPendingBoardSize: function (n) {
+        n = parseInt(n, 10);
+        mem.pendingBoardSize = (isFinite(n) && n >= 2 && n <= 12) ? n : 5;
+        persist();
+      },
+      // Promote the pending size to the ACTIVE size. Called by New Game, the
+      // one moment the board actually changes dimensions. Returns the committed
+      // size for convenience.
+      commitBoardSize: function () {
+        mem.boardSize = this.getPendingBoardSize();
+        persist();
+        return mem.boardSize;
+      },
+      // The user's max-acceptable-wait threshold (ms) for the red cells.
+      getCalibMaxWaitMs: function () {
+        var d = mem.calibMaxWaitMs;
+        return (typeof d === 'number' && isFinite(d) && d > 0) ? d : 5000;
+      },
+      setCalibMaxWaitMs: function (ms) {
+        ms = parseFloat(ms);
+        mem.calibMaxWaitMs = (isFinite(ms) && ms > 0) ? ms : 5000;
+        persist();
+      },
+      // The saved on-device calibration samples (or null if never run).
+      getCalibration: function () {
+        return (mem.calibration && typeof mem.calibration === 'object' &&
+                mem.calibration.shark) ? mem.calibration : null;
+      },
+      setCalibration: function (cal) {
+        mem.calibration = (cal && typeof cal === 'object' && cal.shark) ? cal : null;
+        persist();
+      },
       getSharkDepth: function (n) {
         var d = mem.sharkDepth[n];
         return (d === 2 || d === 3 || d === 4) ? d : 3;
@@ -1714,6 +1829,16 @@
     // game, recordWinOnce() has already rotated this to the player who went
     // second, so the opponent now opens. A New Game started mid-play (no winner)
     // leaves startingPlayer unchanged, so the same player opens as last time.
+    //
+    // The board SIZE is also taken from prefs here (set in the Board-size
+    // panel), so a size change applies on the next New Game — never mid-game.
+    // commitBoardSize() promotes the pending (slider) choice to the ACTIVE
+    // size; a mere slider change without New Game leaves the active size (and
+    // thus the restorable save) untouched. Update ROWS/COLS so dimension-
+    // dependent helpers (fitsDimensions, rendering) agree with the live board.
+    var chosen = prefs.commitBoardSize();
+    ROWS = chosen;
+    COLS = chosen;
     state = G.createGame({
       rows: ROWS, cols: COLS, players: PLAYERS,
       startingPlayer: prefs.getStartingPlayer(),
@@ -1835,6 +1960,7 @@
     settingsOverlay.classList.add('show');
     syncPersistenceUI(); // save-state may have changed since last opened
     syncHintDelayUI();   // reflect the stored hint light-up delay
+    updateBoardsizeReadout(); // refresh the "Board size" summary value
     cancelPendingHint(); // a hint can't apply while the dialog pauses play
     syncHintButton();    // hide the Hint button while Settings is open (paused)
     settingsFocus.onOpen();
@@ -1985,6 +2111,265 @@
     hintDelayRange.value = String(hintDelayToSliderIndex(prefs.getHintLightDelay()));
     updateHintDelayReadout();
   }
+  // --- Board-size & AI-timing panel ----------------------------------------
+  // Opened from Settings. Lets the player pick a square board (2..12) and
+  // CALIBRATE estimated AI think times on this device (via the shared,
+  // DOM-free js/calibrate.js helper — the SAME model the tools/calibrate.js CLI
+  // uses, so the two cannot drift). The estimate table paints cells red when
+  // they exceed the user's "max acceptable wait". A size change applies on the
+  // next New Game (never mid-game). The whole feature degrades gracefully if
+  // either the agents module or the calibrate helper is missing.
+  var boardsizeOverlay = document.getElementById('boardsize-overlay');
+  var boardsizeCard = document.getElementById('boardsize-card');
+  var boardsizeOpenBtn = document.getElementById('boardsize-open');
+  var boardsizeCloseBtn = document.getElementById('boardsize-close');
+  var boardsizeRange = document.getElementById('boardsize-range');
+  var boardsizeValue = document.getElementById('boardsize-value');
+  var boardsizeCurrent = document.getElementById('boardsize-current');
+  var maxwaitRange = document.getElementById('maxwait-range');
+  var maxwaitValue = document.getElementById('maxwait-value');
+  var calibrateRunBtn = document.getElementById('calibrate-run');
+  var calibrateStatus = document.getElementById('calibrate-status');
+  var calibTableHead = document.getElementById('calib-table-head');
+  var calibTableBody = document.getElementById('calib-table-body');
+
+  function sizeLabel(n) { return n + ' × ' + n; }
+
+  function fmtEstMs(ms) {
+    if (!isFinite(ms)) return '—';
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+  }
+
+  // Build the position the engine finds slowest (a dense, contested mid-game
+  // board) by playing deterministic legal moves to ~50% fill, mirroring the
+  // bounded CLI worker so the in-browser and CLI numbers measure the same case.
+  function buildWorstCasePosition(size) {
+    var seed = 12345 >>> 0;
+    function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+    var st = G.createGame({ rows: size, cols: size, players: 2 });
+    var target = Math.round(0.5 * size * size);
+    for (var placed = 0; placed < target && st.winner === G.EMPTY; placed++) {
+      var me = st.current, legal = [];
+      for (var r = 0; r < size; r++) {
+        for (var c = 0; c < size; c++) {
+          if (G.canPlay(st, me, r, c)) legal.push([r, c]);
+        }
+      }
+      if (!legal.length) break;
+      var pick = legal[Math.floor(rnd() * legal.length)];
+      G.applyMove(st, me, pick[0], pick[1]);
+    }
+    return (st.winner === G.EMPTY) ? st : null;
+  }
+
+  // Inject-able runner: time ONE worst-case Shark move at (size, depth). Returns
+  // ms, or null if a position couldn't be built OR the size exceeds the browser
+  // sampling ceiling. The browser runs this SYNCHRONOUSLY (no worker/timeout can
+  // interrupt a running search here), so it is bounded BY CONSTRUCTION: it only
+  // ever runs genuinely cheap sizes. Larger sizes are extrapolated, and the
+  // tools/calibrate.js CLI (child process + hard timeout) is the place to
+  // measure big boards. BROWSER_SAMPLE_MAX is the ceiling.
+  var BROWSER_SAMPLE_MAX = 8; // 8x8 depth-4 is a couple of seconds even on slow devices
+  function runOneInline(size, depth) {
+    if (!AGENTS || !AGENTS.bestMove) return null;
+    if (size > BROWSER_SAMPLE_MAX) return null; // refuse to block the tab
+    var st = buildWorstCasePosition(size);
+    if (!st) return null;
+    var t0 = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    AGENTS.bestMove(G, st, { depth: depth });
+    var t1 = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    return t1 - t0;
+  }
+
+  // Render the estimate table from the saved (or fallback) calibration samples,
+  // colouring any cell over the max-wait threshold red and outlining the
+  // currently-selected size column.
+  function renderCalibTable() {
+    if (!CALIB || !calibTableHead || !calibTableBody) return;
+    var samples = prefs.getCalibration() || {};
+    var sizes = CALIB.tableSizes();
+    var maxWaitMs = prefs.getCalibMaxWaitMs();
+    var selSize = prefs.getPendingBoardSize();
+
+    // Header: short label column, then one compact column per size.
+    // Size headers drop the spaces around "×" to save width ("10×10").
+    var headHtml = '<th scope="col">AI</th>';
+    sizes.forEach(function (s) {
+      var cls = (s === selSize) ? ' class="sel-size"' : '';
+      headHtml += '<th scope="col"' + cls + '>' + s + '\u00D7' + s + '</th>';
+    });
+    calibTableHead.innerHTML = headHtml;
+
+    // Compact the row label so it fits the narrow first column without
+    // truncation: "Shark — Hard" -> "Shark·Hard", abbreviating "Medium".
+    function compactLabel(label) {
+      return label.replace(/\s+\u2014\s+/, '\u00B7').replace('Medium', 'Med');
+    }
+
+    var table = CALIB.projectTable(samples, sizes);
+    var waitLabel = (maxWaitMs < 1000) ? (maxWaitMs + ' ms') : ((maxWaitMs / 1000) + ' s');
+    var bodyHtml = '';
+    table.forEach(function (t) {
+      bodyHtml += '<tr><th scope="row" title="' + t.row.label + '">' +
+                  compactLabel(t.row.label) + '</th>';
+      sizes.forEach(function (s) {
+        var ms = t.cells[s];
+        var over = CALIB.isOverThreshold(ms, maxWaitMs);
+        var cls = [];
+        if (over) cls.push('over');
+        if (s === selSize) cls.push('sel-size');
+        var text = fmtEstMs(ms);
+        var attrs = (cls.length ? ' class="' + cls.join(' ') + '"' : '');
+        if (over) {
+          // Don't rely on colour alone (accessibility): a visible warning glyph
+          // plus a spoken label and tooltip convey "over your max wait".
+          var label = t.row.label + ' on ' + s + '\u00D7' + s + ': ~' + text +
+                      ', over your ' + waitLabel + ' limit';
+          attrs += ' title="over your ' + waitLabel + ' limit"' +
+                   ' aria-label="' + label + '"';
+          text += ' \u26A0'; // warning sign, visible regardless of colour
+        }
+        bodyHtml += '<td' + attrs + '>' + text + '</td>';
+      });
+      bodyHtml += '</tr>';
+    });
+    calibTableBody.innerHTML = bodyHtml;
+  }
+
+  function updateBoardsizeReadout() {
+    var pending = prefs.getPendingBoardSize();
+    var active = prefs.getBoardSize();
+    // The panel slider readout reflects the PENDING choice being previewed.
+    if (boardsizeValue) boardsizeValue.textContent = sizeLabel(pending);
+    // The Settings summary shows the ACTIVE size (what's on the board now); if
+    // a different size is pending, note that it applies on the next New Game.
+    if (boardsizeCurrent) {
+      boardsizeCurrent.textContent = (pending !== active)
+        ? (sizeLabel(active) + ' (→ ' + sizeLabel(pending) + ' next game)')
+        : sizeLabel(active);
+    }
+  }
+
+  function updateMaxwaitReadout() {
+    if (!maxwaitValue || !CALIB) return;
+    var ms = prefs.getCalibMaxWaitMs();
+    maxwaitValue.textContent = (ms < 1000) ? (ms + ' ms') : ((ms / 1000) + ' s');
+  }
+
+  // Reflect stored prefs in the panel controls + table. Called on open and
+  // after a prefs reset so nothing shows a stale value.
+  function syncBoardsizeUI() {
+    if (boardsizeRange) boardsizeRange.value = String(prefs.getPendingBoardSize());
+    if (maxwaitRange && CALIB) {
+      maxwaitRange.value = String(CALIB.maxWaitMsToIndex(prefs.getCalibMaxWaitMs()));
+    }
+    updateBoardsizeReadout();
+    updateMaxwaitReadout();
+    // Pre-run calibration-duration hint on the button.
+    if (calibrateRunBtn && CALIB && !calibrateRunBtn.disabled) {
+      var est = Math.ceil(CALIB.estimateCalibrationMs() / 1000);
+      calibrateRunBtn.textContent = 'Calibrate now (~' + est + ' s)';
+    }
+    // Show when the last calibration was taken.
+    if (calibrateStatus) {
+      var cal = prefs.getCalibration();
+      calibrateStatus.textContent = (cal && cal.at)
+        ? ('Last calibrated ' + new Date(cal.at).toLocaleString())
+        : 'Not yet calibrated — showing generic estimates.';
+    }
+    renderCalibTable();
+  }
+
+  // Nested focus manager so Tab stays trapped within THIS overlay while it is
+  // layered above the open Settings dialog (otherwise settingsFocus.onTab
+  // intercepts Tab and bounces focus back to Settings). Pushed on open, popped
+  // on close — the same pattern as the Players/backup/reset panels.
+  var boardsizeFocus = (boardsizeOverlay && boardsizeCard)
+    ? makeDialogFocusManager(boardsizeOverlay, boardsizeCard, 'boardsize-close')
+    : null;
+
+  function openBoardsize() {
+    if (!boardsizeOverlay) return;
+    syncBoardsizeUI();
+    boardsizeOverlay.classList.add('show');
+    if (boardsizeFocus) boardsizeFocus.onOpen(); // moves focus in + traps Tab
+    else if (boardsizeCloseBtn) boardsizeCloseBtn.focus();
+  }
+  function closeBoardsize() {
+    if (!boardsizeOverlay) return;
+    boardsizeOverlay.classList.remove('show');
+    updateBoardsizeReadout(); // refresh the Settings summary value
+    if (boardsizeFocus) boardsizeFocus.onClose(); // pops + restores focus
+    else if (boardsizeOpenBtn) boardsizeOpenBtn.focus();
+  }
+
+  if (boardsizeOpenBtn) boardsizeOpenBtn.addEventListener('click', openBoardsize);
+  if (boardsizeCloseBtn) boardsizeCloseBtn.addEventListener('click', closeBoardsize);
+  if (boardsizeOverlay) {
+    boardsizeOverlay.addEventListener('click', function (e) {
+      if (e.target === boardsizeOverlay) closeBoardsize();
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && boardsizeOverlay &&
+        boardsizeOverlay.classList.contains('show')) {
+      // Close only the board-size panel (topmost); leave Settings open beneath.
+      e.stopPropagation();
+      closeBoardsize();
+    }
+  }, true);
+
+  if (boardsizeRange) {
+    boardsizeRange.addEventListener('input', function () {
+      prefs.setPendingBoardSize(parseInt(this.value, 10));
+      updateBoardsizeReadout();
+      renderCalibTable(); // re-outline the selected size column
+    });
+  }
+
+  if (maxwaitRange && CALIB) {
+    maxwaitRange.addEventListener('input', function () {
+      prefs.setCalibMaxWaitMs(CALIB.maxWaitIndexToMs(parseInt(this.value, 10)));
+      updateMaxwaitReadout();
+      renderCalibTable(); // re-evaluate red cells against the new threshold
+    });
+  }
+
+  if (calibrateRunBtn && CALIB && AGENTS) {
+    calibrateRunBtn.addEventListener('click', function () {
+      calibrateRunBtn.disabled = true;
+      calibrateRunBtn.textContent = 'Calibrating…';
+      if (calibrateStatus) calibrateStatus.textContent = 'Measuring on your device…';
+      // Defer to the next frame so the "Calibrating…" state paints before the
+      // (synchronous, few-second) measurement blocks the main thread.
+      var raf = window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+      raf(function () {
+        var device = (typeof navigator !== 'undefined' && navigator.userAgent)
+          ? navigator.userAgent : 'unknown';
+        var samples;
+        try {
+          samples = CALIB.measureCheapSizes(runOneInline,
+            { at: new Date().toISOString(), device: device,
+              sampleSizes: [6, BROWSER_SAMPLE_MAX] });
+        } catch (err) {
+          samples = null;
+        }
+        if (samples && samples.shark && Object.keys(samples.shark).length) {
+          prefs.setCalibration(samples);
+        }
+        calibrateRunBtn.disabled = false;
+        syncBoardsizeUI();
+      });
+    });
+  } else if (calibrateRunBtn) {
+    // No agents/helper available: calibration can't run.
+    calibrateRunBtn.disabled = true;
+    if (calibrateStatus) calibrateStatus.textContent = 'Calibration unavailable.';
+  }
+
   // --- persistence controls (Settings > Persistence) -----------------------
   var autoSaveToggle = document.getElementById('autosave-toggle');
   var removeSaveBtn = document.getElementById('remove-save');
@@ -2556,6 +2941,10 @@
       // The hint light-up delay IS persisted, so clearAll() reset it to the
       // default (10 s); reflect that in its slider/readout.
       syncHintDelayUI();
+      // Board size, max-wait and calibration are persisted too; clearAll()
+      // reset them to defaults (5×5, 5 s, no calibration). Reflect that in the
+      // Settings summary and (if open) the board-size panel.
+      syncBoardsizeUI();
       // The propagation delay is an in-memory session setting (not persisted),
       // so clearing storage doesn't touch it; a reload would reset it to the
       // default on its own. For an in-place reset, drive the change THROUGH the
@@ -2764,11 +3153,26 @@
         return out;
       }
       var rawState = parsed.board.state;
+      // Which dimensions must the board match? Normally the CURRENT board, but
+      // when this same file ALSO carries a prefs section whose boardSize will be
+      // applied on import, the board should be judged against THAT size (a full
+      // backup made on a 10x10 board carries both a 10x10 board and boardSize:10;
+      // gating it against the current 5x5 would wrongly reject it). So peek at
+      // the incoming boardSize when a prefs section is being imported too.
+      var expectR = ROWS, expectC = COLS;
+      if (wantPrefs && havePrefs && parsed.prefs && typeof parsed.prefs === 'object') {
+        var bs = parsed.prefs.boardSize;
+        if (typeof bs === 'number' && isFinite(bs) &&
+            Math.floor(bs) === bs && bs >= 2 && bs <= 12) {
+          expectR = bs; expectC = bs;
+        }
+      }
       // Dimension gate first (cheap), then STRICT validation + rehydration.
       if (!rawState || typeof rawState !== 'object' ||
-          !fitsDimensions(rawState.rows, rawState.cols, rawState.players)) {
+          rawState.rows !== expectR || rawState.cols !== expectC ||
+          rawState.players !== PLAYERS) {
         out.error = 'The saved board doesn\u2019t fit this game (expected ' +
-          ROWS + '\u00d7' + COLS + ', ' + PLAYERS + ' players).';
+          expectR + '\u00d7' + expectC + ', ' + PLAYERS + ' players).';
         return out;
       }
       var clean = G.loadState(rawState);
@@ -2811,15 +3215,21 @@
       winRecorded = (validated.board.winner !== G.EMPTY); // a finished import is already tallied-equivalent
       suppressWinnerModal = (validated.board.winner !== G.EMPTY); // show board, not the live-win modal
       state = validated.board;
+      // Keep the module dimensions in step with the imported board, so
+      // fitsDimensions / rendering / a later auto-save all agree with its size
+      // (an imported board may be a different size than the one on screen).
+      ROWS = state.rows;
+      COLS = state.cols;
       buildGrid();
       sizeBoard();
       autoSaveIfOn();
       changed.push('game board');
     }
     // Reflect everything that changed: Players/difficulty rows, hint delay,
-    // persistence state, and the board/turn label.
+    // persistence state, board-size summary/panel, and the board/turn label.
     syncPlayerTypeUI();
     syncHintDelayUI();
+    syncBoardsizeUI();
     syncPersistenceUI();
     render();
     return changed;
@@ -3223,6 +3633,14 @@
   // Corrupt saves are discarded inside boardStore.load() (logged + removed), so
   // a null return simply means "boot the fresh game created above".
   (function restoreSavedGame() {
+    // Adopt the persisted board SIZE first, so the fresh board and the
+    // dimension gate (fitsDimensions) both match the user's chosen size. A
+    // saved game is only restored when it matches that size; a size change
+    // therefore starts fresh at the new size (never resurrects a differently-
+    // sized board).
+    var chosen = prefs.getBoardSize();
+    ROWS = chosen;
+    COLS = chosen;
     // Pass a predicate so an engine-valid but UI-incompatible save is rejected
     // BEFORE rehydration (no large allocation for, e.g., a 1000x1000 board).
     // This UI is fixed at ROWS x COLS / PLAYERS; the engine validator stays

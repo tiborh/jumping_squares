@@ -156,7 +156,7 @@ The engine is already shaped for this (see the README *Extending it* section):
   capture-safety / chain heuristic [1]. Given the swinginess caveat, lean on
   **search depth** over material-only scoring.
 
-## Shark performance, difficulty, and device calibration (future work)
+## Shark performance, difficulty, and device calibration
 
 The shipped **Shark** agent (minimax + alpha-beta) exposes **search depth** as
 its difficulty: **Easy = 2, Medium = 3, Hard = 4**. Cost grows roughly as
@@ -174,35 +174,47 @@ device caveat below):
 | 10×10 | ~70 ms  | ~1.1 s  | ~8 s    |
 | 12×12 | ~190 ms | ~2.6 s  | ~33 s   |
 
-Reading: on the **current fixed 5×5** every depth is fast, so difficulty maps
-straight to depth with no downside. But for the planned **board-size picker**
-(up to ~12×12): depth 2 stays snappy everywhere; depth 3 is comfortable to
-~8×8; depth 4 is only comfortable to ~6–7×7 and becomes unusable on big boards.
+Reading: on the **5×5** board every depth is fast, so difficulty maps
+straight to depth with no downside. But on the larger boards the **board-size
+picker** now allows (up to 12×12): depth 2 stays snappy everywhere; depth 3 is
+comfortable to ~8×8; depth 4 is only comfortable to ~6–7×7 and becomes unusable
+on big boards — which is exactly why the picker ships with the per-device
+calibration described below.
 
 **Device caveat — why a calibration utility is needed.** This search is
 single-threaded, CPU-bound JavaScript (no GPU, no workers), so per-move time is
 strongly **device-dependent** — easily 5–10× between a fast desktop and a
 budget phone. Any hard-coded "this setting takes ~X ms" hint would therefore be
-wrong on most devices. When the board-size picker lands, the robust approach is:
+wrong on most devices. The board-size picker (shipped in **v47**) addresses this
+with a per-device calibration — the approach, now implemented, is:
 
-- **One-time (cached) in-browser calibration.** Run a tiny fixed Shark search on
-  a known position (a few hundred ms) to measure *this device's* actual speed
-  (nodes/sec), store it in prefs (feature-detected/wrapped like the rest of the
-  storage code), and allow re-running it (hardware and thermal throttling vary).
-- **Scaled estimates.** From the measured speed and the `~area ^ depth` cost
-  model, show a per-device, per-(size, depth) estimate next to the difficulty
-  control, recomputed when size or difficulty changes.
-- **Guardrail / time budget.** If the estimate exceeds a threshold (say
-  ~1–2 s/move), warn or soft-cap the depth. The cleaner long-term form is
+- **One-time (cached) in-browser calibration.** *(Implemented.)* The
+  **Board size & AI timing** panel (Settings → Board size) measures a couple of
+  cheap sizes with the real Shark search on a known mid-game position, fits the
+  `~area ^ depth` cost curve, and stores the samples in prefs (feature-detected/
+  wrapped like the rest of the storage code). A **Calibrate** button re-runs it
+  (hardware and thermal throttling vary). The shared, DOM-free cost model lives
+  in `js/calibrate.js` and is reused by the `tools/calibrate.js` CLI (a drift
+  test keeps the two identical). To stay bounded, calibration **measures only
+  cheap sizes and extrapolates** the expensive ones (conservatively — it rounds
+  up), rather than running a slow depth-4 search on a 12×12 board, which can take
+  tens of seconds per move.
+- **Scaled estimates.** *(Implemented.)* From the measured speed and the cost
+  model, the panel shows a per-(AI, difficulty, size) estimate **table**, and
+  paints any estimate over the user's **max acceptable wait** red. There is no
+  hard cap — the table is a guide and the user chooses.
+- **Guardrail / time budget.** *(Still future.)* The current design warns (red
+  cells) rather than soft-capping depth. The cleaner long-term form is
   **iterative deepening with a per-move time budget**: search depth 1, 2, 3 …
   until the budget is hit and return the best move found so far. Difficulty then
   becomes a *time* target that is inherently device-adaptive and cannot lag,
   regardless of board size — and the calibration feeds a realistic default
-  budget.
+  budget. Not built yet.
 
-None of this is needed for the fixed 5×5 build; it is captured here so the
-board-size picker and Shark difficulty can be made to play well together on any
-device.
+The cost table above corroborates the shipped calibration: its conservative
+projection lands ≈2.8 s at 8×8, ≈12 s at 10×10 and ≈37 s at 12×12 for Shark
+Hard — in line with the measured ~8 s / ~33 s here, erring high at the top end
+by design.
 
 ## References
 

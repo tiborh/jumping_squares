@@ -653,6 +653,90 @@
     }
     #settings-overlay.show { display: flex; }
 
+    /* --- Board-size & AI-timing panel ----------------------------------------
+       Mirrors the Settings overlay/card so it feels native; shares the .setting
+       layout classes. Adds a scrollable estimate table with red over-threshold
+       cells. Sits at the same z-index tier as Settings (it is opened from it,
+       layered above like the Players/backup panels). */
+    #boardsize-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 34; /* above the settings dialog it is opened from */
+    }
+    #boardsize-overlay.show { display: flex; }
+    #boardsize-card {
+      background: #1e2128;
+      border: 1px solid #3a4150;
+      border-radius: 14px;
+      width: min(94vw, 560px);
+      max-height: min(88dvh, 88vh);
+      overflow-y: auto;
+      padding: clamp(16px, 4vw, 24px);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    #boardsize-card .settings-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #boardsize-card h2 { margin: 0; font-size: clamp(18px, 4.5vw, 24px); }
+    #boardsize-close { font-size: 18px; line-height: 1; padding: 6px 12px; }
+
+    .calibrate-status { font-size: 13px; color: #9aa7b8; margin-left: 10px; }
+    .over-threshold-sample { color: #ff8080; font-weight: 700; }
+
+    .calib-table-wrap { overflow-x: auto; margin-top: 6px; }
+    table.calib-table {
+      border-collapse: collapse;
+      width: 100%;
+      /* Fixed layout so columns share width evenly and the table never grows
+         wider than the panel; the compact sizing below keeps all 7 size
+         columns visible without horizontal scrolling on typical screens. */
+      table-layout: fixed;
+      font-size: clamp(9.5px, 2.3vw, 12px);
+    }
+    table.calib-table th,
+    table.calib-table td {
+      border: 1px solid #333a46;
+      padding: 3px 4px;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    table.calib-table th { background: #262b34; color: #cdd6e2; font-weight: 600; }
+    table.calib-table th:first-child,
+    table.calib-table td:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: #1e2128;
+      /* The row-label column is the widest content; cap it so the numeric
+         columns get the room they need. Labels ellipsize if ever too long. */
+      width: 30%;
+      max-width: 30%;
+    }
+    table.calib-table th:first-child { background: #262b34; }
+    /* A cell whose estimated time EXCEEDS the user's max-wait: red warning. */
+    table.calib-table td.over {
+      color: #ff8080;
+      font-weight: 700;
+      background: rgba(255, 70, 70, 0.10);
+    }
+    /* The currently selected board-size column, highlighted for orientation. */
+    table.calib-table th.sel-size,
+    table.calib-table td.sel-size { outline: 2px solid #4a90d9; outline-offset: -2px; }
+
+
     #settings-card {
       background: #1e2128;
       border: 1px solid #3a4150;
@@ -1673,6 +1757,20 @@
         </div>
       </div>
 
+      <div class="setting">
+        <div class="setting-label">
+          <label for="boardsize-open">Board size</label>
+          <span class="setting-value" id="boardsize-current">5 × 5</span>
+        </div>
+        <button id="boardsize-open" type="button">Board size &amp; AI timing…</button>
+        <div class="setting-hint">
+          Choose a bigger board (up to 12 × 12). Larger boards make the
+          strongest AI think longer — open this to <strong>calibrate</strong>
+          estimated think times on your device and pick a size that stays
+          responsive. Applies on the next <strong>New Game</strong>.
+        </div>
+      </div>
+
       <div class="setting setting-persistence">
         <div class="setting-label">
           <label for="autosave-toggle" id="autosave-label">Auto-save game</label>
@@ -1711,6 +1809,78 @@
              enabled — unlike "Remove saved data", a reset is meaningful even
              when auto-save is on (it also clears names, scores and settings). -->
         <button id="reset-firstuse" type="button">Reset to first-use state…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Board-size & AI-timing panel. Opened from Settings → "Board size…".
+       Lets the player pick a square board (2..12) and CALIBRATE estimated
+       worst-case AI think times on THIS device (fast + approximate: it measures
+       a couple of cheap sizes and extrapolates the rest, conservatively). The
+       user sets a "max acceptable wait"; estimate-table cells over that wait are
+       shown in red. A size change applies on the next New Game. Mirrors the
+       Settings dialog's overlay/card markup and show/hide wiring. -->
+  <div id="boardsize-overlay" role="dialog" aria-modal="true" aria-labelledby="boardsize-title">
+    <div id="boardsize-card">
+      <div class="settings-head">
+        <h2 id="boardsize-title">Board size &amp; AI timing</h2>
+        <button id="boardsize-close" title="Close" aria-label="Close board-size panel">✕</button>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">
+          <label for="boardsize-range">Board size</label>
+          <span class="setting-value" id="boardsize-value">5 × 5</span>
+        </div>
+        <!-- 2..12 square. -->
+        <input type="range" id="boardsize-range" min="2" max="12" step="1" value="5" />
+        <div class="range-ends">
+          <span>2 × 2</span>
+          <span>12 × 12</span>
+        </div>
+        <div class="setting-hint">
+          The size takes effect on your next <strong>New Game</strong>. 5 × 5 is
+          the classic board.
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">
+          <label for="maxwait-range">Max acceptable wait</label>
+          <span class="setting-value" id="maxwait-value">5 s</span>
+        </div>
+        <!-- 9 stops: 0.5/1/2/3/5/10/20/30/60 s. -->
+        <input type="range" id="maxwait-range" min="0" max="8" step="1" value="4" />
+        <div class="range-ends">
+          <span>0.5 s</span>
+          <span>60 s</span>
+        </div>
+        <div class="setting-hint">
+          How long you're willing to wait for the strongest AI to move. In the
+          table below, any estimate <strong>longer</strong> than this is shown
+          in <span class="over-threshold-sample">red</span>.
+        </div>
+      </div>
+
+      <div class="setting">
+        <button id="calibrate-run" type="button">Calibrate now</button>
+        <span id="calibrate-status" class="calibrate-status" role="status" aria-live="polite"></span>
+        <div class="setting-hint" id="calibrate-hint">
+          Measures the AI on your device so the estimates below reflect your
+          hardware. It takes a few seconds. Estimates are
+          <strong>approximate</strong> and depend on your device and how busy it
+          is — re-run if either changes. Until you calibrate, the table shows a
+          generic (conservative) estimate.
+        </div>
+        <!-- Estimate table: rows = each AI + difficulty, columns = sizes >5×5.
+             Cells painted red when the estimate exceeds the max wait above.
+             Rendered by js/ui.js from the shared js/calibrate.js helper. -->
+        <div class="calib-table-wrap">
+          <table id="calib-table" class="calib-table">
+            <thead><tr id="calib-table-head"></tr></thead>
+            <tbody id="calib-table-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -2028,8 +2198,9 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=44"></script>
-  <script src="js/agents.js?v=44"></script>
-  <script src="js/ui.js?v=44"></script>
+  <script src="js/game.js?v=47"></script>
+  <script src="js/agents.js?v=47"></script>
+  <script src="js/calibrate.js?v=47"></script>
+  <script src="js/ui.js?v=47"></script>
 </body>
 </html>
