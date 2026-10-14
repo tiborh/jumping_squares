@@ -72,6 +72,12 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
   advisory only — it never takes your turn. The bulb rests dim and *lights up*
   on its own once you've paused without moving; set that delay (or turn it off)
   under **Settings → Hint light-up**.
+- **Pause / Play an AI match** — when **both** players are computers, the
+  bottom-right corner (where the Hint bulb sits on your turn) becomes a
+  **pause/play** button instead. Press **pause** to hold the match before the
+  next move — any cascade already running finishes first — and **play** to
+  resume. It's handy for pausing a slow thinker on a big board; fast players
+  move too quickly to interrupt mid-think.
 - **Settings** — click the **⚙** icon in the top bar to set the propagation
   delay (how fast cascades animate), the Hint light-up delay, and manage saved
   data.
@@ -606,6 +612,21 @@ Status of the project and planned work. Done items reflect the current build.
       storing mid-cascade frames — saving the settings in the file lets a
       reporter force **› Step** mode to walk the cascade.
 - [ ] Optional sound and haptic feedback on mobile
+- [ ] **Off-main-thread AI search (Web Worker)** — run the Shark (minimax)
+      search in a **Web Worker** so a long think on a big board no longer blocks
+      the main thread. This keeps the UI responsive during a multi-second move
+      (board, buttons, spinners all live) and, crucially, lets the **AI-vs-AI
+      pause** *interrupt a move mid-think* rather than only taking effect
+      between moves (today the search is synchronous, so a Pause press can't be
+      processed until the current search returns — see the pause control's
+      documented limitation). It is also the honest foundation for any later
+      "prepare the next move in parallel" idea (though note that is a separate,
+      speculative optimisation: minimax is reactive, so precomputing the next
+      move means searching a ply deeper — more work, not less). Scope: serialise
+      the board to the worker, run `AGENTS.bestMove`/the Shark search there,
+      handle cancellation (Pause / New Game invalidating an in-flight search)
+      and the `file://` worker-loading caveat (a classic worker script, same
+      no-build-step constraints as the rest).
 - [ ] Icon buttons for the **Step** control to save top-bar space on narrow
       screens (Settings and Help are already glyph icons; portrait phones still
       get crowded once more controls are added)

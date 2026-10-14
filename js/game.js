@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '47';
+  var VERSION = '50';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +68,9 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '50', text: 'AI pause feedback is clearer. Pressing pause now flips the control immediately when you catch it between moves (the next move simply never starts), and shows a distinct amber \u201Cpausing\u2026\u201D state when a move is still finishing before the hold takes effect \u2014 so you can tell the press registered. (A long think still can\u2019t be interrupted mid-search yet: that needs the AI to run off the main thread, which is on the roadmap.)' },
+    { v: '49', text: 'New: pause/play for computer-vs-computer matches. When both players are AIs, the bottom-right corner \u2014 where the Hint bulb sits on your turn \u2014 becomes a pause/play button instead. Press pause to hold the match before the next move (a cascade already running finishes first), and play to resume. Handy for pausing a slow thinker on a big board; a slow mover shows a gentle \u201Cthinking\u201D pulse so a long turn doesn\u2019t look frozen. (For now pause takes effect between moves, not mid-think.)' },
+    { v: '48', text: 'New: a \u201CBoard stats\u201D panel (\u2699 Settings \u2192 Board stats panel). Turn it on to see a live per-player scoreboard beside the board \u2014 above it on a portrait screen, to the side in landscape \u2014 showing more than the tile count: total dots (material), average fullness, a capacity-weighted saturation %, how many cells are one dot from overflowing, the corner/edge/interior breakdown, and neutral squares left. It updates after each settled move (never mid-cascade), and while it\u2019s off the figures aren\u2019t computed at all. The old tile-count readout in the top bar is replaced by a permanent New Game button.' },
     { v: '47', text: 'New: a \u201CBoard size & AI timing\u201D panel (\u2699 Settings \u2192 Board size). Play on bigger boards \u2014 anything from 2\u00D72 up to 12\u00D712 (square). Because the strongest AI thinks longer on bigger boards, the panel lets you CALIBRATE estimated think times on your own device (it takes a few seconds) and shows a table of each AI\u2019s estimated worst-case move time per size; anything slower than a \u201Cmax acceptable wait\u201D you set is shown in red. Estimates are approximate and device-dependent \u2014 re-calibrate if your hardware or system load changes. A size change applies on your next New Game. A command-line tool (tools/calibrate.js) gives the same table in a terminal.' },
     { v: '45', text: 'Docs: the in-app Help now lists the Hint button and the Hint light-up setting (it had been missed when Hint shipped). No gameplay change \u2014 just the Help text and the project\u2019s written docs catching up.' },
     { v: '44', text: 'New: Settings \u2192 Persistence has a \u201CSave / Load to file\u201D panel. Save the current game board and/or your settings & scores to a JSON file, and load one back \u2014 handy for sharing a board, making puzzles, or keeping a full backup. Pick which sections to include (both by default); a board-only file is marked in its name. Loading replaces only the sections in the file and keeps the rest; boards are strictly validated (no mid-cascade positions).' },
@@ -77,9 +80,6 @@
     { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
     { v: '38', text: 'Random now has two levels (Settings \u2192 Players, per Random): Easy (pure random \u2014 the gentle beginner) and Medium (mostly random, but hits back when the opponent is about to capture one of its cells). Also fixes the Tutor\u2019s defence check, which wasn\u2019t firing in some positions.' },
-    { v: '37', text: 'Tutor now has two levels (Settings \u2192 Players, per Tutor): Easy (the original gentle opponent, the default) and Medium \u2014 Medium defends its position and won\u2019t hand you an easy chain-reaction, narrowing the gap toward Shark. When both players are the same AI, each difficulty row is labelled by seat (Player 1 / Player 2).' },
-    { v: '35', text: 'Follow-up to the Player-2 save fix: a freshly started Player-2-opening game is now also saved correctly on first load (an edge case could still discard it). Internal: more save/restore tests and changelog tidy-ups.' },
-    { v: '34', text: 'Fix: a game opened by Player 2 (after turn-taking alternation) is now saved and restored correctly \u2014 previously reloading could discard it and start over. Plus small internal tidy-ups.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.
@@ -166,6 +166,10 @@
         },
         {
           "text": "**Hint** — click the **lightbulb** in the bottom-right to flash a strong move for the current player (worked out by the strongest computer player). It's advisory only — it never takes your turn. The bulb rests dim and *lights up* on its own once you've paused without moving; set that delay (or turn it off) under **Settings → Hint light-up**.",
+          "children": []
+        },
+        {
+          "text": "**Pause / Play an AI match** — when **both** players are computers, the bottom-right corner (where the Hint bulb sits on your turn) becomes a **pause/play** button instead. Press **pause** to hold the match before the next move — any cascade already running finishes first — and **play** to resume. It's handy for pausing a slow thinker on a big board; fast players move too quickly to interrupt mid-think.",
           "children": []
         },
         {
@@ -340,6 +344,87 @@
       }
     }
     return owner;
+  }
+
+  /**
+   * Material / positional statistics for the board, intended for a scoreboard
+   * panel. Pure and DOM-free; reads only the current cells. It is meant to be
+   * called on a SETTLED board (no cell over capacity) — the UI blocks refresh
+   * mid-cascade — but it never throws on an unsettled one; it just reports the
+   * instantaneous numbers.
+   *
+   * Returned arrays are indexed by owner id: index 0 (EMPTY) is the neutral
+   * aggregate where meaningful, and 1..players are the per-player values.
+   *
+   * @param {Object} state
+   * @returns {{
+   *   players: number,
+   *   totalCells: number,
+   *   neutral: number,          // neutral squares remaining (progress gauge)
+   *   squares: number[],        // owned cell count per player
+   *   dots: number[],           // total points (material) per player
+   *   capacitySum: number[],    // Σ capacity of owned cells per player
+   *   density: number[],        // dots / squares (avg fullness), 0 if none
+   *   saturation: number[],     // Σvalue / Σcapacity over owned cells (0..1)
+   *   critical: number[],       // cells at value === capacity (1 from overflow)
+   *   corners: number[],        // owned cells with capacity 2
+   *   edges: number[],          // owned cells with capacity 3
+   *   interior: number[],       // owned cells with capacity 4
+   * }}
+   */
+  function boardStats(state) {
+    var P = state.players;
+    var zeros = function () { return new Array(P + 1).fill(0); };
+
+    var squares = zeros();
+    var dots = zeros();
+    var capacitySum = zeros();
+    var critical = zeros();
+    var corners = zeros();
+    var edges = zeros();
+    var interior = zeros();
+
+    for (var r = 0; r < state.rows; r++) {
+      for (var c = 0; c < state.cols; c++) {
+        var cell = state.cells[idx(state, r, c)];
+        var owner = cell.owner;
+        if (owner === EMPTY) continue;
+        var cap = capacity(state, r, c);
+        squares[owner] += 1;
+        dots[owner] += cell.value;
+        capacitySum[owner] += cap;
+        if (cell.value === cap) critical[owner] += 1;
+        if (cap === 2) corners[owner] += 1;
+        else if (cap === 3) edges[owner] += 1;
+        else interior[owner] += 1;
+      }
+    }
+
+    var density = zeros();
+    var saturation = zeros();
+    for (var p = 1; p <= P; p++) {
+      density[p] = squares[p] > 0 ? dots[p] / squares[p] : 0;
+      saturation[p] = capacitySum[p] > 0 ? dots[p] / capacitySum[p] : 0;
+    }
+
+    var totalCells = state.rows * state.cols;
+    var owned = 0;
+    for (var q = 1; q <= P; q++) owned += squares[q];
+
+    return {
+      players: P,
+      totalCells: totalCells,
+      neutral: totalCells - owned,
+      squares: squares,
+      dots: dots,
+      capacitySum: capacitySum,
+      density: density,
+      saturation: saturation,
+      critical: critical,
+      corners: corners,
+      edges: edges,
+      interior: interior,
+    };
   }
 
   // ---- mutation ------------------------------------------------------------
@@ -864,6 +949,7 @@
     capacity: capacity,
     canPlay: canPlay,
     ownershipCounts: ownershipCounts,
+    boardStats: boardStats,
     checkWinner: checkWinner,
     soleOwner: soleOwner,
     applyMove: applyMove,

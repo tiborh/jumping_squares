@@ -35,10 +35,14 @@
   // --- DOM refs ------------------------------------------------------------
   var boardEl = document.getElementById('board');
   var boardWrap = document.getElementById('board-wrap');
+  var boardArea = document.getElementById('board-area');
   var turnDot = document.getElementById('turn-dot');
   var turnLabel = document.getElementById('turn-label');
   var turnRegion = document.getElementById('turn');
-  var statusCountsEl = document.getElementById('status-counts');
+  var newGameBtn = document.getElementById('newgame-btn');
+  var statsPanelEl = document.getElementById('stats-panel');
+  var statsHeadEl = document.getElementById('stats-head');
+  var statsBodyEl = document.getElementById('stats-body');
   var tallyBtn = document.getElementById('tally-btn');
   var overlay = document.getElementById('winner-overlay');
   var winnerMsg = document.getElementById('winner-msg');
@@ -48,6 +52,8 @@
   var stepBtn = document.getElementById('step-btn');
   var hintBtn = document.getElementById('hint-btn');
   var hintLive = document.getElementById('hint-live');
+  var aiPauseBtn = document.getElementById('aipause-btn');
+  var aiPauseLive = document.getElementById('aipause-live');
 
   var playerColorVar = ['', '--p1', '--p2', '--p3', '--p4'];
 
@@ -110,7 +116,7 @@
   }
 
   var PREFS_KEY = STORAGE_PREFIX + 'prefs';
-  var PREFS_VERSION = 10; // v10: board-size + AI-time calibration (`boardSize`, `pendingBoardSize`, `calibMaxWaitMs`, `calibration`); v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
+  var PREFS_VERSION = 11; // v11: `statsPanel` (board-metrics scoreboard toggle); v10: board-size + AI-time calibration (`boardSize`, `pendingBoardSize`, `calibMaxWaitMs`, `calibration`); v9: `hintLightDelay`; v8: per-seat `randomLevel`; v7: per-seat `tutorLevel`; v6: `startingPlayer`; v5: per-seat sharkDepth; v4 adds `playerType`; v3 adds `autoSave`; v2 adds `score`; v1 names only
 
   var prefs = (function () {
     // In-memory cache / fallback. `score` tracks the win tally for the active
@@ -194,6 +200,12 @@
         // The estimates are APPROXIMATE and device/load dependent (documented);
         // re-calibrate when the hardware or system load changes.
         calibration: null,
+        // Stats panel (schema v11): a reflowing board-metrics scoreboard shown
+        // beside/above the board, toggled from Settings. OFF by default so the
+        // first-use look is unchanged. When OFF the per-turn metric COMPUTATION
+        // is skipped entirely (not just hidden) — a deliberate escape hatch in
+        // case the extra per-move work is ever noticeable on a slow device.
+        statsPanel: false,
       };
     }
     var mem = makeDefaults();
@@ -354,6 +366,13 @@
         var cal = parsed.calibration;
         if (cal && typeof cal === 'object' && cal.shark && typeof cal.shark === 'object') {
           mem.calibration = cal;
+        }
+
+        // Stats panel toggle: schema v11. A plain boolean; only a strict `true`
+        // enables it (any other/garbage value leaves the OFF default), so a
+        // corrupt record can never silently turn the computation on.
+        if (parsed.statsPanel === true) {
+          mem.statsPanel = true;
         }
 
         // Score: introduced in schema v2 and retained in v3. We read it when
@@ -549,6 +568,15 @@
       setSharkDepth: function (n, d) {
         d = parseInt(d, 10);
         mem.sharkDepth[n] = (d === 2 || d === 3 || d === 4) ? d : 3;
+        persist();
+      },
+      // --- stats panel (schema v11) ---
+      // Whether the board-metrics scoreboard is shown. When false the UI skips
+      // the per-turn metric computation entirely (see renderStats), so a
+      // disabled panel costs nothing.
+      getStatsPanel: function () { return mem.statsPanel === true; },
+      setStatsPanel: function (on) {
+        mem.statsPanel = !!on;
         persist();
       },
       // --- reset to first-use state ---
@@ -872,19 +900,25 @@
     prevRender = null;
   }
 
-  // --- responsive sizing: largest square that fits the wrap ----------------
+  // --- responsive sizing: largest square that fits the board area ----------
   function sizeBoard() {
-    // clientWidth/clientHeight INCLUDE padding, so subtract the wrap's actual
+    // Measure the board's OWN flex cell (#board-area), not the whole wrap: when
+    // the stats panel is shown it is a flex sibling that takes part of the wrap,
+    // so the board must fit the REMAINING space (board-area). Fall back to the
+    // wrap if board-area is missing (defensive).
+    //
+    // clientWidth/clientHeight INCLUDE padding, so subtract the element's actual
     // computed padding to get the true content area. The extra bottom padding
     // (a tag-safe strip) is therefore fully honoured: the board can never be
     // sized under the fixed, interactive build tag, even on short/narrow
     // viewports. A small extra margin keeps the board off the very edges.
-    var cs = getComputedStyle(boardWrap);
+    var measureEl = boardArea || boardWrap;
+    var cs = getComputedStyle(measureEl);
     var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     var margin = 8; // small breathing room beyond the padding
-    var availW = boardWrap.clientWidth - padX - margin;
-    var availH = boardWrap.clientHeight - padY - margin;
+    var availW = measureEl.clientWidth - padX - margin;
+    var availH = measureEl.clientHeight - padY - margin;
     if (availW < 1) availW = 1;
     if (availH < 1) availH = 1;
     // Keep cells square: constrain by aspect ratio of the grid.
@@ -1055,6 +1089,88 @@
 
   var FLASH_MS = 420; // the CSS flash animation duration
 
+  // --- board-stats panel ---------------------------------------------------
+  // Metric rows shown in the panel, in display order. `key` indexes into the
+  // engine's boardStats() result; `fmt` turns a per-player number into a string.
+  var STAT_ROWS = [
+    { key: 'squares',   label: 'Squares',    fmt: function (v) { return String(v); } },
+    { key: 'dots',      label: 'Dots',       fmt: function (v) { return String(v); } },
+    { key: 'density',   label: 'Density',    fmt: function (v) { return v.toFixed(2); } },
+    { key: 'saturation',label: 'Saturation', fmt: function (v) { return Math.round(v * 100) + '%'; } },
+    { key: 'critical',  label: 'Near overflow', fmt: function (v) { return String(v); } },
+    { key: 'corners',   label: 'Corners',    fmt: function (v) { return String(v); } },
+    { key: 'edges',     label: 'Edges',      fmt: function (v) { return String(v); } },
+    { key: 'interior',  label: 'Interior',   fmt: function (v) { return String(v); } },
+  ];
+
+  // Render (or clear) the Board-stats panel. The COMPUTATION is gated twice:
+  //   1. If the panel is disabled in prefs, show nothing and compute nothing —
+  //      the deliberate escape hatch so a disabled panel costs zero per-turn
+  //      work (and the <aside> is `hidden`, taking no layout space).
+  //   2. If a cascade is in progress (busy / paused / manual stepping), the
+  //      board is NOT settled; we leave the previous numbers in place rather
+  //      than compute/flicker mid-cascade (the user asked for settled-only).
+  // Otherwise it calls the pure engine helper once and fills a per-player table.
+  function renderStats() {
+    if (!statsPanelEl) return;
+    var enabled = prefs.getStatsPanel();
+    statsPanelEl.hidden = !enabled;
+    if (!enabled) return;                 // gate 1: no compute when disabled
+
+    var settled = !busy && !stepping.active && !G.hasOverflow(state);
+    if (!settled) return;                 // gate 2: no mid-cascade refresh
+
+    var st = G.boardStats(state);         // single O(cells) pass, settled board
+
+    // Build via DOM APIs with textContent (never innerHTML) so player names —
+    // user-entered — are rendered as text, matching the file's convention.
+    // Header: a blank corner cell, then one column per player (coloured dot +
+    // name). Rebuilt each call so a rename / player-count change is reflected.
+    statsHeadEl.textContent = '';
+    var htr = document.createElement('tr');
+    htr.appendChild(document.createElement('th')); // blank corner
+    for (var p = 1; p <= st.players; p++) {
+      var th = document.createElement('th');
+      th.setAttribute('scope', 'col');
+      var dot = document.createElement('span');
+      dot.className = 'stat-dot';
+      var cv = getComputedStyle(document.documentElement)
+        .getPropertyValue(playerColorVar[p]) || '#fff';
+      dot.style.background = cv.trim();
+      th.appendChild(dot);
+      th.appendChild(document.createTextNode(playerName(p)));
+      htr.appendChild(th);
+    }
+    statsHeadEl.appendChild(htr);
+
+    // One row per metric, then a board-level "Neutral left" progress figure.
+    statsBodyEl.textContent = '';
+    for (var r = 0; r < STAT_ROWS.length; r++) {
+      var row = STAT_ROWS[r];
+      var tr = document.createElement('tr');
+      var rh = document.createElement('th');
+      rh.setAttribute('scope', 'row');
+      rh.textContent = row.label;
+      tr.appendChild(rh);
+      for (var q = 1; q <= st.players; q++) {
+        var td = document.createElement('td');
+        td.textContent = row.fmt(st[row.key][q]);
+        tr.appendChild(td);
+      }
+      statsBodyEl.appendChild(tr);
+    }
+    var ntr = document.createElement('tr');
+    var nh = document.createElement('th');
+    nh.setAttribute('scope', 'row');
+    nh.textContent = 'Neutral left';
+    ntr.appendChild(nh);
+    var ntd = document.createElement('td');
+    ntd.setAttribute('colspan', String(st.players));
+    ntd.textContent = String(st.neutral);
+    ntr.appendChild(ntd);
+    statsBodyEl.appendChild(ntr);
+  }
+
   function render() {
     // Compute the shadow preview for the next generation (step mode only).
     var shadow = stepping.active ? nextStepShadow() : null;
@@ -1153,18 +1269,11 @@
     // all paths. newGame() clears winRecorded for the next round.
     recordWinOnce();
 
-    var counts = G.ownershipCounts(state);
-    var parts = [];
-    for (var p = 1; p <= state.players; p++) {
-      parts.push(playerName(p) + ': ' + counts[p]);
-    }
-    // Tile counts render into a pushable button that doubles as the New Game
-    // control (clicking it asks "New game?" with confirmation). It is disabled
-    // once the game is over — then the end-game bar's New Game button is the
-    // sole restart path, so there's exactly one New-Game affordance per state.
-    // The running tally is a separate button (resets the score, with confirm).
-    statusCountsEl.textContent = parts.join(', ');
-    statusCountsEl.disabled = (state.winner !== G.EMPTY);
+    // The per-player tile counts (and richer board metrics) now live in the
+    // optional Board-stats panel, rendered by renderStats() — which computes
+    // nothing when the panel is disabled. The top bar keeps only the running
+    // tally and the permanent New Game button.
+    renderStats();
     tallyBtn.textContent = scoreLabel();
 
     if (state.winner !== G.EMPTY) {
@@ -1495,6 +1604,21 @@
   var aiAgents = {};        // cache: type -> agent instance
   var aiTimer = null;       // pending "AI is about to move" timeout
   var AI_THINK_MS = 350;    // small pause so AI (esp. AI-vs-AI) is watchable
+  // User-driven pause of an AI-vs-AI match, toggled by the bottom-right control
+  // (which shares the Hint button's slot — see syncHintButton / the aipause
+  // handlers). When true, maybeTriggerAI() declines to schedule the next AI
+  // move. It does NOT freeze an in-progress cascade (that runs to completion
+  // via the animation driver); the hold applies to the move AFTER it. Distinct
+  // from `paused` (the Settings dialog freeze), whose semantics must not change.
+  //
+  // LIMITATION (documented, by design for now): an AI's move computation
+  // (agent.chooseMove) is SYNCHRONOUS on the main thread, so a Pause press can
+  // only take effect BETWEEN moves — it cannot interrupt a move that is already
+  // mid-search. On fast agents this is invisible; on a slow (red-table) Shark
+  // move on a big board, Pause lands once the current think returns. True mid-
+  // think interruption would require moving the search into a Web Worker — the
+  // intended future step this control is already shaped for.
+  var aiPaused = false;
 
   // Resolve the agent instance for a seat. `seat` is the player number (1/2),
   // needed because Shark difficulty (depth) is now PER SEAT: when both players
@@ -1547,7 +1671,10 @@
   // If it's an AI's turn and nothing is in progress, schedule the AI's move.
   function maybeTriggerAI() {
     cancelPendingAI();
-    if (busy || stepping.active || paused) return; // let the current action finish
+    // aiPaused: the user pressed Pause on the AI-vs-AI control. We decline to
+    // schedule the NEXT move (an in-progress cascade is NOT frozen — it runs to
+    // completion via the animation driver; only the move AFTER it is held).
+    if (busy || stepping.active || paused || aiPaused) return; // let the current action finish
     if (!isAITurn()) return;
     var tokenAtSchedule = playToken;
     // Pace between AI moves. A move that cascades already animates at the chosen
@@ -1565,7 +1692,7 @@
     aiTimer = setTimeout(function () {
       aiTimer = null;
       if (playToken !== tokenAtSchedule) return; // New Game cancelled us
-      if (busy || stepping.active || paused || !isAITurn()) return;
+      if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
       var agent = agentFor(prefs.getPlayerType(state.current), state.current);
       if (!agent) return;
       var mv = agent.chooseMove(state);
@@ -1666,7 +1793,12 @@
   // mid-compute render doesn't hide the spinner out from under the user.
   function syncHintButton() {
     if (!hintBtn) return;
-    if (hintBusy) { hintBtn.hidden = false; return; }
+    // The Hint bulb and the AI-vs-AI pause/play control SHARE the bottom-right
+    // corner slot. They are mutually exclusive: whenever we finish deciding the
+    // bulb's visibility we (re)decide the pause control's, so exactly one (or
+    // neither, at game over) occupies the slot. syncAiPauseButton() is the
+    // single place that shows/hides + updates the pause control.
+    if (hintBusy) { hintBtn.hidden = false; syncAiPauseButton(); return; }
 
     var available = hintAvailable();
     hintBtn.hidden = !available;
@@ -1677,6 +1809,7 @@
       cancelHintLight(true);
       hintBtn.classList.remove('appearing');
       hintWasVisible = false;
+      syncAiPauseButton();
       return;
     }
 
@@ -1691,6 +1824,86 @@
     }
     hintWasVisible = true;
     armHintLight();
+    syncAiPauseButton();
+  }
+
+  // --- AI-vs-AI pause/play control -----------------------------------------
+  // Is the given seat's AI a "slow thinker" on the CURRENT board size — i.e.
+  // over the user's calibration max-wait threshold? Uses the SAME shared cost
+  // model (js/calibrate.js) as the Board-size table, so "slow" means exactly
+  // "would be red in that table". Returns false if calibration is unavailable
+  // or the seat is not a Shark (Random/Tutor are near-instant at every size).
+  function isSlowAiSeat(seat) {
+    if (!CALIB || typeof CALIB.estimateMs !== 'function') return false;
+    var type = prefs.getPlayerType(seat);
+    if (type !== 'shark') return false; // only Shark climbs into the red
+    var depth = prefs.getSharkDepth(seat); // 2/3/4 => Easy/Medium/Hard
+    // Build the matching calibrate row for a Shark at this depth.
+    var row = { agent: 'Shark', difficulty: 'x', depth: depth };
+    var samples = prefs.getCalibration() || {};
+    var ms = CALIB.estimateMs(row, COLS, samples); // COLS === ROWS (square board)
+    return CALIB.isOverThreshold(ms, prefs.getCalibMaxWaitMs());
+  }
+
+  // True when BOTH seats are AI (an AI-vs-AI match) and the game is ongoing —
+  // the only situation the pause/play control applies to.
+  function isAIvsAIMatch() {
+    if (!AGENTS || state.winner !== G.EMPTY) return false;
+    return agentFor(prefs.getPlayerType(1), 1) !== null &&
+           agentFor(prefs.getPlayerType(2), 2) !== null;
+  }
+
+  // Show/hide + update the pause/play control. Called from syncHintButton (so
+  // the slot is decided in one place). The control is shown ONLY during an
+  // ongoing AI-vs-AI match (when the Hint bulb is hidden anyway); hidden on a
+  // human turn (bulb takes the slot) and at game over (slot empty).
+  var aiPauseWasVisible = false;
+  function syncAiPauseButton() {
+    if (!aiPauseBtn) return;
+    var show = isAIvsAIMatch();
+    aiPauseBtn.hidden = !show;
+    if (!show) {
+      aiPauseBtn.classList.remove('appearing', 'thinking', 'is-playing', 'pausing');
+      aiPauseWasVisible = false;
+      return;
+    }
+
+    // Three visual states so the press is ALWAYS acknowledged as soon as the
+    // main thread is free to repaint:
+    //   running  (!aiPaused)            -> Pause glyph (⏸), "Pause…"
+    //   pausing  (aiPaused && busy)     -> Play glyph (▶) + .pausing cue; the
+    //                                      press registered, but a move/cascade
+    //                                      is still finishing before the hold
+    //                                      takes full effect
+    //   held     (aiPaused && !busy)    -> Play glyph (▶), resume on click
+    // The Play glyph shows for BOTH paused sub-states (pausing/held) so the
+    // instant the thread frees after a blocking search the user sees ▶, not a
+    // stale ⏸. The .pausing class adds a distinct "not settled yet" look.
+    var paused2 = aiPaused;              // either pausing or held
+    var pausing = aiPaused && busy;      // acknowledged, still finishing
+    var held = aiPaused && !busy;        // fully held, ready to resume
+    aiPauseBtn.classList.toggle('is-playing', paused2);
+    aiPauseBtn.classList.toggle('pausing', pausing);
+    aiPauseBtn.title = held ? 'Play: resume the AI match'
+                     : pausing ? 'Pausing after this move…'
+                     : 'Pause: hold the next AI move';
+    aiPauseBtn.setAttribute('aria-label', held
+      ? 'Resume the AI match'
+      : pausing ? 'Pausing the AI match after the current move'
+      : 'Pause the AI match (hold the next move)');
+
+    // Subtle "thinking" pulse only for a slow (red-table) current mover that is
+    // actively computing/animating — so a long think on a big board doesn't
+    // look frozen. Never while paused (the pausing/held cue owns the look then).
+    var thinking = !paused2 && busy && isSlowAiSeat(state.current);
+    aiPauseBtn.classList.toggle('thinking', thinking);
+
+    if (!aiPauseWasVisible) {
+      aiPauseBtn.classList.remove('appearing');
+      void aiPauseBtn.offsetWidth; // restart appear animation
+      aiPauseBtn.classList.add('appearing');
+    }
+    aiPauseWasVisible = true;
   }
 
   // Flash the suggested cell a few times (the CSS .hint-flash runs the pulse
@@ -1805,9 +2018,48 @@
     hintBtn.addEventListener('click', requestHint);
   }
 
+  // Pause/play the AI-vs-AI match. One button, two actions depending on state:
+  //  - currently running (not held) -> PAUSE: set aiPaused and cancel any
+  //    pending next-move timer. A cascade in progress is left to finish; only
+  //    the move after it is held. (Sync cannot interrupt a mid-search move —
+  //    see the aiPaused declaration note.)
+  //  - held (aiPaused && !busy, showing Play) -> PLAY: clear aiPaused and ask
+  //    maybeTriggerAI() to schedule the next move again.
+  // The toggle is driven by the aiPaused INTENT (not the busy sub-state), so
+  // pressing the control while it is still "pausing" (▶ shown, cascade/move
+  // finishing) cancels the pause and resumes — a clean on/off toggle. We call
+  // syncAiPauseButton() synchronously FIRST so the glyph flips the instant the
+  // handler runs (important responsiveness: the heavier render() may do more
+  // work), then render() to reflect any scheduling/finalisation.
+  if (aiPauseBtn) {
+    aiPauseBtn.addEventListener('click', function () {
+      if (!isAIvsAIMatch()) return; // defensive: button shouldn't be visible
+      if (aiPaused) {
+        // Resume (from either the held or the still-pausing sub-state).
+        aiPaused = false;
+        if (aiPauseLive) aiPauseLive.textContent = 'AI match resumed';
+        syncAiPauseButton();
+        maybeTriggerAI();
+      } else {
+        aiPaused = true;
+        cancelPendingAI(); // drop any scheduled-but-unfired next move so, in
+                           // the between-moves window, the next search never
+                           // even starts (immediate effect + immediate glyph).
+        if (aiPauseLive) {
+          aiPauseLive.textContent = busy
+            ? 'Pausing after this move'  // a move/cascade is still finishing
+            : 'AI match paused';          // held right away (between moves)
+        }
+        syncAiPauseButton(); // flip the glyph now, before the heavier render()
+      }
+      render();
+    });
+  }
+
   // --- new game ------------------------------------------------------------
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
+    aiPaused = false;        // a fresh match is not paused
     if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
     resumeAnimation = null; // drop any parked (paused) animation
     cancelPendingHint();     // drop any in-flight/visible hint for the old board
@@ -1853,8 +2105,9 @@
       winnerFocus.onClose();
     } else if (fromEndgame) {
       // The standalone endgame button is now hidden by render(); move focus to
-      // the first board cell so keyboard focus is not stranded on a hidden
-      // element (the top-bar New Game button no longer exists).
+      // the first board cell so keyboard focus is not stranded on the hidden
+      // endgame button (focusing the board is a natural place to start the new
+      // game; the permanent top-bar New Game button remains available too).
       if (cellEls && cellEls[0] && cellEls[0].focus) {
         cellEls[0].focus();
       }
@@ -1865,14 +2118,14 @@
   endgameNew.addEventListener('click', newGame);
   stepBtn.addEventListener('click', commitOneStep);
 
-  // --- new game (click the tile-count pill) --------------------------------
-  // The tile-count readout doubles as the New Game control during play. It asks
-  // for confirmation first so a stray tap doesn't abandon a game mid-play. It is
-  // disabled once the game is over (render() sets .disabled), since the end-game
-  // bar then provides the New Game button.
-  if (statusCountsEl) {
-    statusCountsEl.addEventListener('click', function () {
-      if (statusCountsEl.disabled) return;
+  // --- new game (permanent top-bar button) ---------------------------------
+  // A dedicated, always-present New Game button. It asks for confirmation first
+  // so a stray tap doesn't abandon a game mid-play. (It replaces the former
+  // tile-count readout, which doubled as New Game; the counts now live in the
+  // Board-stats panel.) The end-game bar still provides its own New Game button
+  // once a game is over.
+  if (newGameBtn) {
+    newGameBtn.addEventListener('click', function () {
       confirmDialog('Start a new game? The current board will be cleared.',
         newGame);
     });
@@ -1959,6 +2212,7 @@
     }
     settingsOverlay.classList.add('show');
     syncPersistenceUI(); // save-state may have changed since last opened
+    syncStatsPanelUI();  // reflect the stored stats-panel toggle
     syncHintDelayUI();   // reflect the stored hint light-up delay
     updateBoardsizeReadout(); // refresh the "Board size" summary value
     cancelPendingHint(); // a hint can't apply while the dialog pauses play
@@ -2048,6 +2302,23 @@
   // Initialise readout from the default slider position.
   sliderIndexToSetting(parseInt(delayRange.value, 10));
   updateDelayReadout();
+
+  // --- board-stats panel toggle --------------------------------------------
+  // A simple on/off switch in Settings. When toggled we persist the choice,
+  // then re-render: renderStats() shows/hides the <aside> and (only when ON and
+  // the board is settled) computes the metrics. Showing/hiding the panel
+  // changes the board's available space, so we re-size the board too.
+  var statsPanelToggle = document.getElementById('statspanel-toggle');
+  function syncStatsPanelUI() {
+    if (statsPanelToggle) statsPanelToggle.checked = prefs.getStatsPanel();
+  }
+  if (statsPanelToggle) {
+    statsPanelToggle.addEventListener('change', function () {
+      prefs.setStatsPanel(this.checked);
+      renderStats();   // show/hide + (if enabling) compute now
+      sizeBoard();     // board area changed — refit the square board
+    });
+  }
 
   // --- hint light-up delay slider ------------------------------------------
   // Maps an 8-stop slider to the persisted hintLightDelay preference:
@@ -3684,6 +3955,7 @@
   })();
 
   buildGrid();
+  renderStats(); // set the stats-panel visibility BEFORE sizing the board
   sizeBoard();
   render();
 })();

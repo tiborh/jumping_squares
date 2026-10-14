@@ -29,6 +29,99 @@ the nearest user-facing entry.
 
 ---
 
+## v50 — Clearer AI-pause feedback (Plan A)
+
+Player-facing:
+
+- **Pausing an AI match now gives immediate feedback when it can.** If you press
+  pause **between moves** (the brief gap before the next move's search starts),
+  the control flips to Play at once and the next move simply never begins — the
+  pause is instant.
+- **A distinct "pausing…" state.** If a move/cascade is still finishing when you
+  press pause, the control now shows an **amber "pausing…" cue** (a gentle
+  pulse) so you can see the press *registered*, settling to the plain Play state
+  once the hold fully takes effect. The button is also a clean on/off toggle:
+  pressing it again while "pausing" cancels the pause and resumes.
+
+Why this was needed, and the honest limit (Plan B is next):
+
+- On a big board (e.g. 9×9) with **Shark — Hard** on both seats, a single move's
+  search runs for **seconds on the main thread**. JavaScript is single-threaded,
+  so while that search runs **nothing else executes** — a pause click is queued
+  by the browser and can't be handled (no glyph change, no effect) until the
+  search returns. That's why pressing pause right after a move looked like it
+  did nothing until the *next* piece appeared. The press *was* registered; only
+  the feedback and the moment-of-effect were delayed by one in-flight search.
+- Plan A (this release) makes the **between-moves** case instant and the
+  **still-finishing** case clearly acknowledged. It cannot make a click
+  interrupt a search that is *already* running — that is **Plan B: move the
+  Shark search into a Web Worker** (off the main thread), now a tracked roadmap
+  item. The worker keeps the UI live during a long think and lets pause abort an
+  in-flight search. (Scheduled for after this change is reviewed/merged.)
+
+## v49 — Pause/play for AI-vs-AI matches (shared Hint slot)
+
+Player-facing:
+
+- **New: a pause/play control for computer-vs-computer matches.** When **both**
+  players are AIs, the bottom-right corner — the same slot the **Hint** bulb
+  occupies on a human turn — becomes a **pause/play** button instead (the Hint
+  bulb is a human-only aid, so it isn't shown during AI play; one location,
+  context-dependent role). **Pause** holds the match before the **next** move;
+  any **cascade already running finishes first**, then the hold takes effect.
+  **Play** resumes. The button disappears at game over.
+- **Why:** handy for pausing a **slow thinker** on a big board to study the
+  position (watching machine play was the motivation for the stats panel too).
+  A slow mover — one that would be **red in the calibration table** for the
+  current board size — shows a gentle **"thinking" pulse** so a multi-second
+  turn doesn't look frozen. Fast movers never get the pulse (nothing to fill).
+
+Known limitation (by design, for now):
+
+- An AI's move computation is **synchronous on the main thread**, so **Pause
+  takes effect between moves, not mid-think** — on a slow Shark-Hard move it
+  lands once that move's search returns. On fast agents it's invisible. True
+  mid-think interruption (and any future "think in parallel while the opponent
+  moves") would require moving the Shark search into a **Web Worker**; the
+  control is deliberately shaped so that step can slot in later. Speculative
+  "prepare the next move in parallel" was considered and **deferred**: minimax
+  is reactive (the best move depends on the opponent's actual move), so
+  precomputing it means searching a ply deeper — more work, not less — for an
+  uncertain latency win. The worthwhile parallelism, when big-board
+  responsiveness demands it, is the worker (responsive UI + interruptible
+  search), not speculation.
+
+## v48 — Board stats panel + permanent New Game button
+
+Player-facing:
+
+- **New: a "Board stats" panel** (⚙ Settings → *Board stats panel*, off by
+  default). When enabled it shows a live, per-player scoreboard **beside the
+  board** — stacked **above** it on a portrait screen, to the **side** in
+  landscape — that reflows with the viewport. It replaces the single occupied-
+  square count with a richer picture of material: **Squares**, **Dots** (total
+  points / material), **Density** (dots per square), **Saturation** (a
+  capacity-weighted "how close to boiling" %), **Near overflow** (cells one dot
+  from jumping), the **Corners / Edges / Interior** breakdown, and **Neutral
+  left**. Motivated by watching machine players: square count alone doesn't
+  capture who has the material advantage.
+- **Settled-only, and free when off.** The figures update **after each settled
+  move**, never mid-cascade (so they don't flicker through a chain reaction).
+  When the panel is **off**, the metrics aren't computed at all — a deliberate
+  escape hatch so a disabled panel adds zero per-move work on a slow device.
+- **Permanent New Game button.** The old top-bar tile-count readout (which
+  doubled as New Game) is gone; a dedicated **New Game** button now sits in its
+  place and is always available (it still asks for confirmation before clearing
+  an in-progress board). The counts it used to show now live in the stats panel.
+
+Under the hood:
+
+- A new pure, DOM-free engine helper **`boardStats(state)`** (in `js/game.js`,
+  exported and unit-tested) does the counting; the UI panel only renders its
+  output. Benchmarked at ~5 µs/call on 5×5 and ~14 µs on 12×12 — negligible for
+  a once-per-settled-turn refresh. Prefs schema bumped to **v11** (adds the
+  `statsPanel` toggle, default off, with a strict-boolean migration guard).
+
 ## v47 — Board-size picker with on-device AI think-time calibration
 
 Player-facing:
