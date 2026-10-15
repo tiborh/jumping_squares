@@ -61,7 +61,7 @@ Why this was needed, and the honest limit (Plan B is next):
   Plan B lands** and the pause experience is validated, so the pause UX only
   ships once it is genuinely good.)
 
-Review fixes (v51–v53, same feature branch — cache-busting bumps only, no new
+Review fixes (v51–v54, same feature branch — cache-busting bumps only, no new
 `CHANGELOG` array entries since v48–v50 are unreleased; the branch is held
 unmerged until Plan B, so these are iterative corrections to the above):
 
@@ -89,7 +89,10 @@ unmerged until Plan B, so these are iterative corrections to the above):
   gaining a digit widens the panel; `renderStats` now refits the board so it
   can't overflow its narrowed area.
 - **New Game clears the stale pause announcement** so a re-pause in the next
-  match is a real live-region text change for screen readers.
+  match is a real live-region text change for screen readers. The pause control
+  also clears that announcement when it becomes unavailable mid-game (a seat
+  switched to Human, or game over), covering the same screen-reader edge case on
+  the in-game paths.
 - Docs: corrected the top-bar tally format (`(wins1 - wins2)`; names are in the
   end-of-round dialog) and the New Game / Restarting instructions (the dedicated
   button, not the removed tile-count readout).
