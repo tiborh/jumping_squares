@@ -22,3 +22,15 @@ updates:
     labels:
       - dependencies
       - github-actions
+    # Group all github/codeql-action steps into ONE pull request. CodeQL
+    # requires every `github/codeql-action/*` step in the repo (init, analyze,
+    # and upload-sarif — the latter lives in scorecard.yml) to run the SAME
+    # version; bumping them in separate PRs leaves a version mismatch that fails
+    # the "Analyze JavaScript" check ("Loaded a configuration file for version
+    # X, but running version Y"). Grouping makes Dependabot update all three at
+    # once so they always stay in lockstep. (This is the fix GitHub's own error
+    # message recommends.)
+    groups:
+      codeql-action:
+        patterns:
+          - 'github/codeql-action*'
