@@ -59,6 +59,24 @@ Why this was needed, and the honest limit (Plan B is next):
   item. The worker keeps the UI live during a long think and lets pause abort an
   in-flight search. (Scheduled for after this change is reviewed/merged.)
 
+Review fixes (v51, same feature branch — cache-busting bump only, no new
+`CHANGELOG` array entry since v48–v50 are unreleased):
+
+- **Game-end stats no longer go stale.** The stats panel's "settled board"
+  check now uses the cascade driver's own settlement test (`cascadeSettled`)
+  instead of `hasOverflow` alone, so a *winning final move* — where one player
+  owns the whole board while a cell is still over capacity (the engine stops the
+  cascade there) — refreshes the figures instead of leaving the previous turn's.
+- **Import / reset now re-sync the panel and refit the board.** Loading a backup
+  or resetting to first-use can change the stats-panel toggle; those paths now
+  update the Settings switch and re-fit the board to the panel's new presence
+  (sizing the board *after* the panel's visibility is reconciled, so an imported
+  board is measured against the correct area).
+- **Removed a non-functional "thinking" pulse.** The AI search is synchronous on
+  the main thread, so the cue could never animate during the actual think;
+  removed it (and its claim) rather than show a misleading indicator. It returns
+  with Plan B, driven by a real off-main-thread "searching" phase.
+
 ## v49 — Pause/play for AI-vs-AI matches (shared Hint slot)
 
 Player-facing:

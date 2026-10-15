@@ -1117,8 +1117,14 @@
     statsPanelEl.hidden = !enabled;
     if (!enabled) return;                 // gate 1: no compute when disabled
 
-    var settled = !busy && !stepping.active && !G.hasOverflow(state);
-    if (!settled) return;                 // gate 2: no mid-cascade refresh
+    // gate 2: no mid-cascade refresh. Use the SAME settlement check the cascade
+    // driver uses (cascadeSettled) rather than hasOverflow alone: the engine
+    // stops a cascade once one player owns the whole board EVEN IF a cell is
+    // still over capacity, so a winning final move leaves hasOverflow true while
+    // the board is actually settled. We still exclude active animation (busy)
+    // and manual step mode so we only compute on a truly resting board.
+    var settled = !busy && !stepping.active && cascadeSettled();
+    if (!settled) return;
 
     var st = G.boardStats(state);         // single O(cells) pass, settled board
 
@@ -1828,22 +1834,12 @@
   }
 
   // --- AI-vs-AI pause/play control -----------------------------------------
-  // Is the given seat's AI a "slow thinker" on the CURRENT board size — i.e.
-  // over the user's calibration max-wait threshold? Uses the SAME shared cost
-  // model (js/calibrate.js) as the Board-size table, so "slow" means exactly
-  // "would be red in that table". Returns false if calibration is unavailable
-  // or the seat is not a Shark (Random/Tutor are near-instant at every size).
-  function isSlowAiSeat(seat) {
-    if (!CALIB || typeof CALIB.estimateMs !== 'function') return false;
-    var type = prefs.getPlayerType(seat);
-    if (type !== 'shark') return false; // only Shark climbs into the red
-    var depth = prefs.getSharkDepth(seat); // 2/3/4 => Easy/Medium/Hard
-    // Build the matching calibrate row for a Shark at this depth.
-    var row = { agent: 'Shark', difficulty: 'x', depth: depth };
-    var samples = prefs.getCalibration() || {};
-    var ms = CALIB.estimateMs(row, COLS, samples); // COLS === ROWS (square board)
-    return CALIB.isOverThreshold(ms, prefs.getCalibMaxWaitMs());
-  }
+  // (The isSlowAiSeat() calibration-threshold helper that used to live here was
+  // removed with the misleading "thinking" pulse — see the NOTE in
+  // syncAiPauseButton. It will return with Plan B, where a real off-main-thread
+  // "searching" phase can drive a during-think cue, computed from the SAME
+  // shared cost model (js/calibrate.js) so "slow" means "would be red in the
+  // Board-size table".)
 
   // True when BOTH seats are AI (an AI-vs-AI match) and the game is ongoing —
   // the only situation the pause/play control applies to.
@@ -1892,11 +1888,18 @@
       : pausing ? 'Pausing the AI match after the current move'
       : 'Pause the AI match (hold the next move)');
 
-    // Subtle "thinking" pulse only for a slow (red-table) current mover that is
-    // actively computing/animating — so a long think on a big board doesn't
-    // look frozen. Never while paused (the pausing/held cue owns the look then).
-    var thinking = !paused2 && busy && isSlowAiSeat(state.current);
-    aiPauseBtn.classList.toggle('thinking', thinking);
+    // NOTE: a "thinking" pulse during the AI's search was intentionally REMOVED
+    // here. The search (agent.chooseMove) is SYNCHRONOUS on the main thread, so
+    // `busy` only becomes true AFTER the search returns (when playMoveAnimated
+    // starts a cascade) — the pulse could therefore never animate during the
+    // actual think, and on a non-cascading move it would never show at all.
+    // Showing it on `busy` alone was misleading, and dropping `busy` would make
+    // it appear BETWEEN moves too. Honest during-think feedback requires the
+    // search to run off the main thread (Plan B — the Web Worker on the
+    // roadmap); the cue (and the calibration-threshold "is this a slow mover"
+    // test) will be reintroduced there, driven by a real "searching" phase.
+    // (The .thinking class is still defensively cleared in the hidden-state
+    // reset above, so a stale one can never linger.)
 
     if (!aiPauseWasVisible) {
       aiPauseBtn.classList.remove('appearing');
@@ -3192,6 +3195,16 @@
 
     // No reload: bring the LIVE page into line with what was cleared, so the
     // on-screen state matches first-use even though nothing was refreshed.
+    // Reconcile the stats panel FIRST (before any board sizing below): a prefs
+    // reset restores statsPanel to its default (off), so the panel may need to
+    // disappear — and the board then refit to the reclaimed space. Doing it
+    // here means the subsequent newGame()/sizeBoard() measure against the
+    // correct panel presence. syncStatsPanelUI() keeps the Settings switch in
+    // step with the reset value.
+    if (doPrefs) {
+      syncStatsPanelUI();
+      renderStats();
+    }
     if (doBoard) {
       // The saved board is gone; reinitialise the live game too, otherwise
       // render() would redraw the old (possibly finished) board. newGame()
@@ -3233,6 +3246,9 @@
         sliderIndexToSetting(5);
         updateDelayReadout();
       }
+      // If the panel visibility changed above and no board reinit ran
+      // (prefs-only reset), refit the existing board to its new area.
+      if (!doBoard) sizeBoard();
       render();
     }
     closeReset();
@@ -3472,6 +3488,14 @@
     if (validated.prefs) {
       prefs.importRecord(validated.prefs);
       changed.push('settings & scores');
+      // The imported prefs may flip the stats-panel toggle. Reconcile the panel
+      // (and its Settings checkbox) NOW — before any board measurement below —
+      // so the board is sized against the correct panel presence. renderStats()
+      // sets the <aside>'s hidden state (and computes if newly enabled);
+      // syncStatsPanelUI() keeps the Settings switch in step with the saved
+      // choice (the reviewer's "sync the switch" point).
+      syncStatsPanelUI();
+      renderStats();
     }
     if (validated.board) {
       // Replace the live game with the imported, validated state, and persist
@@ -3492,9 +3516,13 @@
       ROWS = state.rows;
       COLS = state.cols;
       buildGrid();
-      sizeBoard();
+      sizeBoard(); // measured AFTER the panel visibility was reconciled above
       autoSaveIfOn();
       changed.push('game board');
+    } else if (validated.prefs) {
+      // Settings-only import: the panel may have appeared/disappeared, so refit
+      // the existing board to its (possibly) new available area.
+      sizeBoard();
     }
     // Reflect everything that changed: Players/difficulty rows, hint delay,
     // persistence state, board-size summary/panel, and the board/turn label.

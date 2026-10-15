@@ -443,21 +443,14 @@
       0%, 100% { opacity: 0.75; }
       50%      { opacity: 1; }
     }
-    /* A subtle "thinking" cue for a slow (red-table) AI mover: a gentle pulse
-       of the control while that mover is computing, so a multi-second think on
-       a big board doesn't look frozen. Fast movers never get it (JS only adds
-       .thinking when the current mover is over the calibration threshold). */
-    #aipause-btn.thinking {
-      animation: aipauseThinking 1.1s ease-in-out infinite;
-    }
-    @keyframes aipauseThinking {
-      0%, 100% { color: #8a92a0; }
-      50%      { color: #c7ccd4; }
-    }
+    /* NOTE: the AI "thinking" pulse (#aipause-btn.thinking + @keyframes
+       aipauseThinking) was removed along with the JS that set it — the AI
+       search is synchronous on the main thread, so the class could never
+       animate during the actual think. It returns with Plan B (off-main-thread
+       Web Worker search), driven by a real "searching" phase. */
     @media (prefers-reduced-motion: reduce) {
       #aipause-btn.appearing,
-      #aipause-btn.pausing,
-      #aipause-btn.thinking { animation: none; }
+      #aipause-btn.pausing { animation: none; }
     }
 
     button {
@@ -2437,9 +2430,9 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=50"></script>
-  <script src="js/agents.js?v=50"></script>
-  <script src="js/calibrate.js?v=50"></script>
-  <script src="js/ui.js?v=50"></script>
+  <script src="js/game.js?v=51"></script>
+  <script src="js/agents.js?v=51"></script>
+  <script src="js/calibrate.js?v=51"></script>
+  <script src="js/ui.js?v=51"></script>
 </body>
 </html>
