@@ -1877,6 +1877,12 @@
     if (!show) {
       aiPauseBtn.classList.remove('appearing', 'thinking', 'is-playing', 'pausing');
       aiPauseWasVisible = false;
+      // Clear any lingering pause announcement when the control goes away (e.g.
+      // a seat switched to Human, or game over). Otherwise a stale "AI match
+      // paused" stays in the live region, and if the match later returns to
+      // AI-vs-AI and is paused again the identical text may not re-announce.
+      // (newGame() clears it for a fresh match; this covers the in-game paths.)
+      if (aiPauseLive) aiPauseLive.textContent = '';
       return;
     }
 
