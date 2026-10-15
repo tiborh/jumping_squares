@@ -1175,6 +1175,15 @@
     ntd.textContent = String(st.neutral);
     ntr.appendChild(ntd);
     statsBodyEl.appendChild(ntr);
+
+    // The panel's width (landscape) / height (portrait) is driven by its table
+    // contents, so a rebuilt table can grow/shrink the panel and thus change
+    // #board-area's size. The board carries an explicit pixel width/height from
+    // the last sizeBoard(), and no resize event fires on a content change, so
+    // refit it now — otherwise a wider panel (a rename, or a metric going from
+    // one digit to two) can leave the board overflowing its reduced area.
+    // Safe from recursion: sizeBoard() does not call render()/renderStats().
+    sizeBoard();
   }
 
   function render() {

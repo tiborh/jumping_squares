@@ -118,8 +118,9 @@ player name) to open the **Players** panel, then edit a player's **name** there:
 type a name and press **Enter** or **click away** to save, or **Esc** to revert.
 Only **human** players can be renamed — an AI seat shows its agent name.
 Renaming is **purely cosmetic** — it has no effect on the score. A **win tally**
-for the current pair is shown in the top bar (e.g.
-`Alice 10 - 9 Bob`) and prominently in the end-of-round dialog; it
+for the current pair is shown in the top bar as a compact `(wins1 - wins2)`
+button (e.g. `(10 - 9)`), and **with the player names** prominently in the
+end-of-round dialog (e.g. `Alice  10 - 9  Bob`); it
 accumulates across rounds (New Game keeps the score). (Per-game tile counts now
 live in the optional **Board stats panel** — enable it under **Settings → Board
 stats panel**.) Both the
