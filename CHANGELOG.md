@@ -61,8 +61,9 @@ Why this was needed, and the honest limit (Plan B is next):
   Plan B lands** and the pause experience is validated, so the pause UX only
   ships once it is genuinely good.)
 
-Review fixes (v51, same feature branch — cache-busting bump only, no new
-`CHANGELOG` array entry since v48–v50 are unreleased):
+Review fixes (v51–v53, same feature branch — cache-busting bumps only, no new
+`CHANGELOG` array entries since v48–v50 are unreleased; the branch is held
+unmerged until Plan B, so these are iterative corrections to the above):
 
 - **Game-end stats no longer go stale.** The stats panel's "settled board"
   check now uses the cascade driver's own settlement test (`cascadeSettled`)
@@ -78,6 +79,20 @@ Review fixes (v51, same feature branch — cache-busting bump only, no new
   the main thread, so the cue could never animate during the actual think;
   removed it (and its claim) rather than show a misleading indicator. It returns
   with Plan B, driven by a real off-main-thread "searching" phase.
+- **Saturation is capped at 100%.** A terminal board where one owner holds every
+  cell can be over capacity (9 dots / 8 capacity on a 2×2 win = 1.125), so the
+  metric is clamped to 1.0 and a test covers it.
+- **AI pause state clears when a seat becomes human.** Switching an AI seat to
+  Human while paused no longer strands the remaining AI (`maybeTriggerAI` drops
+  the hold when the match is no longer AI-vs-AI).
+- **Board refits when the stats table changes size.** A rename or a metric
+  gaining a digit widens the panel; `renderStats` now refits the board so it
+  can't overflow its narrowed area.
+- **New Game clears the stale pause announcement** so a re-pause in the next
+  match is a real live-region text change for screen readers.
+- Docs: corrected the top-bar tally format (`(wins1 - wins2)`; names are in the
+  end-of-round dialog) and the New Game / Restarting instructions (the dedicated
+  button, not the removed tile-count readout).
 
 ## v49 — Pause/play for AI-vs-AI matches (shared Hint slot)
 

@@ -45,7 +45,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '52';
+  var VERSION = '53';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //

@@ -2079,6 +2079,12 @@
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
     aiPaused = false;        // a fresh match is not paused
+    // Clear any stale pause announcement from the previous match: otherwise, if
+    // the old match was paused ("AI match paused") and the next AI-vs-AI match
+    // is paused again before any resume message, the handler would write the
+    // SAME text and a screen reader may not re-announce an unchanged live
+    // region. Blanking it now guarantees the next pause is a real text change.
+    if (aiPauseLive) aiPauseLive.textContent = '';
     if (animTimer !== null) { clearTimeout(animTimer); animTimer = null; }
     resumeAnimation = null; // drop any parked (paused) animation
     cancelPendingHint();     // drop any in-flight/visible hint for the old board
