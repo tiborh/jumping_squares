@@ -57,7 +57,9 @@ Why this was needed, and the honest limit (Plan B is next):
   interrupt a search that is *already* running — that is **Plan B: move the
   Shark search into a Web Worker** (off the main thread), now a tracked roadmap
   item. The worker keeps the UI live during a long think and lets pause abort an
-  in-flight search. (Scheduled for after this change is reviewed/merged.)
+  in-flight search. (This feature branch is deliberately **held unmerged until
+  Plan B lands** and the pause experience is validated, so the pause UX only
+  ships once it is genuinely good.)
 
 Review fixes (v51, same feature branch — cache-busting bump only, no new
 `CHANGELOG` array entry since v48–v50 are unreleased):
