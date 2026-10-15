@@ -69,7 +69,7 @@
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
     { v: '50', text: 'AI pause feedback is clearer. Pressing pause now flips the control immediately when you catch it between moves (the next move simply never starts), and shows a distinct amber \u201Cpausing\u2026\u201D state when a move is still finishing before the hold takes effect \u2014 so you can tell the press registered. (A long think still can\u2019t be interrupted mid-search yet: that needs the AI to run off the main thread, which is on the roadmap.)' },
-    { v: '49', text: 'New: pause/play for computer-vs-computer matches. When both players are AIs, the bottom-right corner \u2014 where the Hint bulb sits on your turn \u2014 becomes a pause/play button instead. Press pause to hold the match before the next move (a cascade already running finishes first), and play to resume. Handy for pausing a slow thinker on a big board; a slow mover shows a gentle \u201Cthinking\u201D pulse so a long turn doesn\u2019t look frozen. (For now pause takes effect between moves, not mid-think.)' },
+    { v: '49', text: 'New: pause/play for computer-vs-computer matches. When both players are AIs, the bottom-right corner \u2014 where the Hint bulb sits on your turn \u2014 becomes a pause/play button instead. Press pause to hold the match before the next move (a cascade already running finishes first), and play to resume. Handy for pausing a slow thinker on a big board. (For now pause takes effect between moves, not mid-think \u2014 interrupting a move mid-search needs the AI to run off the main thread, which is on the roadmap.)' },
     { v: '48', text: 'New: a \u201CBoard stats\u201D panel (\u2699 Settings \u2192 Board stats panel). Turn it on to see a live per-player scoreboard beside the board \u2014 above it on a portrait screen, to the side in landscape \u2014 showing more than the tile count: total dots (material), average fullness, a capacity-weighted saturation %, how many cells are one dot from overflowing, the corner/edge/interior breakdown, and neutral squares left. It updates after each settled move (never mid-cascade), and while it\u2019s off the figures aren\u2019t computed at all. The old tile-count readout in the top bar is replaced by a permanent New Game button.' },
     { v: '47', text: 'New: a \u201CBoard size & AI timing\u201D panel (\u2699 Settings \u2192 Board size). Play on bigger boards \u2014 anything from 2\u00D72 up to 12\u00D712 (square). Because the strongest AI thinks longer on bigger boards, the panel lets you CALIBRATE estimated think times on your own device (it takes a few seconds) and shows a table of each AI\u2019s estimated worst-case move time per size; anything slower than a \u201Cmax acceptable wait\u201D you set is shown in red. Estimates are approximate and device-dependent \u2014 re-calibrate if your hardware or system load changes. A size change applies on your next New Game. A command-line tool (tools/calibrate.js) gives the same table in a terminal.' },
     { v: '45', text: 'Docs: the in-app Help now lists the Hint button and the Hint light-up setting (it had been missed when Hint shipped). No gameplay change \u2014 just the Help text and the project\u2019s written docs catching up.' },
@@ -153,7 +153,11 @@
           "children": []
         },
         {
-          "text": "**New Game** — click the tile-count readout in the top bar (it asks you to confirm).",
+          "text": "**New Game** — click the **New Game** button in the top bar (it asks you to confirm).",
+          "children": []
+        },
+        {
+          "text": "**Board stats** — turn on **Settings → Board stats panel** to show a per-player scoreboard beside the board (above it in portrait, to the side in landscape): tiles, total dots, saturation, cells about to overflow and more. It updates after each settled move.",
           "children": []
         },
         {
@@ -365,7 +369,7 @@
    *   dots: number[],           // total points (material) per player
    *   capacitySum: number[],    // Σ capacity of owned cells per player
    *   density: number[],        // dots / squares (avg fullness), 0 if none
-   *   saturation: number[],     // Σvalue / Σcapacity over owned cells (0..1)
+   *   saturation: number[],     // Σvalue / Σcapacity over owned cells, capped at 1 (0..1)
    *   critical: number[],       // cells at value === capacity (1 from overflow)
    *   corners: number[],        // owned cells with capacity 2
    *   edges: number[],          // owned cells with capacity 3
@@ -404,7 +408,14 @@
     var saturation = zeros();
     for (var p = 1; p <= P; p++) {
       density[p] = squares[p] > 0 ? dots[p] / squares[p] : 0;
-      saturation[p] = capacitySum[p] > 0 ? dots[p] / capacitySum[p] : 0;
+      // Saturation is a 0..1 "how close to boiling" ratio. It is CAPPED AT 1:
+      // at a terminal board a single owner can hold MORE dots than its total
+      // capacity (the engine stops a cascade once one player owns every cell,
+      // even with cells still over capacity — e.g. a 2x2 win is 9 dots over 8
+      // capacity = 1.125), which would otherwise read as >100%. Capping keeps
+      // the documented 0..1 (0..100%) scale honest.
+      var sat = capacitySum[p] > 0 ? dots[p] / capacitySum[p] : 0;
+      saturation[p] = sat > 1 ? 1 : sat;
     }
 
     var totalCells = state.rows * state.cols;

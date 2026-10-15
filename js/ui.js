@@ -1677,6 +1677,13 @@
   // If it's an AI's turn and nothing is in progress, schedule the AI's move.
   function maybeTriggerAI() {
     cancelPendingAI();
+    // A standing AI pause only makes sense for an AI-vs-AI match. If the match
+    // is no longer AI-vs-AI (e.g. a seat was switched to Human via the Players
+    // panel while paused), drop the hold NOW — BEFORE the guard below — so the
+    // remaining AI isn't stranded (the pause control is hidden, leaving no way
+    // to resume). Clearing it here also means switching back to two AIs starts
+    // fresh (not re-applying a stale pause).
+    if (aiPaused && !isAIvsAIMatch()) aiPaused = false;
     // aiPaused: the user pressed Pause on the AI-vs-AI control. We decline to
     // schedule the NEXT move (an in-progress cascade is NOT frozen — it runs to
     // completion via the animation driver; only the move AFTER it is held).

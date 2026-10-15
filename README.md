@@ -60,8 +60,12 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
 ### Controls
 
 - **Add a point** — click an empty or your own cell on your turn.
-- **New Game** — click the tile-count readout in the top bar (it asks you to
+- **New Game** — click the **New Game** button in the top bar (it asks you to
   confirm).
+- **Board stats** — turn on **Settings → Board stats panel** to show a
+  per-player scoreboard beside the board (above it in portrait, to the side in
+  landscape): tiles, total dots, saturation, cells about to overflow and more.
+  It updates after each settled move.
 - **Players** — click the **top-left area** (the coloured dot and player name)
   to open the **Players** panel. There you can **rename** each human player and
   choose **who controls** each one (Human or an AI), any time — even mid-game.
@@ -96,11 +100,10 @@ for documented tactics (take corners then edges, win the local "arms race",
 guard your near-full chains) and how machine play differs from human play —
 with sources.
 
-**Restarting.** To restart, **click the tile-count readout** (e.g. `Player 1:
-10, Player 2: 9`) in the top bar — it's a button (tooltip: *New Game*) and asks
-you to confirm before clearing the board. When a round ends, the end-of-round
-screen also offers a **New Game** button. On a phone, the board auto-sizes to
-fill the viewport and re-fits on rotation.
+**Restarting.** To restart, **click the New Game button** in the top bar — it
+asks you to confirm before clearing the board. When a round ends, the
+end-of-round screen also offers a **New Game** button. On a phone, the board
+auto-sizes to fill the viewport and re-fits on rotation.
 
 **Turn-taking across games.** After a game **ends**, the next game (via New Game
 or Play Again) gives the **first move to the other player** — the opener
@@ -115,12 +118,14 @@ player name) to open the **Players** panel, then edit a player's **name** there:
 type a name and press **Enter** or **click away** to save, or **Esc** to revert.
 Only **human** players can be renamed — an AI seat shows its agent name.
 Renaming is **purely cosmetic** — it has no effect on the score. A **win tally**
-for the current pair is shown next to the tile counts (e.g.
-`Alice: 10, Bob: 9   (1 - 0)`) and prominently in the end-of-round dialog; it
-accumulates across rounds (New Game keeps the score). Both the names and the
-tally are **remembered in your browser** (see *Persistence* below). To start a
-fresh series, **click the tally** (it's a button): you'll be asked to
-**confirm**, and on confirm the score resets to **0 : 0**.
+for the current pair is shown in the top bar (e.g.
+`Alice 10 - 9 Bob`) and prominently in the end-of-round dialog; it
+accumulates across rounds (New Game keeps the score). (Per-game tile counts now
+live in the optional **Board stats panel** — enable it under **Settings → Board
+stats panel**.) Both the
+names and the tally are **remembered in your browser** (see *Persistence*
+below). To start a fresh series, **click the tally** (it's a button): you'll be
+asked to **confirm**, and on confirm the score resets to **0 : 0**.
 
 **Propagation delay (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:

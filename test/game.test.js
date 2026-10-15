@@ -1716,6 +1716,25 @@ console.log('boardStats: dot-sum tracks moveCount after a real move+cascade');
   eq(totalDots, s.moveCount, 'Σ dots over players === moveCount (points conserved)');
 })();
 
+console.log('boardStats: saturation is capped at 1 for a terminal over-capacity board');
+(function () {
+  // At a terminal board a single owner can hold MORE dots than its total
+  // capacity: the engine stops a cascade once one player owns every cell, even
+  // with cells still over capacity. On a 2x2 (all corners, cap 2 each, total
+  // capacity 8) a winning position can reach 9 dots -> raw ratio 9/8 = 1.125,
+  // which must be reported as 1.0 (100%), not 113%. Build such a board directly
+  // (all four cells owned by player 1; total value 9), bypassing move legality.
+  var s = G.createGame({ rows: 2, cols: 2 });
+  setCell(s, 0, 0, 1, 3); // over capacity (cap 2) — terminal, sole owner
+  setCell(s, 0, 1, 1, 2);
+  setCell(s, 1, 0, 1, 2);
+  setCell(s, 1, 1, 1, 2);
+  var st = G.boardStats(s);
+  eq(st.dots[1], 9, 'player 1 holds 9 dots');
+  eq(st.capacitySum[1], 8, 'player 1 total capacity is 8 (four corners)');
+  ok(st.saturation[1] === 1, 'saturation capped at 1 (not 9/8 = 1.125)');
+})();
+
 // ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

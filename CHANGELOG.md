@@ -90,9 +90,6 @@ Player-facing:
   **Play** resumes. The button disappears at game over.
 - **Why:** handy for pausing a **slow thinker** on a big board to study the
   position (watching machine play was the motivation for the stats panel too).
-  A slow mover — one that would be **red in the calibration table** for the
-  current board size — shows a gentle **"thinking" pulse** so a multi-second
-  turn doesn't look frozen. Fast movers never get the pulse (nothing to fill).
 
 Known limitation (by design, for now):
 
