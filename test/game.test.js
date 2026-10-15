@@ -1655,5 +1655,86 @@ console.log('calibration CLI / helper agreement (drift guard)');
 })();
 
 // ---------------------------------------------------------------------------
+console.log('boardStats: material / positional metrics');
+(function () {
+  // Hand-built 3x3 so capacities are known: corners cap 2 (4 of them),
+  // edges cap 3 (4 of them), centre cap 4 (1 of it).
+  var s = G.createGame({ rows: 3, cols: 3 });
+  // Player 1: a corner (0,0) with 2 dots (critical: value===cap===2),
+  //           the centre (1,1) with 3 dots (not critical: 3 < 4).
+  // Player 2: an edge (0,1) with 1 dot (not critical).
+  setCell(s, 0, 0, 1, 2);
+  setCell(s, 1, 1, 1, 3);
+  setCell(s, 0, 1, 2, 1);
+
+  var st = G.boardStats(s);
+
+  eq(st.players, 2, 'players');
+  eq(st.totalCells, 9, 'totalCells');
+  eq(st.neutral, 6, 'neutral = 9 - 3 owned');
+
+  eq(st.squares, [0, 2, 1], 'squares per player (0 unused)');
+  eq(st.dots, [0, 5, 1], 'dots: p1 = 2+3, p2 = 1');
+  eq(st.capacitySum, [0, 6, 3], 'capacitySum: p1 = 2+4, p2 = 3(edge)');
+
+  // density = dots / squares
+  eq(st.density[1], 2.5, 'p1 density = 5/2');
+  eq(st.density[2], 1, 'p2 density = 1/1');
+
+  // saturation = dots / capacitySum (0..1)
+  ok(Math.abs(st.saturation[1] - (5 / 6)) < 1e-9, 'p1 saturation = 5/6');
+  eq(st.saturation[2], 1 / 3, 'p2 saturation = 1/3');
+
+  eq(st.critical, [0, 1, 0], 'critical: only p1 corner (value===cap===2)');
+  eq(st.corners, [0, 1, 0], 'corners (cap 2): p1 has (0,0)');
+  eq(st.edges, [0, 0, 1], 'edges (cap 3): p2 has (0,1)');
+  eq(st.interior, [0, 1, 0], 'interior (cap 4): p1 has centre');
+})();
+
+console.log('boardStats: empty board and zero-safety');
+(function () {
+  var s = G.createGame({ rows: 4, cols: 4 });
+  var st = G.boardStats(s);
+  eq(st.neutral, 16, 'fresh board: all neutral');
+  eq(st.dots, [0, 0, 0], 'no dots');
+  eq(st.density, [0, 0, 0], 'density is 0 (no divide-by-zero) when no squares');
+  eq(st.saturation, [0, 0, 0], 'saturation is 0 when no capacity owned');
+})();
+
+console.log('boardStats: dot-sum tracks moveCount after a real move+cascade');
+(function () {
+  // On a settled board, the sum of all players' dots equals the number of
+  // points placed (moveCount), because overflow conserves points.
+  var s = G.createGame({ rows: 5, cols: 5 });
+  G.applyMove(s, 1, 0, 0);
+  G.applyMove(s, 2, 4, 4);
+  G.applyMove(s, 1, 1, 1);
+  G.applyMove(s, 2, 3, 3);
+  var st = G.boardStats(s);
+  var totalDots = 0;
+  for (var p = 1; p <= st.players; p++) totalDots += st.dots[p];
+  eq(totalDots, s.moveCount, 'Σ dots over players === moveCount (points conserved)');
+})();
+
+console.log('boardStats: saturation is capped at 1 for a terminal over-capacity board');
+(function () {
+  // At a terminal board a single owner can hold MORE dots than its total
+  // capacity: the engine stops a cascade once one player owns every cell, even
+  // with cells still over capacity. On a 2x2 (all corners, cap 2 each, total
+  // capacity 8) a winning position can reach 9 dots -> raw ratio 9/8 = 1.125,
+  // which must be reported as 1.0 (100%), not 113%. Build such a board directly
+  // (all four cells owned by player 1; total value 9), bypassing move legality.
+  var s = G.createGame({ rows: 2, cols: 2 });
+  setCell(s, 0, 0, 1, 3); // over capacity (cap 2) — terminal, sole owner
+  setCell(s, 0, 1, 1, 2);
+  setCell(s, 1, 0, 1, 2);
+  setCell(s, 1, 1, 1, 2);
+  var st = G.boardStats(s);
+  eq(st.dots[1], 9, 'player 1 holds 9 dots');
+  eq(st.capacitySum[1], 8, 'player 1 total capacity is 8 (four corners)');
+  ok(st.saturation[1] === 1, 'saturation capped at 1 (not 9/8 = 1.125)');
+})();
+
+// ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

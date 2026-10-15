@@ -60,8 +60,12 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
 ### Controls
 
 - **Add a point** — click an empty or your own cell on your turn.
-- **New Game** — click the tile-count readout in the top bar (it asks you to
+- **New Game** — click the **New Game** button in the top bar (it asks you to
   confirm).
+- **Board stats** — turn on **Settings → Board stats panel** to show a
+  per-player scoreboard beside the board (above it in portrait, to the side in
+  landscape): tiles, total dots, saturation, cells about to overflow and more.
+  It updates after each settled move.
 - **Players** — click the **top-left area** (the coloured dot and player name)
   to open the **Players** panel. There you can **rename** each human player and
   choose **who controls** each one (Human or an AI), any time — even mid-game.
@@ -72,6 +76,12 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
   advisory only — it never takes your turn. The bulb rests dim and *lights up*
   on its own once you've paused without moving; set that delay (or turn it off)
   under **Settings → Hint light-up**.
+- **Pause / Play an AI match** — when **both** players are computers, the
+  bottom-right corner (where the Hint bulb sits on your turn) becomes a
+  **pause/play** button instead. Press **pause** to hold the match before the
+  next move — any cascade already running finishes first — and **play** to
+  resume. It's handy for pausing a slow thinker on a big board; fast players
+  move too quickly to interrupt mid-think.
 - **Settings** — click the **⚙** icon in the top bar to set the propagation
   delay (how fast cascades animate), the Hint light-up delay, and manage saved
   data.
@@ -90,11 +100,10 @@ for documented tactics (take corners then edges, win the local "arms race",
 guard your near-full chains) and how machine play differs from human play —
 with sources.
 
-**Restarting.** To restart, **click the tile-count readout** (e.g. `Player 1:
-10, Player 2: 9`) in the top bar — it's a button (tooltip: *New Game*) and asks
-you to confirm before clearing the board. When a round ends, the end-of-round
-screen also offers a **New Game** button. On a phone, the board auto-sizes to
-fill the viewport and re-fits on rotation.
+**Restarting.** To restart, **click the New Game button** in the top bar — it
+asks you to confirm before clearing the board. When a round ends, the
+end-of-round screen also offers a **New Game** button. On a phone, the board
+auto-sizes to fill the viewport and re-fits on rotation.
 
 **Turn-taking across games.** After a game **ends**, the next game (via New Game
 or Play Again) gives the **first move to the other player** — the opener
@@ -109,12 +118,15 @@ player name) to open the **Players** panel, then edit a player's **name** there:
 type a name and press **Enter** or **click away** to save, or **Esc** to revert.
 Only **human** players can be renamed — an AI seat shows its agent name.
 Renaming is **purely cosmetic** — it has no effect on the score. A **win tally**
-for the current pair is shown next to the tile counts (e.g.
-`Alice: 10, Bob: 9   (1 - 0)`) and prominently in the end-of-round dialog; it
-accumulates across rounds (New Game keeps the score). Both the names and the
-tally are **remembered in your browser** (see *Persistence* below). To start a
-fresh series, **click the tally** (it's a button): you'll be asked to
-**confirm**, and on confirm the score resets to **0 : 0**.
+for the current pair is shown in the top bar as a compact `(wins1 - wins2)`
+button (e.g. `(10 - 9)`), and **with the player names** prominently in the
+end-of-round dialog (e.g. `Alice  10 - 9  Bob`); it
+accumulates across rounds (New Game keeps the score). (Per-game tile counts now
+live in the optional **Board stats panel** — enable it under **Settings → Board
+stats panel**.) Both the
+names and the tally are **remembered in your browser** (see *Persistence*
+below). To start a fresh series, **click the tally** (it's a button): you'll be
+asked to **confirm**, and on confirm the score resets to **0 : 0**.
 
 **Propagation delay (Settings).** Click **⚙ Settings** to control how a cascade
 resolves, via a slider:
@@ -606,6 +618,21 @@ Status of the project and planned work. Done items reflect the current build.
       storing mid-cascade frames — saving the settings in the file lets a
       reporter force **› Step** mode to walk the cascade.
 - [ ] Optional sound and haptic feedback on mobile
+- [ ] **Off-main-thread AI search (Web Worker)** — run the Shark (minimax)
+      search in a **Web Worker** so a long think on a big board no longer blocks
+      the main thread. This keeps the UI responsive during a multi-second move
+      (board, buttons, spinners all live) and, crucially, lets the **AI-vs-AI
+      pause** *interrupt a move mid-think* rather than only taking effect
+      between moves (today the search is synchronous, so a Pause press can't be
+      processed until the current search returns — see the pause control's
+      documented limitation). It is also the honest foundation for any later
+      "prepare the next move in parallel" idea (though note that is a separate,
+      speculative optimisation: minimax is reactive, so precomputing the next
+      move means searching a ply deeper — more work, not less). Scope: serialise
+      the board to the worker, run `AGENTS.bestMove`/the Shark search there,
+      handle cancellation (Pause / New Game invalidating an in-flight search)
+      and the `file://` worker-loading caveat (a classic worker script, same
+      no-build-step constraints as the rest).
 - [ ] Icon buttons for the **Step** control to save top-bar space on narrow
       screens (Settings and Help are already glyph icons; portrait phones still
       get crowded once more controls are added)
