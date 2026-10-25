@@ -29,11 +29,13 @@ the nearest user-facing entry.
 
 ---
 
-## v59 — Topmost-only Escape and keyboard board controls
+## v60 — Topmost-only Escape and keyboard board controls
 
 - **Escape** now closes only the topmost dialog, returning focus to its
   parent without dismissing it or resuming play underneath it. Nested panels
   and import confirmations share the same dialog-stack dispatch.
+- Covered parent dialogs are inert and hidden from assistive technology;
+  closing a child restores its parent before returning keyboard focus.
 - The board now has **one Tab stop**. Use **arrow keys** to navigate without
   wrapping at the edges and **Enter / Space** to play. **Home / End** select the
   first / last cell in a row; **Control + Home / End** select the board corners.

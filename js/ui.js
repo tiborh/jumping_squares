@@ -981,6 +981,15 @@
     var manager = {
       onTab: onTab,
       onEscape: onEscape,
+      setCovered: function (covered) {
+        if (covered) {
+          overlayEl.setAttribute('inert', '');
+          overlayEl.setAttribute('aria-hidden', 'true');
+        } else {
+          overlayEl.removeAttribute('inert');
+          overlayEl.removeAttribute('aria-hidden');
+        }
+      },
       onOpen: function () {
         cancelPendingHint();
         cancelPendingAI();
@@ -991,12 +1000,16 @@
         var items = focusables(cardEl);
         var target = pref || items[0] || cardEl;
         if (target && target.focus) target.focus();
+        // Move focus out of the parent before making its subtree inert.
+        if (activeDialogs.length > 0) activeDialogs[activeDialogs.length - 1].setCovered(true);
         activeDialogs.push(manager);
         syncBoardInput();
       },
       onClose: function () {
         var idx = activeDialogs.indexOf(manager);
         if (idx !== -1) activeDialogs.splice(idx, 1);
+        manager.setCovered(false);
+        if (activeDialogs.length > 0) activeDialogs[activeDialogs.length - 1].setCovered(false);
         if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
           lastFocused.focus();
         } else if (cellEls && cellEls[0] && cellEls[0].focus) {
@@ -3356,23 +3369,10 @@
     resetGroupReload.checked = true;
     syncResetDialog();
     resetOverlay.classList.add('show');
-    // onOpen() moves focus into the reset dialog FIRST (synchronously), so the
-    // trigger (inside Settings) is never focused within an inert subtree.
     resetFocus.onOpen(); // focuses Cancel (safe default for a destructive action)
-    // Reset is opened from the Settings panel, which stays visually behind it.
-    // Make the Settings OVERLAY inert so assistive tech doesn't see two active
-    // modal dialogs (it carries role="dialog" aria-modal="true"), mirroring the
-    // About ⇄ What's new nesting. Removed again in closeReset().
-    settingsOverlay.setAttribute('inert', '');
-    settingsOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeReset() {
     resetOverlay.classList.remove('show');
-    // Re-enable the Settings layer BEFORE restoring focus — focus can't land on
-    // an element inside an inert subtree, and onClose() restores focus to the
-    // Reset trigger, which lives inside the Settings card.
-    settingsOverlay.removeAttribute('inert');
-    settingsOverlay.removeAttribute('aria-hidden');
     resetFocus.onClose();
   }
 
@@ -3799,17 +3799,10 @@
     setBackupStatus('', false);
     syncBackupActions();
     backupOverlay.classList.add('show');
-    // onOpen() moves focus into this dialog FIRST, then inert the Settings
-    // layer beneath it (same nested-dialog pattern as Reset) so assistive tech
-    // doesn't see two active modal dialogs.
     backupFocus.onOpen();
-    settingsOverlay.setAttribute('inert', '');
-    settingsOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeBackup() {
     backupOverlay.classList.remove('show');
-    settingsOverlay.removeAttribute('inert');
-    settingsOverlay.removeAttribute('aria-hidden');
     backupFocus.onClose();
   }
 
@@ -4064,26 +4057,10 @@
     whatsnewExpanded = false;
     renderWhatsNew();
     whatsnewOverlay.classList.add('show');
-    // onOpen() runs first and moves focus into the What's new dialog
-    // synchronously; only then do we make the About layer inert. This ordering
-    // means the trigger (inside About) never sits focused inside an inert
-    // subtree, even transiently.
     whatsnewFocus.onOpen();
-    // The About layer stays visually behind this sub-dialog, but must not be a
-    // second active modal for assistive tech. Inert the whole About OVERLAY
-    // (the element that carries role="dialog" aria-modal="true"), so its modal
-    // semantics are removed too — not just the card contents. The What's new
-    // overlay is a sibling, so it is unaffected.
-    aboutOverlay.setAttribute('inert', '');
-    aboutOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeWhatsNew() {
     whatsnewOverlay.classList.remove('show');
-    // Re-enable the About layer BEFORE restoring focus — focus can't land on an
-    // element inside an inert subtree, and onClose() restores focus to the
-    // What's new trigger, which lives inside the About card.
-    aboutOverlay.removeAttribute('inert');
-    aboutOverlay.removeAttribute('aria-hidden');
     whatsnewFocus.onClose(); // restores focus to the What's new trigger in About
   }
 

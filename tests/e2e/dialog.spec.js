@@ -23,9 +23,15 @@ for (const [name, parent, trigger, child, parentTrigger] of [
     await page.locator(parentTrigger).click();
     await page.locator(trigger).click();
     await expect(page.locator(child)).toBeVisible();
+    await expect(page.locator(parent)).toHaveAttribute('inert', '');
+    await expect(page.locator(parent)).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.getByRole('dialog')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(page.locator(child)).not.toBeVisible();
     await expect(page.locator(parent)).toBeVisible();
+    await expect(page.locator(parent)).not.toHaveAttribute('inert');
+    await expect(page.locator(parent)).not.toHaveAttribute('aria-hidden');
+    await expect(page.getByRole('dialog')).toHaveCount(1);
     await expect(page.locator(trigger)).toBeFocused();
     await page.keyboard.press('Tab');
     expect(await page.locator(parent).evaluate((el) => el.contains(document.activeElement))).toBe(true);
@@ -47,15 +53,26 @@ test('Escape unwinds import confirmation, Save/Load, and Settings one at a time'
     })),
   });
   await expect(page.locator('#confirm-overlay')).toBeVisible();
+  await expect(page.locator('#settings-overlay')).toHaveAttribute('inert', '');
+  await expect(page.locator('#backup-overlay')).toHaveAttribute('inert', '');
+  await expect(page.locator('#backup-overlay')).toHaveAttribute('aria-hidden', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(page.locator('#confirm-overlay')).not.toBeVisible();
   await expect(page.locator('#backup-overlay')).toBeVisible();
   await expect(page.locator('#settings-overlay')).toBeVisible();
+  await expect(page.locator('#settings-overlay')).toHaveAttribute('inert', '');
+  await expect(page.locator('#backup-overlay')).not.toHaveAttribute('inert');
+  await expect(page.locator('#backup-overlay')).not.toHaveAttribute('aria-hidden');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
   expect(await page.locator('#backup-overlay').evaluate((el) => el.contains(document.activeElement)))
     .toBe(true);
   await page.keyboard.press('Escape');
   await expect(page.locator('#backup-overlay')).not.toBeVisible();
   await expect(page.locator('#settings-overlay')).toBeVisible();
+  await expect(page.locator('#settings-overlay')).not.toHaveAttribute('inert');
+  await expect(page.locator('#settings-overlay')).not.toHaveAttribute('aria-hidden');
+  await expect(page.getByRole('dialog')).toHaveCount(1);
   await expect(page.locator('#backup-open')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(page.locator('#settings-overlay')).not.toBeVisible();
