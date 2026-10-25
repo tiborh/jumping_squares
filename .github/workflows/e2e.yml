@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2026 tiborh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# OPTIONAL browser (e2e) tests — separate from the fast, zero-dependency gate
+# (ci.yml, `node test/game.test.js`). This job installs Playwright + its
+# browsers and drives the real UI to cover browser-only paths the Node harness
+# cannot reach: localStorage restore across reload, the Web Worker AI search,
+# and input gating (human clicks must not steal an AI seat's move).
+#
+# It is its own workflow so it never slows the correctness gate, and so the
+# heavyweight browser download is isolated. The GAME itself remains no-build /
+# zero-runtime-dependency; this tooling is dev/CI only.
+
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, chromium]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies (pinned)
+        run: npm ci
+
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run e2e tests (${{ matrix.browser }})
+        run: npx playwright test --project=${{ matrix.browser }}
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 5

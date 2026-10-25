@@ -38,6 +38,15 @@ package-lock.json.bak
 .cache/
 coverage/
 
+# --- Playwright (optional e2e browser tests) ---------------------------------
+# The browser e2e suite (npm run test:e2e) produces these run artefacts; they
+# are regenerated on every run and must not be committed. package-lock.json IS
+# committed (pins exact dev-dependency versions for reproducible CI).
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # --- Environment / secrets (defensive; none expected in this project) --------
 .env
 .env.*

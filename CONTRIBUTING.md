@@ -64,6 +64,24 @@ short version:
    Expect `... passed, 0 failed` and exit code 0. This also checks that the
    `?v=` strings match `VERSION`.
 
+   This is the **always-run gate**: dependency-free, fast, and the only test
+   required before every commit. The game itself has no build step and no
+   runtime dependencies.
+
+   **Optional browser (e2e) tests.** A Playwright suite covers the browser-only
+   paths the Node harness can't reach (localStorage restore across reload, the
+   Web Worker AI search, and that a human click can't steal an AI seat's move).
+   It is **not** part of the always-run gate — run it when you touch those areas
+   or before a release:
+   ```bash
+   npm ci                                   # once, installs @playwright/test
+   npx playwright install firefox chromium  # once, downloads the browsers
+   npm run test:e2e                         # drives a served copy of the game
+   ```
+   These are dev/CI-only dependencies (`node_modules/` is gitignored; the
+   shipped game stays zero-dependency). A separate CI workflow (`e2e.yml`) runs
+   them on PRs in Firefox and Chromium.
+
 4. (Browser-visible changes) Open `index.html` locally and confirm the tab
    title shows the expected `Jumping Squares (vN)`.
 
