@@ -600,16 +600,19 @@
       exportAll: function () {
         return JSON.parse(JSON.stringify(mem));
       },
-      // importRecord(parsed) REPLACES the whole prefs record from a parsed
+      // importRecord(parsed, activeBoardSize) REPLACES the prefs record from a parsed
       // backup section: reset to first-use defaults, then adopt the parsed
       // object through the SAME per-field validation/migration as a stored
       // record (so a partial, older, or garbage object can't corrupt state),
       // then persist. "Replace" per the agreed semantics: anything the file
       // omits reverts to its default rather than keeping the old value — the
       // caller only invokes this when the file's prefs section is present.
-      importRecord: function (parsed) {
+      // The active size follows the live/imported board; the adopted pending
+      // size still takes effect on the next New Game.
+      importRecord: function (parsed, activeBoardSize) {
         mem = makeDefaults();
         adopt(parsed);
+        mem.boardSize = activeBoardSize;
         persist();
       },
     };
@@ -933,6 +936,7 @@
     var manager = {
       onTab: onTab,
       onOpen: function () {
+        cancelPendingHint();
         lastFocused = document.activeElement;
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
@@ -949,6 +953,7 @@
           cellEls[0].focus();
         }
         lastFocused = null;
+        syncHintButton();
       },
     };
     return manager;
@@ -1647,9 +1652,8 @@
   // `self`, with no network/script loading. A drift test guards that the source
   // the worker runs is byte-identical to the loaded modules.
   //
-  // Degrades gracefully: if the worker can't be built or isn't supported, the
-  // scheduler falls back to the synchronous search (identical to the old
-  // behaviour), so gameplay is never worse than before.
+  // AI turns retain their synchronous fallback if the worker is unavailable.
+  // Hints instead report unavailability rather than blocking the interface.
   var aiWorker = null;          // the live Worker, or null (none / fell back)
   var aiWorkerBroken = false;   // true once construction/handshake has failed
   var aiWorkerSeq = 0;          // reply-matching id (distinct from playToken)
@@ -1657,7 +1661,7 @@
 
   // Build the self-contained worker body from the loaded module sources. Null
   // if the pieces aren't available (older cached scripts without __factorySource
-  // or a missing Worker/Blob/URL API) — the caller then uses the sync path.
+  // or a missing Worker/Blob/URL API). Only AI turns use the sync fallback.
   function buildAiWorker() {
     if (aiWorkerBroken) return null;
     if (aiWorker) return aiWorker;
@@ -1685,7 +1689,8 @@
         '              : (d.type === "tutor") ? a.makeTutor(g, { level: opts.level })',
         '              : (d.type === "random") ? a.makeRandom(g, { level: opts.level })',
         '              : null;',
-        '    var mv = agent ? agent.chooseMove(d.state) : null;',
+        '    var mv = (d.type === "hint") ? a.bestMove(g, d.state)',
+        '             : agent ? agent.chooseMove(d.state) : null;',
         '    self.postMessage({ seq: d.seq, ok: true, move: mv });',
         '  } catch (err) {',
         '    self.postMessage({ seq: d.seq, ok: false, error: String(err && err.message || err) });',
@@ -1742,9 +1747,9 @@
     }
   }
 
-  // Request an async move for `seat` from the worker. Returns true if the job
-  // was posted (the caller should wait for onResult); false if the worker is
-  // unavailable (the caller should compute synchronously instead). onResult is
+  // Request an async move for `seat`, or a strongest-player hint. Returns true
+  // if posted (wait for onResult), or false if the worker is unavailable.
+  // The caller handles failures according to its fallback policy. onResult is
   // called with (move, errored): move is {r,c}|null, errored true on failure.
   function computeMoveAsync(type, seat, snapshot, onResult) {
     var w = buildAiWorker();
@@ -1753,6 +1758,7 @@
     if (type === 'shark') opts = { depth: prefs.getSharkDepth(seat) };
     else if (type === 'tutor') opts = { level: prefs.getTutorLevel(seat) };
     else if (type === 'random') opts = { level: prefs.getRandomLevel(seat) };
+    else if (type === 'hint') opts = {};
     else return false;
     var seq = ++aiWorkerSeq;
     aiWorkerPending = { seq: seq, onResult: onResult };
@@ -1867,14 +1873,11 @@
   // changes, and cancelled on a move / New Game / dialog, so "idle" means "this
   // turn, untouched".
   //
-  // Thinking indicator: the Shark search is synchronous and can briefly block
-  // the main thread. We show a spinner only if the computation is still running
-  // after HINT_THINK_MS, so a fast board (the current 5x5 resolves in well under
-  // that) never flickers a spinner, while a slow/large future board surfaces one
-  // automatically. To let the spinner actually paint before the blocking search
-  // runs, the compute is deferred one frame behind the "thinking" class.
+  // Hints share the AI worker, but always use the strongest search depth.
+  // A delayed spinner avoids flicker on fast searches and can paint while a
+  // slower search runs off the main thread.
   var HINT_THINK_MS = 400;  // show the spinner only if a hint takes this long
-  var hintBusy = false;     // true while a hint is being computed/flashed
+  var hintBusy = false;     // true while a hint is being computed
   var hintThinkTimer = null;
   var hintToken = 0;        // bumped to cancel an in-flight hint (New Game/move)
   var hintLightTimer = null; // pending idle "light up" timer
@@ -2133,8 +2136,12 @@
 
   function cancelPendingHint() {
     hintToken++;                 // invalidate any in-flight compute
+    if (hintBusy) abortAiWorker();
     if (hintThinkTimer !== null) { clearTimeout(hintThinkTimer); hintThinkTimer = null; }
-    if (hintBtn) hintBtn.classList.remove('thinking');
+    if (hintBtn) {
+      hintBtn.classList.remove('thinking');
+      hintBtn.disabled = false;
+    }
     hintBusy = false;
     // A move / New Game / dialog supersedes any VISIBLE suggestion: clear the
     // flash (and its fallback timer) off the previously hinted cell so a gold
@@ -2164,22 +2171,17 @@
       if (token === hintToken && hintBtn) hintBtn.classList.add('thinking');
     }, HINT_THINK_MS);
 
-    // Defer the (synchronous, possibly slow) search so the "thinking" class —
-    // if armed — can paint first, and the click handler returns promptly.
-    window.setTimeout(function () {
-      if (token !== hintToken) return; // cancelled (New Game / move happened)
-      var mv = null;
-      try {
-        mv = AGENTS.bestMove(G, state);
-      } catch (e) {
-        mv = null; // never let a hint failure break the game
-      }
-      if (token !== hintToken) return; // cancelled while computing
+    function finishHint(mv, errored) {
+      if (token !== hintToken) return;
       // Tear down the thinking state regardless of outcome.
       if (hintThinkTimer !== null) { clearTimeout(hintThinkTimer); hintThinkTimer = null; }
       if (hintBtn) hintBtn.classList.remove('thinking');
       hintBusy = false;
-      if (mv) {
+      if (errored) {
+        var message = 'Hints are unavailable because background search could not run.';
+        console.warn('Jumping Squares: ' + message);
+        if (hintLive) hintLive.textContent = message;
+      } else if (mv && G.canPlay(state, state.current, mv.r, mv.c)) {
         var el = cellEls[mv.r * state.cols + mv.c];
         flashHint(el);
         announceHint(mv.r, mv.c);
@@ -2189,7 +2191,11 @@
       // Re-evaluate the button (it may have become unavailable, e.g. the turn
       // changed — though a hint doesn't consume a turn, so normally it stays).
       syncHintButton();
-    }, 0);
+    }
+
+    if (!computeMoveAsync('hint', state.current, G.cloneState(state), finishHint)) {
+      finishHint(null, true);
+    }
   }
 
   if (hintBtn) {
@@ -3682,7 +3688,8 @@
   function applyImport(validated) {
     var changed = [];
     if (validated.prefs) {
-      prefs.importRecord(validated.prefs);
+      prefs.importRecord(validated.prefs,
+        validated.board ? validated.board.rows : state.rows);
       changed.push('settings & scores');
       // The imported prefs may flip the stats-panel toggle. Reconcile the panel
       // (and its Settings checkbox) NOW — before any board measurement below —

@@ -29,6 +29,26 @@ the nearest user-facing entry.
 
 ---
 
+## v57 — Background hint searches
+
+- Hints now run the strongest Shark search in the same self-contained Web
+  Worker used for AI turns, keeping the interface responsive on large boards.
+  A spinner appears when the search takes longer than 400 ms.
+- Making a move or opening a dialog cancels the search immediately and discards
+  late replies, so an old hint cannot highlight a changed board.
+- If background search cannot run, hints announce that they are unavailable
+  and log a warning rather than falling back to a blocking search. AI turns
+  retain their existing synchronous fallback.
+
+## v56 — Keep the current board size when loading settings
+
+- Loading **settings & scores only** now preserves the current board's active
+  size, so the saved game still resumes after a reload. The imported size choice
+  applies on the next **New Game**, including settings from older backups that
+  did not record a board size.
+- Loading a **game board and settings together** still adopts the imported
+  board's size immediately.
+
 ## v55 — Off-main-thread AI search (Plan B: Web Worker)
 
 Player-facing:
