@@ -29,6 +29,46 @@ the nearest user-facing entry.
 
 ---
 
+## v55 — Off-main-thread AI search (Plan B: Web Worker)
+
+Player-facing:
+
+- **The strongest AI (Shark) now thinks off the main thread.** Its minimax
+  search runs in a Web Worker, so the interface stays responsive while it works
+  out a move — even a multi-second search on a big board.
+- **Pause now interrupts a move mid-think.** In a computer-vs-computer match,
+  pressing pause while Shark is searching **aborts that search immediately**
+  (the move it was computing never lands), rather than only taking effect once
+  the search returns. Combined with the v50 feedback, pause is now honest in all
+  three cases: between moves (next search never starts), during a think (search
+  aborted), and while a cascade is animating (that one cascade finishes, then
+  the hold takes effect).
+- **A "thinking" cue returns.** While a *slow* move is being computed (one that
+  would be shown red in the Board-size table — over your max-wait threshold), a
+  calm cyan pulse appears on the pause button. Fast moves show nothing.
+
+How it works, and why it's shaped this way:
+
+- **The file:// constraint drove the design.** The game is played by opening
+  `index.html` directly, so the page origin is `null`/`file` and browsers block
+  both `new Worker('js/ai-worker.js')` and a worker's `importScripts`/`fetch` of
+  local files. The workaround — **verified first with a throwaway spike in
+  Firefox and Chromium under file://** before committing to it — is a
+  **self-contained Blob-URL worker**: the worker's body inlines the engine's and
+  agents' own factory source (exposed as a non-enumerable `__factorySource` on
+  each module) and re-runs it on the worker's `self`, so no network or local
+  script loading is needed. A drift test rebuilds the modules from that source
+  and asserts the worker computes the *same* move as the in-process agents.
+- **Graceful fallback.** If a browser refuses to construct the worker (or the
+  API is missing), the scheduler silently falls back to the old synchronous
+  search — gameplay is never worse than before, just without mid-think pause.
+- **Only Shark is offloaded.** Random and Tutor are positionally cheap
+  (near-instant at any size), so a worker round-trip would only add latency;
+  they still run synchronously, where pause effectively lands between moves
+  (imperceptible).
+- This unblocks the branch that was **held since v50** specifically waiting for
+  Plan B.
+
 ## v50 — Clearer AI-pause feedback (Plan A)
 
 Player-facing:

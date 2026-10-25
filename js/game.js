@@ -31,10 +31,24 @@
 
 (function (root, factory) {
   // UMD-ish dual export: CommonJS (Node) or global (browser).
+  var mod = factory();
+  // Expose the factory's own source text so the browser UI can build a
+  // self-contained Web Worker (Plan B: off-main-thread AI search) WITHOUT
+  // importScripts/fetch — both are blocked under file://, which is how this
+  // game is played. The worker body is just these factory sources re-run via
+  // their UMD heads onto the worker's `self`. toString() returns real source
+  // here because there is no build/minification step (files ship as authored);
+  // a drift test ("worker source integrity") guards that assumption. Non-
+  // enumerable so it never leaks into JSON snapshots of the module.
+  try {
+    Object.defineProperty(mod, '__factorySource', {
+      value: factory.toString(), enumerable: false,
+    });
+  } catch (e) { /* older engines: worker falls back to sync search */ }
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
+    module.exports = mod;
   } else {
-    root.JumpingSquares = factory();
+    root.JumpingSquares = mod;
   }
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
@@ -45,7 +59,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '54';
+  var VERSION = '55';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -68,6 +82,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '55', text: 'The strongest computer player (Shark) now thinks OFF the main thread, so the game stays responsive while it works out a move on a big board. The pay-off: the pause button in a computer-vs-computer match now interrupts a move mid-think \u2014 press pause and the current search stops right away, instead of only taking effect after it finishes. A calm cyan \u201Cthinking\u201D pulse appears on the pause button while a slow move is being computed. On browsers that don\u2019t allow this, the game quietly falls back to the old behaviour \u2014 nothing breaks.' },
     { v: '50', text: 'AI pause feedback is clearer. Pressing pause now flips the control immediately when you catch it between moves (the next move simply never starts), and shows a distinct amber \u201Cpausing\u2026\u201D state when a move is still finishing before the hold takes effect \u2014 so you can tell the press registered. (A long think still can\u2019t be interrupted mid-search yet: that needs the AI to run off the main thread, which is on the roadmap.)' },
     { v: '49', text: 'New: pause/play for computer-vs-computer matches. When both players are AIs, the bottom-right corner \u2014 where the Hint bulb sits on your turn \u2014 becomes a pause/play button instead. Press pause to hold the match before the next move (a cascade already running finishes first), and play to resume. Handy for pausing a slow thinker on a big board. (For now pause takes effect between moves, not mid-think \u2014 interrupting a move mid-search needs the AI to run off the main thread, which is on the roadmap.)' },
     { v: '48', text: 'New: a \u201CBoard stats\u201D panel (\u2699 Settings \u2192 Board stats panel). Turn it on to see a live per-player scoreboard beside the board \u2014 above it on a portrait screen, to the side in landscape \u2014 showing more than the tile count: total dots (material), average fullness, a capacity-weighted saturation %, how many cells are one dot from overflowing, the corner/edge/interior breakdown, and neutral squares left. It updates after each settled move (never mid-cascade), and while it\u2019s off the figures aren\u2019t computed at all. The old tile-count readout in the top bar is replaced by a permanent New Game button.' },
@@ -79,7 +94,6 @@
     { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
     { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
     { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
-    { v: '38', text: 'Random now has two levels (Settings \u2192 Players, per Random): Easy (pure random \u2014 the gentle beginner) and Medium (mostly random, but hits back when the opponent is about to capture one of its cells). Also fixes the Tutor\u2019s defence check, which wasn\u2019t firing in some positions.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.
@@ -913,6 +927,59 @@
     };
   }
 
+  // --- saved-game classifier (pure) ----------------------------------------
+  // Decide what to do with a parsed save WRAPPER, given the current UI's
+  // acceptance predicate. This is the single source of truth for the
+  // keep-vs-discard policy that the UI's boardStore.has()/load() both consult,
+  // so they can never drift (they had: one returned a boolean, one a state) and
+  // — critically — so the policy is UNIT-TESTABLE in Node without a browser.
+  //
+  // THE BUG THIS PREVENTS: a save whose board SIZE doesn't match the current UI
+  // dimensions is NOT corrupt — it is simply "not restorable at this size right
+  // now" (e.g. during boot the dimension check runs before the UI has adopted
+  // the persisted size, so it sees the stale default). Such a save must be KEPT
+  // (action 'reject'), never removed. Only genuinely unusable data — bad
+  // wrapper shape, unsupported formatVersion, malformed/invalid state — is
+  // 'discard' (the caller removes it). A good, size-matching, engine-valid save
+  // is 'restore' (the caller adopts result.state).
+  //
+  // Returns { action, reason, state }:
+  //   action 'restore' — state is a clean engine state (via loadState); adopt it
+  //   action 'reject'  — valid but not for this size; KEEP the save, boot fresh
+  //   action 'discard' — unusable; REMOVE the save, boot fresh
+  //
+  // @param {object}  wrapper  the parsed save envelope (JSON.parse result)
+  // @param {object}  opts     { format, formatVersion, accept(rows,cols,players) }
+  //   format        the required wrapper.format string
+  //   formatVersion the highest supported envelope version (>= wrapper's)
+  //   accept        optional predicate; false => 'reject' (kept, not discarded)
+  function classifySave(wrapper, opts) {
+    opts = opts || {};
+    if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
+        wrapper.format !== opts.format) {
+      return { action: 'discard', reason: 'unrecognised format', state: null };
+    }
+    var fv = wrapper.formatVersion;
+    if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
+        fv < 1 || fv > opts.formatVersion) {
+      return { action: 'discard', reason: 'unsupported formatVersion', state: null };
+    }
+    var st = wrapper.state;
+    if (!st || typeof st !== 'object' || Array.isArray(st)) {
+      return { action: 'discard', reason: 'malformed state', state: null };
+    }
+    // Dimension acceptance is a SOFT reject (keep the save), checked on the raw
+    // declared dimensions BEFORE the (allocating) full validation.
+    if (typeof opts.accept === 'function' && !opts.accept(st.rows, st.cols, st.players)) {
+      return { action: 'reject', reason: 'dimensions not accepted', state: null };
+    }
+    var clean = loadState(st);
+    if (clean === null) {
+      return { action: 'discard', reason: 'failed validation', state: null };
+    }
+    return { action: 'restore', reason: null, state: clean };
+  }
+
   // --- persistence reset helper (pure) -------------------------------------
   // Given a snapshot of localStorage key names, decide WHICH keys a
   // "reset to first-use state" should remove: every key under `prefix`, minus
@@ -971,6 +1038,7 @@
     finalizeAfterCascade: finalizeAfterCascade,
     loadState: loadState,
     cloneState: cloneState,
+    classifySave: classifySave,
     storageKeysToClear: storageKeysToClear,
   };
 });

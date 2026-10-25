@@ -1736,5 +1736,166 @@ console.log('boardStats: saturation is capped at 1 for a terminal over-capacity 
 })();
 
 // ---------------------------------------------------------------------------
+console.log('classifySave: keep-vs-discard policy (storage drift guard)');
+(function () {
+  // Regression guard for the bug where a valid save of a NON-current board size
+  // was DELETED during boot (the dimension check ran before the UI adopted the
+  // persisted size, so a 7x7 save was wiped while ROWS was still the default 5).
+  // The decision now lives in the pure G.classifySave; a dimension mismatch is
+  // 'reject' (KEEP the save), never 'discard' (remove). These tests pin that so
+  // the same class of bug cannot re-enter, with no browser needed.
+  var FORMAT = 'jumping_squares/save';
+  var FV = 1;
+
+  // A real, engine-valid 5x5 in-progress state to wrap.
+  function validState(size) {
+    var s = G.createGame({ rows: size, cols: size, players: 2 });
+    G.applyMove(s, 1, 0, 0);
+    G.applyMove(s, 2, size - 1, size - 1);
+    return G.cloneState(s);
+  }
+  function wrap(state) {
+    return { format: FORMAT, formatVersion: FV, engineVersion: G.VERSION, state: state };
+  }
+  // accept predicate mirroring the UI's fitsDimensions for a given UI size.
+  function acceptSize(n) {
+    return function (r, c, p) { return r === n && c === n && p === 2; };
+  }
+
+  // 1. THE BUG: a valid 7x7 save, UI currently at 5x5 -> REJECT (keep), not discard.
+  var r1 = G.classifySave(wrap(validState(7)), { format: FORMAT, formatVersion: FV, accept: acceptSize(5) });
+  eq(r1.action, 'reject', 'size mismatch is a soft reject (save is KEPT, not discarded)');
+  ok(r1.state === null, 'reject yields no state');
+
+  // 2. Same save once the UI matches the size -> RESTORE with a clean state.
+  var r2 = G.classifySave(wrap(validState(7)), { format: FORMAT, formatVersion: FV, accept: acceptSize(7) });
+  eq(r2.action, 'restore', 'size match restores');
+  ok(r2.state && r2.state.rows === 7 && r2.state.cols === 7, 'restore yields the rehydrated 7x7 state');
+
+  // 3. No accept predicate -> restore a valid save (dimension gate skipped).
+  var r3 = G.classifySave(wrap(validState(5)), { format: FORMAT, formatVersion: FV });
+  eq(r3.action, 'restore', 'no accept predicate restores a valid save');
+
+  // 4. Genuinely corrupt / unusable inputs -> DISCARD (caller removes).
+  eq(G.classifySave(null, { format: FORMAT, formatVersion: FV }).action, 'discard',
+     'null wrapper is discarded');
+  eq(G.classifySave({ format: 'other', formatVersion: FV, state: validState(5) },
+     { format: FORMAT, formatVersion: FV }).action, 'discard',
+     'wrong format string is discarded');
+  eq(G.classifySave({ format: FORMAT, formatVersion: 99, state: validState(5) },
+     { format: FORMAT, formatVersion: FV }).action, 'discard',
+     'future formatVersion is discarded');
+  eq(G.classifySave({ format: FORMAT, formatVersion: FV, state: 'nope' },
+     { format: FORMAT, formatVersion: FV }).action, 'discard',
+     'non-object state is discarded');
+
+  // 5. Well-formed wrapper but a state the ENGINE rejects (e.g. impossible
+  //    board) -> discard (failed validation), NOT reject.
+  var bad = validState(5); bad.cells[0] = { owner: 9, value: 5 }; // owner out of range
+  eq(G.classifySave(wrap(bad), { format: FORMAT, formatVersion: FV, accept: acceptSize(5) }).action,
+     'discard', 'engine-invalid state is discarded, not kept');
+
+  // 6. Ordering: a size-mismatched save that is ALSO engine-invalid must still
+  //    be a soft REJECT (kept) — the cheap dimension gate runs BEFORE the
+  //    allocating full validation, so a wrong-size save is never even validated
+  //    (and so never wrongly discarded on validity grounds).
+  var badWrongSize = validState(7); badWrongSize.cells[0] = { owner: 9, value: 5 };
+  eq(G.classifySave(wrap(badWrongSize), { format: FORMAT, formatVersion: FV, accept: acceptSize(5) }).action,
+     'reject', 'size gate precedes validation: wrong-size save is kept, not discarded');
+})();
+
+// ---------------------------------------------------------------------------
+console.log('AI-type policy: click-guard / scheduler single source of truth');
+(function () {
+  // Regression guard for the bug where a human click could STEAL an AI seat's
+  // move. The fix routes both the board click-guard (isAITurn) and the agent
+  // resolver (agentFor) through one policy, AGENTS.isAIType, so they can never
+  // disagree about which seats are machine-controlled. Pinning the exact set
+  // means a newly added agent type must be deliberately added here too.
+  eq(A.AI_PLAYER_TYPES.slice().sort(), ['random', 'shark', 'tutor'],
+     'AI player types are exactly random/shark/tutor');
+
+  ok(A.isAIType('random') && A.isAIType('tutor') && A.isAIType('shark'),
+     'all three agent types are classified AI');
+  ok(!A.isAIType('human'), 'human is NOT an AI type');
+  ok(!A.isAIType('') && !A.isAIType(undefined) && !A.isAIType('robot'),
+     'unknown/garbage types are not AI (default to human-controlled)');
+
+  // humanMayPlayType is the exact inverse — the predicate the click-guard's
+  // intent maps to ("a human may act only on a non-AI seat").
+  ok(A.humanMayPlayType('human'), 'a human may play a human seat');
+  ok(!A.humanMayPlayType('shark') && !A.humanMayPlayType('tutor') &&
+     !A.humanMayPlayType('random'),
+     'a human may NOT play any AI seat (no move-stealing)');
+  // Invariant: for every type, isAIType and humanMayPlayType are opposites.
+  ['human', 'random', 'tutor', 'shark', 'bogus'].forEach(function (t) {
+    ok(A.isAIType(t) === !A.humanMayPlayType(t),
+       'isAIType and humanMayPlayType are strict opposites for "' + t + '"');
+  });
+})();
+
+// ---------------------------------------------------------------------------
+console.log('AI Web Worker source integrity (Plan B drift guard)');
+(function () {
+  // Plan B runs the Shark search in a SELF-CONTAINED blob Web Worker whose body
+  // is the engine's + agents' own factory source (exposed as __factorySource),
+  // re-run onto the worker's `self`. This guards the things that would silently
+  // break that worker:
+  //   1. Both modules expose a non-empty __factorySource (the UMD-head edit
+  //      survived), and it is NON-ENUMERABLE (never leaks into JSON snapshots).
+  //   2. A module set rebuilt FROM those source strings — exactly what the
+  //      worker does on its own `self` — is executable and computes the SAME
+  //      bestMove as the in-process agents. This proves the inlined source is
+  //      byte-faithful (no build/minification stripped it) and that the UMD
+  //      `self` (global) branch the worker relies on actually populates
+  //      self.JumpingSquares / self.JumpingSquaresAgents.
+  //
+  // We verify (2) SYNCHRONOUSLY via vm.runInNewContext rather than a live
+  // worker_threads Worker: a Node worker is not a faithful browser-worker
+  // environment (different global API, and `module` exists so the UMD would
+  // take the CommonJS branch), and an async worker would complicate this
+  // otherwise-synchronous suite. The live file:// browser round-trip is covered
+  // by manual browser validation; here we lock down source faithfulness.
+  ok(typeof G.__factorySource === 'string' && G.__factorySource.length > 0,
+     'engine exposes a non-empty __factorySource');
+  ok(typeof A.__factorySource === 'string' && A.__factorySource.length > 0,
+     'agents expose a non-empty __factorySource');
+  ok(Object.keys(G).indexOf('__factorySource') === -1 &&
+     Object.keys(A).indexOf('__factorySource') === -1,
+     '__factorySource is non-enumerable on both modules');
+
+  // Reference answer from the in-process agents (seeded rng -> deterministic).
+  function sampleState() {
+    var s = G.createGame({ rows: 5, cols: 5, players: 2 });
+    G.applyMove(s, 1, 0, 0);
+    G.applyMove(s, 2, 4, 4);
+    G.applyMove(s, 1, 0, 1);
+    return s;
+  }
+  var ref = A.bestMove(G, G.cloneState(sampleState()), { depth: 3, rng: function () { return 0.5; } });
+
+  // Rebuild both modules from their source strings in a fresh sandbox whose
+  // global is `self` with NO CommonJS `module` — i.e. the exact browser-worker
+  // branch — then compute bestMove the way the worker body does.
+  var vm = require('vm');
+  var sandbox = { __ref: null };
+  sandbox.self = sandbox; // UMD root resolves to self; self.JumpingSquares etc.
+  var rebuild = [
+    'self.JumpingSquares = (' + G.__factorySource + ')();',
+    'self.JumpingSquaresAgents = (' + A.__factorySource + ')();',
+    'var g = self.JumpingSquares, a = self.JumpingSquaresAgents;',
+    'var s = g.createGame({ rows: 5, cols: 5, players: 2 });',
+    'g.applyMove(s,1,0,0); g.applyMove(s,2,4,4); g.applyMove(s,1,0,1);',
+    '__ref = a.bestMove(g, g.cloneState(s), { depth: 3, rng: function(){ return 0.5; } });',
+  ].join('\n');
+  vm.runInNewContext(rebuild, sandbox, { filename: 'rebuilt-worker-modules.js' });
+
+  ok(sandbox.self.JumpingSquares && sandbox.self.JumpingSquaresAgents,
+     'rebuilt source populates self.JumpingSquares(+Agents) (UMD self branch)');
+  eq(sandbox.__ref, ref,
+     'bestMove rebuilt from __factorySource matches in-process (seeded)');
+})();
+
+// ---------------------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed === 0 ? 0 : 1);

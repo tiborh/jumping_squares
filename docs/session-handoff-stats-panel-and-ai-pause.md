@@ -10,14 +10,18 @@ re-derive context.
 
 ## TL;DR
 
-- **Active work lives on branch `feat/stats-panel-and-ai-pause` (PR #63), at
-  engine `VERSION = '54'`.** It is **intentionally held unmerged** until "Plan
-  B" (below) is implemented and the pause UX is validated in a browser.
-- `main` is at `VERSION 47` and does **not** contain these features. `main`'s
-  own docs are therefore correct *for main*; the feature's docs live on the
-  branch.
-- Next task: **Plan B — move the Shark search off the main thread (Web Worker)**
-  so AI pause can interrupt a move mid-think.
+- **Plan B (off-main-thread AI search) is now IMPLEMENTED** on branch
+  `feat/ai-web-worker` at engine `VERSION = '55'`. The Shark search runs in a
+  self-contained Blob-URL Web Worker; AI-vs-AI pause can now abort a search
+  mid-think. Feasibility was proven first with a throwaway spike (Firefox +
+  Chromium under `file://`) before implementing.
+- The earlier stats-panel + AI-pause work (v48–v54) is on its own branch
+  `feat/stats-panel-and-ai-pause` (PR #63). **Plan B was built on top of the
+  v54 state**; when merging, sequence matters — see "Branch state" below.
+- `main` is at an older VERSION and contains none of this.
+- Remaining before merge: **browser validation** of the pause UX (the Node
+  harness can't drive `file://` DOM), now including the new mid-think abort and
+  the "thinking" cue.
 
 ## What shipped on this branch (features v48 → v54)
 

@@ -22,10 +22,19 @@
  */
 
 (function (root, factory) {
+  var mod = factory();
+  // Expose factory source for the self-contained AI Web Worker (see the same
+  // note in js/game.js). Non-enumerable; guarded. Enables Plan B's blob worker
+  // without importScripts/fetch (both blocked under file://).
+  try {
+    Object.defineProperty(mod, '__factorySource', {
+      value: factory.toString(), enumerable: false,
+    });
+  } catch (e) { /* older engines: worker falls back to sync search */ }
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
+    module.exports = mod;
   } else {
-    root.JumpingSquaresAgents = factory();
+    root.JumpingSquaresAgents = mod;
   }
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
@@ -701,6 +710,30 @@
     return agent.chooseMove(state);
   }
 
+  // ---- player-type policy (single source of truth) ------------------------
+  //
+  // Which player-type strings denote an AI-CONTROLLED seat (as opposed to a
+  // human). The UI stores a per-seat type ('human' | 'random' | 'tutor' |
+  // 'shark'); this is the one place that decides which of those are machines.
+  // Both the UI's agent resolver (agentFor / isAITurn) and the board click
+  // guard (so a human click can't play an AI seat's move) consult this, so the
+  // click guard and the move scheduler can never disagree about "whose turn is
+  // this". Pure and DOM-free, hence unit-testable in Node without a browser —
+  // a regression test pins the exact set so a new agent can't be added without
+  // deliberately updating the policy here.
+  var AI_PLAYER_TYPES = ['random', 'tutor', 'shark'];
+
+  function isAIType(type) {
+    return AI_PLAYER_TYPES.indexOf(type) !== -1;
+  }
+
+  // A human may act on a seat IFF that seat is not AI-controlled. Kept as its
+  // own named predicate so the click-guard's intent reads clearly at the call
+  // site and is covered by its own test.
+  function humanMayPlayType(type) {
+    return !isAIType(type);
+  }
+
   return {
     legalMoves: legalMoves,
     makeRandom: makeRandom,
@@ -708,5 +741,8 @@
     makeShark: makeShark,
     bestMove: bestMove,
     STRONGEST_SHARK_DEPTH: STRONGEST_SHARK_DEPTH,
+    AI_PLAYER_TYPES: AI_PLAYER_TYPES,
+    isAIType: isAIType,
+    humanMayPlayType: humanMayPlayType,
   };
 });

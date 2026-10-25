@@ -665,6 +665,50 @@
       return wrapper;
     }
 
+    // Read the raw save, parse + migrate it, and delegate the keep-vs-discard
+    // DECISION to the pure engine helper G.classifySave (the single source of
+    // truth, unit-tested in Node). This function owns only the SIDE EFFECTS that
+    // need the browser: reading localStorage, and — ONLY for a 'discard' verdict
+    // — logging the sanitised content and removing the key. A 'reject' verdict
+    // (valid save, wrong size) is explicitly NON-destructive: the data stays so
+    // the user can resume it after switching back to that size. Both has() and
+    // load() go through here so they can never disagree.
+    // Returns the classifier's { action, reason, state } (action 'none' when
+    // storage is blocked or empty).
+    function readAndClassify(accept) {
+      if (!canStore) return { action: 'none', reason: 'no storage', state: null };
+      var raw;
+      try {
+        raw = window.localStorage.getItem(SAVE_KEY);
+      } catch (e) {
+        return { action: 'none', reason: 'read failed', state: null };
+      }
+      if (raw === null) return { action: 'none', reason: 'empty', state: null };
+
+      var result;
+      try {
+        var wrapper = migrate(JSON.parse(raw));
+        result = G.classifySave(wrapper, {
+          format: SAVE_FORMAT,
+          formatVersion: SAVE_FORMAT_VERSION,
+          accept: accept,
+        });
+      } catch (e) {
+        result = { action: 'discard', reason: 'malformed save', state: null };
+      }
+
+      if (result.action === 'discard') {
+        // Log the (sanitised) offending content so a real corruption can be
+        // investigated, then remove it so it can't wedge every future boot.
+        try {
+          console.warn('Jumping Squares: discarding unusable saved game (' +
+            result.reason + '): ' + sanitizeForLog(raw));
+        } catch (e2) { /* ignore logging failures */ }
+        try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
+      }
+      return result;
+    }
+
     return {
       canStore: canStore,
 
@@ -678,57 +722,12 @@
        *   this UI cannot render.
        */
       has: function (accept) {
-        if (!canStore) return false;
-        var raw;
-        try {
-          raw = window.localStorage.getItem(SAVE_KEY);
-        } catch (e) {
-          return false;
-        }
-        if (raw === null) return false;
-
-        var discard = function (reason) {
-          try {
-            console.warn('Jumping Squares: discarding unusable saved game (' +
-              reason + '): ' + sanitizeForLog(raw));
-          } catch (e2) { /* ignore logging failures */ }
-          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
-          return false;
-        };
-
-        try {
-          var wrapper = JSON.parse(raw);
-          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
-              wrapper.format !== SAVE_FORMAT) {
-            return discard('unrecognised format');
-          }
-
-          var fv = wrapper.formatVersion;
-          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
-              fv < 1 || fv > SAVE_FORMAT_VERSION) {
-            return discard('unsupported formatVersion');
-          }
-
-          wrapper = migrate(wrapper);
-
-          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
-            return discard('malformed state');
-          }
-
-          if (typeof accept === 'function') {
-            var ws = wrapper.state;
-            if (!accept(ws.rows, ws.cols, ws.players)) {
-              return discard('dimensions not accepted');
-            }
-          }
-
-          if (G.loadState(wrapper.state) === null) {
-            return discard('failed validation');
-          }
-          return true;
-        } catch (e) {
-          return discard('malformed save');
-        }
+        var r = readAndClassify(accept);
+        // A valid, restorable save exists only when classify says 'restore'.
+        // 'reject' (valid but wrong size) and 'discard'/none all mean "no
+        // restorable save right now"; only 'discard' removes the data (done
+        // inside readAndClassify).
+        return r.action === 'restore';
       },
 
       /**
@@ -763,75 +762,9 @@
        *   huge, validator-allowed-but-unrenderable board).
        */
       load: function (accept) {
-        if (!canStore) return null;
-        var raw;
-        try {
-          raw = window.localStorage.getItem(SAVE_KEY);
-        } catch (e) {
-          return null;
-        }
-        if (raw === null) return null; // nothing saved: not an error
-
-        var discard = function (reason) {
-          // Log the (sanitised) offending content so a real corruption can be
-          // investigated, then remove it so it can't wedge every future boot.
-          try {
-            console.warn('Jumping Squares: discarding unusable saved game (' +
-              reason + '): ' + sanitizeForLog(raw));
-          } catch (e2) { /* ignore logging failures */ }
-          try { window.localStorage.removeItem(SAVE_KEY); } catch (e3) {}
-          return null;
-        };
-
-        try {
-          var wrapper = JSON.parse(raw);
-          if (!wrapper || typeof wrapper !== 'object' || Array.isArray(wrapper) ||
-              wrapper.format !== SAVE_FORMAT) {
-            return discard('unrecognised format');
-          }
-
-          // Validate the envelope's formatVersion BEFORE migrating. It must be a
-          // positive integer no newer than this build understands. A missing /
-          // malformed version, or one from a FUTURE build, must not slip past
-          // migrate() (which only knows how to convert versions up to the
-          // current one) into loadState under today's assumptions. Older versions
-          // (< current) are allowed through so migrate() can convert them when
-          // such versions eventually exist.
-          var fv = wrapper.formatVersion;
-          if (typeof fv !== 'number' || !isFinite(fv) || Math.floor(fv) !== fv ||
-              fv < 1 || fv > SAVE_FORMAT_VERSION) {
-            return discard('unsupported formatVersion');
-          }
-
-          wrapper = migrate(wrapper); // N3 seam (identity for now)
-
-          if (!wrapper.state || typeof wrapper.state !== 'object' || Array.isArray(wrapper.state)) {
-            return discard('malformed state');
-          }
-
-          // Cheap dimension gate BEFORE rehydration. loadState() is strict but it
-          // also ITERATES/ALLOCATES one object per cell, so a validator-allowed
-          // but huge save (e.g. 1000x1000 = 1,000,000 cells) would cost a large
-          // parse+allocation pass before any later UI check could reject it. If
-          // the caller supplied an `accept(rows, cols, players)` predicate, peek
-          // at the raw wrapper.state's declared dimensions (shallow reads, no
-          // iteration) and bail out early when they are not acceptable — so an
-          // oversized/incompatible save is discarded without ever rehydrating it.
-          if (typeof accept === 'function') {
-            var ws = wrapper.state;
-            if (!accept(ws.rows, ws.cols, ws.players)) {
-              return discard('dimensions not accepted');
-            }
-          }
-
-          var clean = G.loadState(wrapper.state);
-          if (clean === null) {
-            return discard('failed validation');
-          }
-          return clean;
-        } catch (e) {
-          return discard('malformed save');
-        }
+        var r = readAndClassify(accept);
+        // Only 'restore' yields a usable state; 'reject'/'discard'/none -> null.
+        return r.action === 'restore' ? r.state : null;
       },
 
       /** Remove any saved game (used by "remove saved data" / reset). */
@@ -1456,6 +1389,14 @@
 
   function onCellClick(e) {
     if (busy || state.winner !== G.EMPTY) return;
+    // Don't let a human click STEAL an AI seat's move. During an AI's turn the
+    // seat is driven by maybeTriggerAI(); a stray click on a legal cell would
+    // otherwise place the AI's move for it (and, in an AI-vs-AI match, do so
+    // even while PAUSED — when `busy` is false and the scheduled move is held).
+    // isAITurn() consults the same AI-type policy (AGENTS.isAIType) the move
+    // scheduler uses, so the click guard and the scheduler can never disagree
+    // about whose turn it is.
+    if (isAITurn()) return;
     var r = parseInt(this.dataset.r, 10);
     var c = parseInt(this.dataset.c, 10);
     if (!G.canPlay(state, state.current, r, c)) return;
@@ -1626,13 +1567,14 @@
   // via the animation driver); the hold applies to the move AFTER it. Distinct
   // from `paused` (the Settings dialog freeze), whose semantics must not change.
   //
-  // LIMITATION (documented, by design for now): an AI's move computation
-  // (agent.chooseMove) is SYNCHRONOUS on the main thread, so a Pause press can
-  // only take effect BETWEEN moves — it cannot interrupt a move that is already
-  // mid-search. On fast agents this is invisible; on a slow (red-table) Shark
-  // move on a big board, Pause lands once the current think returns. True mid-
-  // think interruption would require moving the search into a Web Worker — the
-  // intended future step this control is already shaped for.
+  // Plan B (DONE): the Shark search now runs in a Web Worker (see the AI-worker
+  // section above), so Pause takes effect three ways: BETWEEN moves (the next
+  // search never starts), DURING a think (abortAiWorker() terminates the
+  // in-flight search immediately — true mid-think interruption), and while a
+  // cascade is still animating (that one cascade finishes, then the hold takes
+  // full effect — the "pausing…" sub-state). Random/Tutor still run
+  // synchronously (they are near-instant), so for those seats Pause effectively
+  // lands between moves, which is imperceptible.
   var aiPaused = false;
 
   // Resolve the agent instance for a seat. `seat` is the player number (1/2),
@@ -1641,8 +1583,14 @@
   // seat+depth for sharks so each seat's difficulty gets its own instance and
   // changing one doesn't rebuild the other.
   function agentFor(type, seat) {
-    if (type !== 'random' && type !== 'tutor' && type !== 'shark') return null;
     if (!AGENTS) return null;
+    // Single source of truth for "is this an AI seat?" — AGENTS.isAIType (guard
+    // its presence for an older cached agents.js that predates the helper, in
+    // which case fall back to the explicit list). The board click-guard uses
+    // the SAME policy (via isAITurn), so they can never disagree.
+    var aiType = (AGENTS.isAIType ? AGENTS.isAIType(type)
+                 : (type === 'random' || type === 'tutor' || type === 'shark'));
+    if (!aiType) return null;
     if (type === 'shark') {
       // makeShark may be absent in an older cached agents.js — guard it.
       if (!AGENTS.makeShark) return null;
@@ -1683,6 +1631,140 @@
     if (aiTimer !== null) { clearTimeout(aiTimer); aiTimer = null; }
   }
 
+  // --- off-main-thread AI search (Plan B: Web Worker) ----------------------
+  // The Shark minimax search can block the main thread for seconds on a big
+  // board. Running it in a Web Worker keeps the UI responsive during the think
+  // and — crucially — lets Pause / New Game ABORT an in-flight search mid-think
+  // (worker.terminate()), which the old synchronous path could never do.
+  //
+  // file:// constraint: this game is played by opening index.html directly, so
+  // the page origin is null/file and `new Worker('js/ai-worker.js')` is blocked
+  // by browsers (and importScripts/fetch of local files is blocked too). The
+  // workaround — verified in Firefox and Chromium under file:// — is a BLOB
+  // worker whose body is SELF-CONTAINED: we inline the engine's and agents'
+  // own factory source (G.__factorySource / AGENTS.__factorySource, exposed by
+  // their UMD heads) so the worker rebuilds the exact same modules on its own
+  // `self`, with no network/script loading. A drift test guards that the source
+  // the worker runs is byte-identical to the loaded modules.
+  //
+  // Degrades gracefully: if the worker can't be built or isn't supported, the
+  // scheduler falls back to the synchronous search (identical to the old
+  // behaviour), so gameplay is never worse than before.
+  var aiWorker = null;          // the live Worker, or null (none / fell back)
+  var aiWorkerBroken = false;   // true once construction/handshake has failed
+  var aiWorkerSeq = 0;          // reply-matching id (distinct from playToken)
+  var aiWorkerPending = null;   // { seq, onResult } for the in-flight job
+
+  // Build the self-contained worker body from the loaded module sources. Null
+  // if the pieces aren't available (older cached scripts without __factorySource
+  // or a missing Worker/Blob/URL API) — the caller then uses the sync path.
+  function buildAiWorker() {
+    if (aiWorkerBroken) return null;
+    if (aiWorker) return aiWorker;
+    if (typeof Worker !== 'function' || typeof Blob !== 'function' ||
+        typeof URL === 'undefined' || !URL.createObjectURL) {
+      aiWorkerBroken = true; return null;
+    }
+    if (!G || !AGENTS || !G.__factorySource || !AGENTS.__factorySource) {
+      aiWorkerBroken = true; return null;
+    }
+    try {
+      // Re-run each UMD factory onto the worker's `self`. In a worker there is
+      // no CommonJS `module`, so the UMD heads take the global branch and set
+      // self.JumpingSquares / self.JumpingSquaresAgents. The message shim then
+      // rebuilds the requested agent and replies with its chosen move.
+      var body = [
+        '"use strict";',
+        'self.JumpingSquares = (' + G.__factorySource + ')();',
+        'self.JumpingSquaresAgents = (' + AGENTS.__factorySource + ')();',
+        'self.onmessage = function (e) {',
+        '  var d = e.data || {}, g = self.JumpingSquares, a = self.JumpingSquaresAgents;',
+        '  try {',
+        '    var opts = d.opts || {};',
+        '    var agent = (d.type === "shark") ? a.makeShark(g, { depth: opts.depth })',
+        '              : (d.type === "tutor") ? a.makeTutor(g, { level: opts.level })',
+        '              : (d.type === "random") ? a.makeRandom(g, { level: opts.level })',
+        '              : null;',
+        '    var mv = agent ? agent.chooseMove(d.state) : null;',
+        '    self.postMessage({ seq: d.seq, ok: true, move: mv });',
+        '  } catch (err) {',
+        '    self.postMessage({ seq: d.seq, ok: false, error: String(err && err.message || err) });',
+        '  }',
+        '};',
+      ].join('\n');
+      var url = URL.createObjectURL(new Blob([body], { type: 'application/javascript' }));
+      var w = new Worker(url);
+      // The blob URL is referenced by the running worker; revoke it now (the
+      // worker keeps its own handle) so we don't leak object URLs.
+      URL.revokeObjectURL(url);
+      w.onmessage = onAiWorkerMessage;
+      w.onerror = function () {
+        // A worker-level error: abandon the worker and fall back to sync for
+        // this and future moves (don't thrash trying to rebuild a broken one).
+        var pend = aiWorkerPending;
+        aiWorkerPending = null;
+        aiWorkerBroken = true;
+        try { w.terminate(); } catch (e) {}
+        if (aiWorker === w) aiWorker = null;
+        if (pend && pend.onResult) pend.onResult(null, true);
+      };
+      aiWorker = w;
+      return w;
+    } catch (e) {
+      aiWorkerBroken = true;
+      aiWorker = null;
+      return null;
+    }
+  }
+
+  function onAiWorkerMessage(e) {
+    var d = e.data || {};
+    var pend = aiWorkerPending;
+    // Ignore a reply with no matching pending job, or a stale one (the job was
+    // aborted by Pause / New Game, which clears aiWorkerPending). This is the
+    // seq-level guard; the token-level guard (playToken) is applied by the
+    // onResult callback in the scheduler.
+    if (!pend || d.seq !== pend.seq) return;
+    aiWorkerPending = null;
+    if (d.ok) pend.onResult(d.move || null, false);
+    else pend.onResult(null, true); // worker-side error -> let caller fall back
+  }
+
+  // Abort any in-flight worker search. Used by Pause (true mid-think abort) and
+  // New Game. terminate() stops the search immediately; we recreate the worker
+  // lazily on the next request. Clearing aiWorkerPending makes any late reply a
+  // no-op via the seq guard above.
+  function abortAiWorker() {
+    aiWorkerPending = null;
+    if (aiWorker) {
+      try { aiWorker.terminate(); } catch (e) {}
+      aiWorker = null; // rebuilt on demand by buildAiWorker()
+    }
+  }
+
+  // Request an async move for `seat` from the worker. Returns true if the job
+  // was posted (the caller should wait for onResult); false if the worker is
+  // unavailable (the caller should compute synchronously instead). onResult is
+  // called with (move, errored): move is {r,c}|null, errored true on failure.
+  function computeMoveAsync(type, seat, snapshot, onResult) {
+    var w = buildAiWorker();
+    if (!w) return false;
+    var opts;
+    if (type === 'shark') opts = { depth: prefs.getSharkDepth(seat) };
+    else if (type === 'tutor') opts = { level: prefs.getTutorLevel(seat) };
+    else if (type === 'random') opts = { level: prefs.getRandomLevel(seat) };
+    else return false;
+    var seq = ++aiWorkerSeq;
+    aiWorkerPending = { seq: seq, onResult: onResult };
+    try {
+      w.postMessage({ seq: seq, type: type, opts: opts, state: snapshot });
+    } catch (e) {
+      aiWorkerPending = null;
+      return false; // couldn't post (e.g. state not cloneable) -> sync fallback
+    }
+    return true;
+  }
+
   // If it's an AI's turn and nothing is in progress, schedule the AI's move.
   function maybeTriggerAI() {
     cancelPendingAI();
@@ -1715,12 +1797,51 @@
       aiTimer = null;
       if (playToken !== tokenAtSchedule) return; // New Game cancelled us
       if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
-      var agent = agentFor(prefs.getPlayerType(state.current), state.current);
+      var seat = state.current;
+      var type = prefs.getPlayerType(seat);
+      var agent = agentFor(type, seat);
       if (!agent) return;
-      var mv = agent.chooseMove(state);
-      if (!mv) return; // no legal move (shouldn't happen before a winner)
-      if (settings.stepMode) startStepMode(mv.r, mv.c);
-      else playMoveAnimated(mv.r, mv.c, settings.delayMs);
+
+      // Play a computed move through the normal animated path, re-checking the
+      // gates (a lot can change across an async worker hop).
+      function playComputed(mv) {
+        if (playToken !== tokenAtSchedule) return; // superseded (New Game)
+        if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
+        if (!mv) return; // no legal move (shouldn't happen before a winner)
+        if (settings.stepMode) startStepMode(mv.r, mv.c);
+        else playMoveAnimated(mv.r, mv.c, settings.delayMs);
+      }
+
+      // Offload ONLY the expensive Shark search to the worker; Random/Tutor are
+      // positionally cheap (near-instant at any size) so a worker round-trip
+      // would only add latency. If the worker is unavailable, fall through to
+      // the synchronous search below (identical to the pre-Plan-B behaviour).
+      if (type === 'shark') {
+        var snapshot = G.cloneState(state);
+        var slow = isSlowAiSeat(seat);       // show a "thinking" cue if slow
+        if (slow) setAiThinking(true);
+        var posted = computeMoveAsync(type, seat, snapshot, function (mv, errored) {
+          setAiThinking(false);
+          if (playToken !== tokenAtSchedule) return; // superseded while thinking
+          if (errored) {
+            // Worker failed: compute synchronously as a safety net so the match
+            // never stalls (the worker is marked broken and won't be retried).
+            var fallback = null;
+            try { fallback = agent.chooseMove(state); } catch (e) { fallback = null; }
+            playComputed(fallback);
+            return;
+          }
+          playComputed(mv);
+        });
+        if (posted) return;         // async path engaged; onResult will play it
+        setAiThinking(false);       // worker unavailable -> sync fallback below
+      }
+
+      // Synchronous path (Random/Tutor always; Shark only if the worker is
+      // unavailable). Blocks the main thread for the duration of the search —
+      // exactly the pre-Plan-B behaviour, kept as a universal fallback.
+      var mvSync = agent.chooseMove(state);
+      playComputed(mvSync);
     }, pace);
   }
 
@@ -1850,12 +1971,46 @@
   }
 
   // --- AI-vs-AI pause/play control -----------------------------------------
-  // (The isSlowAiSeat() calibration-threshold helper that used to live here was
-  // removed with the misleading "thinking" pulse — see the NOTE in
-  // syncAiPauseButton. It will return with Plan B, where a real off-main-thread
-  // "searching" phase can drive a during-think cue, computed from the SAME
-  // shared cost model (js/calibrate.js) so "slow" means "would be red in the
-  // Board-size table".)
+  // Plan B active: the Shark search now runs off the main thread (see the
+  // Web-Worker section above), so a real "searching" phase exists and can drive
+  // an honest during-think cue. isSlowAiSeat() decides whether to show it,
+  // using the SAME shared cost model as the Board-size table (js/calibrate.js):
+  // a seat is "slow" exactly when its estimated worst-case move time on the
+  // current board would be shown RED there (over the user's max-wait). So the
+  // pulse appears only when a wait is actually expected — not on every AI move.
+  //
+  // Gated defensively: if calibrate.js is absent, or the seat isn't a Shark
+  // (Random/Tutor are always near-instant and run synchronously anyway), it
+  // returns false and no cue shows.
+  function isSlowAiSeat(seat) {
+    if (!CALIB || !CALIB.estimateMs || !CALIB.isOverThreshold) return false;
+    if (prefs.getPlayerType(seat) !== 'shark') return false;
+    var depth = prefs.getSharkDepth(seat);
+    // Match this seat's depth to the corresponding Shark row in the cost model.
+    var rows = (CALIB.tableRows && CALIB.tableRows()) || [];
+    var row = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].agent === 'Shark' && rows[i].depth === depth) { row = rows[i]; break; }
+    }
+    if (!row) row = { agent: 'Shark', depth: depth };
+    var samples = (prefs.getCalibration && prefs.getCalibration()) || {};
+    var ms = CALIB.estimateMs(row, COLS, samples);
+    var maxWaitMs = prefs.getCalibMaxWaitMs ? prefs.getCalibMaxWaitMs() : 5000;
+    return CALIB.isOverThreshold(ms, maxWaitMs);
+  }
+
+  // Toggle the "thinking" cue on the pause control while an off-thread search
+  // runs. Only meaningful during an AI-vs-AI match (the only time the control
+  // is visible); the class is also defensively cleared whenever the control is
+  // hidden (see syncAiPauseButton). Tracked in a flag so syncAiPauseButton can
+  // re-apply it across the renders that happen mid-think.
+  var aiThinking = false;
+  function setAiThinking(on) {
+    aiThinking = !!on;
+    if (!aiPauseBtn) return;
+    if (aiThinking && !aiPauseBtn.hidden) aiPauseBtn.classList.add('thinking');
+    else aiPauseBtn.classList.remove('thinking');
+  }
 
   // True when BOTH seats are AI (an AI-vs-AI match) and the game is ongoing —
   // the only situation the pause/play control applies to.
@@ -1910,18 +2065,16 @@
       : pausing ? 'Pausing the AI match after the current move'
       : 'Pause the AI match (hold the next move)');
 
-    // NOTE: a "thinking" pulse during the AI's search was intentionally REMOVED
-    // here. The search (agent.chooseMove) is SYNCHRONOUS on the main thread, so
-    // `busy` only becomes true AFTER the search returns (when playMoveAnimated
-    // starts a cascade) — the pulse could therefore never animate during the
-    // actual think, and on a non-cascading move it would never show at all.
-    // Showing it on `busy` alone was misleading, and dropping `busy` would make
-    // it appear BETWEEN moves too. Honest during-think feedback requires the
-    // search to run off the main thread (Plan B — the Web Worker on the
-    // roadmap); the cue (and the calibration-threshold "is this a slow mover"
-    // test) will be reintroduced there, driven by a real "searching" phase.
-    // (The .thinking class is still defensively cleared in the hidden-state
-    // reset above, so a stale one can never linger.)
+    // "Thinking" cue: a real off-main-thread search is in progress (Plan B).
+    // Unlike the old synchronous path, `busy` is NOT set during the think (it
+    // only becomes true once a cascade animates), so the cue is driven by the
+    // aiThinking flag set around computeMoveAsync(). We only arm it for a seat
+    // isSlowAiSeat() flags as over the max-wait threshold, so it appears when a
+    // wait is genuinely expected — never on a fast move. Re-applied here so the
+    // renders that fire mid-think keep the pulse; cleared in the hidden-state
+    // reset above so a stale one can never linger. It is independent of the
+    // pause sub-states (a slow think can be pausing, too).
+    aiPauseBtn.classList.toggle('thinking', aiThinking);
 
     if (!aiPauseWasVisible) {
       aiPauseBtn.classList.remove('appearing');
@@ -2056,6 +2209,11 @@
   // syncAiPauseButton() synchronously FIRST so the glyph flips the instant the
   // handler runs (important responsiveness: the heavier render() may do more
   // work), then render() to reflect any scheduling/finalisation.
+  //
+  // Plan B: the search runs off the main thread, so Pause now ABORTS an
+  // in-flight think immediately (abortAiWorker → worker.terminate()). That move
+  // never lands — so after aborting a think the match is HELD right away, and
+  // only a cascade ALREADY animating (busy) still has to finish ("pausing…").
   if (aiPauseBtn) {
     aiPauseBtn.addEventListener('click', function () {
       if (!isAIvsAIMatch()) return; // defensive: button shouldn't be visible
@@ -2070,10 +2228,14 @@
         cancelPendingAI(); // drop any scheduled-but-unfired next move so, in
                            // the between-moves window, the next search never
                            // even starts (immediate effect + immediate glyph).
+        abortAiWorker();   // Plan B: interrupt an in-flight off-thread search
+                           // NOW (mid-think). Its result is discarded, so the
+                           // move it was computing never plays.
+        setAiThinking(false); // the think is over — drop the cue immediately
         if (aiPauseLive) {
           aiPauseLive.textContent = busy
-            ? 'Pausing after this move'  // a move/cascade is still finishing
-            : 'AI match paused';          // held right away (between moves)
+            ? 'Pausing after this move'  // a cascade is still finishing
+            : 'AI match paused';          // held right away (think aborted / between moves)
         }
         syncAiPauseButton(); // flip the glyph now, before the heavier render()
       }
@@ -2084,6 +2246,8 @@
   // --- new game ------------------------------------------------------------
   function newGame() {
     playToken++;   // invalidate any in-flight cascade animation
+    abortAiWorker();        // abort any in-flight off-thread AI search mid-think
+    setAiThinking(false);   // and drop the "thinking" cue for the old board
     aiPaused = false;        // a fresh match is not paused
     // Clear any stale pause announcement from the previous match: otherwise, if
     // the old match was paused ("AI match paused") and the next AI-vs-AI match
@@ -2234,6 +2398,8 @@
     // Pause any in-flight animated cascade so it doesn't resolve in the
     // background while the dialog is open.
     paused = true;
+    abortAiWorker();       // stop any off-thread AI search while the dialog is open
+    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       // A generation was waiting on the timer: cancel it and arrange to resume
       // the same driver when the dialog closes.
@@ -2995,6 +3161,8 @@
     // Pause any in-flight animated cascade (mirrors openSettings) so it doesn't
     // resolve in the background while the dialog is open.
     paused = true;
+    abortAiWorker();       // stop any off-thread AI search while the dialog is open
+    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       clearTimeout(animTimer);
       animTimer = null;

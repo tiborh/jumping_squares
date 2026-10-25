@@ -618,21 +618,23 @@ Status of the project and planned work. Done items reflect the current build.
       storing mid-cascade frames — saving the settings in the file lets a
       reporter force **› Step** mode to walk the cascade.
 - [ ] Optional sound and haptic feedback on mobile
-- [ ] **Off-main-thread AI search (Web Worker)** — run the Shark (minimax)
-      search in a **Web Worker** so a long think on a big board no longer blocks
-      the main thread. This keeps the UI responsive during a multi-second move
-      (board, buttons, spinners all live) and, crucially, lets the **AI-vs-AI
-      pause** *interrupt a move mid-think* rather than only taking effect
-      between moves (today the search is synchronous, so a Pause press can't be
-      processed until the current search returns — see the pause control's
-      documented limitation). It is also the honest foundation for any later
-      "prepare the next move in parallel" idea (though note that is a separate,
-      speculative optimisation: minimax is reactive, so precomputing the next
-      move means searching a ply deeper — more work, not less). Scope: serialise
-      the board to the worker, run `AGENTS.bestMove`/the Shark search there,
-      handle cancellation (Pause / New Game invalidating an in-flight search)
-      and the `file://` worker-loading caveat (a classic worker script, same
-      no-build-step constraints as the rest).
+- [x] **Off-main-thread AI search (Web Worker)** *(done, v55)* — the Shark
+      (minimax) search runs in a **Web Worker** so a long think on a big board no
+      longer blocks the main thread. The UI stays responsive during a
+      multi-second move (board, buttons, the "thinking" pulse all live) and the
+      **AI-vs-AI pause** now *interrupts a move mid-think* (the in-flight search
+      is terminated) rather than only taking effect between moves. The
+      `file://` worker-loading caveat (browsers block `new Worker('…​.js')` and
+      a worker's `importScripts`/`fetch` from a `null`/`file` origin) was solved
+      with a **self-contained Blob-URL worker**: the worker body inlines the
+      engine's and agents' own factory source (`__factorySource`) and re-runs it
+      on the worker's `self`, so nothing is loaded over the network — verified
+      under `file://` in Firefox and Chromium, with a synchronous fallback if a
+      browser refuses to construct the worker. A drift test asserts the worker
+      computes the same move as the in-process agents. (A later "prepare the
+      next move in parallel" idea remains separate and speculative: minimax is
+      reactive, so precomputing means searching a ply deeper — more work, not
+      less.)
 - [ ] Icon buttons for the **Step** control to save top-bar space on narrow
       screens (Settings and Help are already glyph icons; portrait phones still
       get crowded once more controls are added)
