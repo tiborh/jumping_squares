@@ -50,7 +50,11 @@ test.describe('AI seat is protected from human clicks', () => {
 
     // Try to steal a move: click several legal-looking empty cells.
     for (const sel of ['[data-r="2"][data-c="2"]', '[data-r="0"][data-c="0"]', '[data-r="4"][data-c="4"]']) {
-      await page.locator('#board .cell' + sel).click();
+      const cell = page.locator('#board .cell' + sel);
+      await expect(cell).toHaveAttribute('aria-disabled', 'true');
+      // Bypass Playwright's aria-disabled gate so the app's own click guard
+      // still receives a real pointer event and remains the thing under test.
+      await cell.click({ force: true });
     }
     // Give any (erroneous) move a chance to render.
     await page.waitForTimeout(300);

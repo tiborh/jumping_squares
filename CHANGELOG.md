@@ -29,6 +29,20 @@ the nearest user-facing entry.
 
 ---
 
+## v58 — Topmost-only Escape and keyboard board controls
+
+- **Escape** now closes only the topmost dialog, returning focus to its
+  parent without dismissing it or resuming play underneath it. Nested panels
+  and import confirmations share the same dialog-stack dispatch.
+- The board now has **one Tab stop**. Use **arrow keys** to navigate without
+  wrapping at the edges and **Enter / Space** to play. **Home / End** select the
+  first / last cell in a row; **Control + Home / End** select the board corners.
+- Cells have a visible keyboard focus outline and accessible row/column,
+  owner, point-count and capacity descriptions. Illegal moves, AI turns,
+  cascades, open dialogs and finished games remain protected from activation.
+- Keyboard focus is restored correctly after closing Players and when starting
+  a new game from the end-of-round controls.
+
 ## v57 — Background hint searches
 
 - Hints now run the strongest Shark search in the same self-contained Web
