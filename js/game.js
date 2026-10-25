@@ -59,7 +59,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '58';
+  var VERSION = '59';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -82,7 +82,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
-    { v: '58', text: 'Escape now closes only the topmost dialog and returns focus to its parent. You can also play using the keyboard: Tab into the board, move with arrow keys, and add a point with Enter or Space. A clear focus outline and cell descriptions show the selected square, owner, points and capacity.' },
+    { v: '59', text: 'Escape now closes only the topmost dialog and returns focus to its parent. You can also play using the keyboard: Tab into the board, move with arrow keys, and add a point with Enter or Space. A clear focus outline and cell descriptions show the selected square, owner, points and capacity. Pending computer moves wait until all dialogs close.' },
     { v: '57', text: 'Hints now think in the background, keeping the game responsive on large boards. A spinner appears during a slow search, and moving or opening a dialog cancels the old hint. If background search is unavailable, hints report that instead of freezing the interface.' },
     { v: '56', text: 'Loading settings from a file now keeps your current board and saved game at their existing size. The imported board-size choice applies on your next New Game instead of preventing your current game from resuming after a reload.' },
     { v: '55', text: 'The strongest computer player (Shark) now thinks OFF the main thread, so the game stays responsive while it works out a move on a big board. The pay-off: the pause button in a computer-vs-computer match now interrupts a move mid-think \u2014 press pause and the current search stops right away, instead of only taking effect after it finishes. A calm cyan \u201Cthinking\u201D pulse appears on the pause button while a slow move is being computed. On browsers that don\u2019t allow this, the game quietly falls back to the old behaviour \u2014 nothing breaks.' },

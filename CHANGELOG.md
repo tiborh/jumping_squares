@@ -29,7 +29,7 @@ the nearest user-facing entry.
 
 ---
 
-## v58 — Topmost-only Escape and keyboard board controls
+## v59 — Topmost-only Escape and keyboard board controls
 
 - **Escape** now closes only the topmost dialog, returning focus to its
   parent without dismissing it or resuming play underneath it. Nested panels
@@ -42,6 +42,9 @@ the nearest user-facing entry.
   cascades, open dialogs and finished games remain protected from activation.
 - Keyboard focus is restored correctly after closing Players and when starting
   a new game from the end-of-round controls.
+- Pending computer moves and background searches are cancelled while any dialog
+  is open and restarted only after the last dialog closes. A cascade already
+  running retains its existing pause behavior.
 
 ## v57 — Background hint searches
 

@@ -865,7 +865,7 @@
     }
     var r = Number(this.dataset.r);
     var c = Number(this.dataset.c);
-    var target = r * state.cols + c;
+    var target;
     if (e.key === 'ArrowUp') target = Math.max(0, r - 1) * state.cols + c;
     else if (e.key === 'ArrowDown') target = Math.min(state.rows - 1, r + 1) * state.cols + c;
     else if (e.key === 'ArrowLeft') target = r * state.cols + Math.max(0, c - 1);
@@ -983,6 +983,9 @@
       onEscape: onEscape,
       onOpen: function () {
         cancelPendingHint();
+        cancelPendingAI();
+        abortAiWorker();
+        setAiThinking(false);
         lastFocused = document.activeElement;
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
@@ -1002,6 +1005,7 @@
         lastFocused = null;
         syncBoardInput();
         syncHintButton();
+        maybeTriggerAI();
       },
     };
     return manager;
@@ -1613,7 +1617,7 @@
   //
   // maybeTriggerAI() is scheduled (deferred) after every finalised turn, after
   // New Game, and after boot-restore. It is heavily gated so it never fires
-  // mid-cascade, while the Settings dialog is paused, or out of turn — and it
+  // mid-cascade, while a dialog is open, or out of turn — and it
   // chains naturally for AI-vs-AI (each AI move finalises, which schedules the
   // next). `aiTimer` + `playToken` let New Game cancel a pending AI move.
   var aiAgents = {};        // cache: type -> agent instance
@@ -1789,8 +1793,8 @@
     else pend.onResult(null, true); // worker-side error -> let caller fall back
   }
 
-  // Abort any in-flight worker search. Used by Pause (true mid-think abort) and
-  // New Game. terminate() stops the search immediately; we recreate the worker
+  // Abort any in-flight worker search. Used by Pause (true mid-think abort),
+  // dialogs and New Game. terminate() stops the search; we recreate the worker
   // lazily on the next request. Clearing aiWorkerPending makes any late reply a
   // no-op via the seq guard above.
   function abortAiWorker() {
@@ -1838,7 +1842,7 @@
     // aiPaused: the user pressed Pause on the AI-vs-AI control. We decline to
     // schedule the NEXT move (an in-progress cascade is NOT frozen — it runs to
     // completion via the animation driver; only the move AFTER it is held).
-    if (busy || stepping.active || paused || aiPaused) return; // let the current action finish
+    if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0) return;
     if (!isAITurn()) return;
     var tokenAtSchedule = playToken;
     // Pace between AI moves. A move that cascades already animates at the chosen
@@ -1856,7 +1860,7 @@
     aiTimer = setTimeout(function () {
       aiTimer = null;
       if (playToken !== tokenAtSchedule) return; // New Game cancelled us
-      if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
+      if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0 || !isAITurn()) return;
       var seat = state.current;
       var type = prefs.getPlayerType(seat);
       var agent = agentFor(type, seat);
@@ -1866,7 +1870,7 @@
       // gates (a lot can change across an async worker hop).
       function playComputed(mv) {
         if (playToken !== tokenAtSchedule) return; // superseded (New Game)
-        if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
+        if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0 || !isAITurn()) return;
         if (!mv) return; // no legal move (shouldn't happen before a winner)
         if (settings.stepMode) startStepMode(mv.r, mv.c);
         else playMoveAnimated(mv.r, mv.c, settings.delayMs);
@@ -2458,8 +2462,6 @@
     // Pause any in-flight animated cascade so it doesn't resolve in the
     // background while the dialog is open.
     paused = true;
-    abortAiWorker();       // stop any off-thread AI search while the dialog is open
-    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       // A generation was waiting on the timer: cancel it and arrange to resume
       // the same driver when the dialog closes.
@@ -3202,8 +3204,6 @@
     // Pause any in-flight animated cascade (mirrors openSettings) so it doesn't
     // resolve in the background while the dialog is open.
     paused = true;
-    abortAiWorker();       // stop any off-thread AI search while the dialog is open
-    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       clearTimeout(animTimer);
       animTimer = null;

@@ -149,6 +149,66 @@ test('an open dialog disables board activation and closing it restores input', a
   await expect(page.locator('#board .pip')).toHaveCount(1);
 });
 
+for (const trigger of ['#help-btn', '#build-tag', '#newgame-btn']) {
+  test(trigger + ' holds a scheduled AI move until the dialog closes', async ({ page }) => {
+    await page.clock.install();
+    await page.locator('#turn').click();
+    await page.locator('#p1-type').selectOption('random');
+    await page.locator('#players-close').click();
+    await page.locator(trigger).click();
+    await page.clock.runFor(1000);
+    await expect(page.locator('#board .pip')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.clock.runFor(1000);
+    await expect(page.locator('#board .pip')).toHaveCount(1);
+    await expect(page.locator('#turn-label')).toHaveText('Player 2');
+    expect((await savedState(page)).moveCount).toBe(1);
+  });
+}
+
+test('nested dialogs abort an AI search and restart it only after the last dialog closes', async ({ page }) => {
+  await page.clock.install();
+  await page.evaluate(() => {
+    window.dialogWorkers = [];
+    window.Worker = class {
+      constructor() { window.dialogWorkers.push(this); }
+      postMessage(message) { this.request = message; }
+      terminate() { this.terminated = true; }
+    };
+  });
+  await page.locator('#turn').click();
+  await page.locator('#p1-type').selectOption('shark');
+  await page.locator('#players-close').click();
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => window.dialogWorkers.length)).toBe(1);
+  await page.locator('#build-tag').click();
+  await page.locator('#whatsnew-open').click();
+  expect(await page.evaluate(() => window.dialogWorkers[0].terminated)).toBe(true);
+  await page.evaluate(() => {
+    const worker = window.dialogWorkers[0];
+    worker.onmessage({ data: { seq: worker.request.seq, ok: true, move: { r: 0, c: 0 } } });
+  });
+  await expect(page.locator('#board .pip')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#about-overlay')).toBeVisible();
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => window.dialogWorkers.length)).toBe(1);
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => window.dialogWorkers.length)).toBe(2);
+  await page.evaluate(() => {
+    const stale = window.dialogWorkers[0];
+    stale.onmessage({ data: { seq: stale.request.seq, ok: true, move: { r: 0, c: 0 } } });
+  });
+  await expect(page.locator('#board .pip')).toHaveCount(0);
+  await page.evaluate(() => {
+    const worker = window.dialogWorkers[1];
+    worker.onmessage({ data: { seq: worker.request.seq, ok: true, move: { r: 1, c: 1 } } });
+  });
+  await expect(cell(page, 1, 1).locator('.pip')).toHaveCount(1);
+  expect((await savedState(page)).moveCount).toBe(1);
+});
+
 test('a resized New Game rebuilds coordinates and its single Tab stop', async ({ page }) => {
   await cell(page, 4, 4).focus();
   await page.locator('#settings-btn').click();
