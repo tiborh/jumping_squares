@@ -591,6 +591,8 @@
       /* Dimensions set inline by JS to a square that fits the wrap. */
     }
 
+    .board-row { display: contents; }
+
     .cell {
       background: var(--empty);
       border-radius: 8px;
@@ -606,6 +608,10 @@
     .cell.p2 { background: var(--p2); }
     .cell.playable:hover { filter: brightness(1.12); }
     .cell.bump { transform: scale(0.92); }
+    .cell:focus-visible {
+      outline: 3px solid #fff;
+      outline-offset: -4px;
+    }
 
     /* --- Placement / propagation flash -------------------------------------
        When a dot is placed, and as a cascade spreads, each cell whose value or
@@ -1843,7 +1849,13 @@
         <p id="stats-note">Updated after each settled move.</p>
       </aside>
       <div id="board-area">
-        <div id="board" role="grid" aria-label="Jumping Squares board"></div>
+        <div id="board" role="grid" aria-label="Jumping Squares board"
+             aria-describedby="board-controls"></div>
+        <p id="board-controls" class="visually-hidden">
+          Use arrow keys to move between cells and Enter or Space to add a point.
+          Home and End move to the first and last cell in a row; hold Control to
+          move to the first and last cell on the board.
+        </p>
       </div>
     </div>
   </div>
@@ -2442,9 +2454,9 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=57"></script>
-  <script src="js/agents.js?v=57"></script>
-  <script src="js/calibrate.js?v=57"></script>
-  <script src="js/ui.js?v=57"></script>
+  <script src="js/game.js?v=60"></script>
+  <script src="js/agents.js?v=60"></script>
+  <script src="js/calibrate.js?v=60"></script>
+  <script src="js/ui.js?v=60"></script>
 </body>
 </html>

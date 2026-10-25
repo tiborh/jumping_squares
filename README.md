@@ -60,6 +60,13 @@ it **jumps**, sending a point to each neighbour and capturing them. Own the
 ### Controls
 
 - **Add a point** — click an empty or your own cell on your turn.
+- **Keyboard** — press **Tab** to enter the board, use the **arrow keys** to
+  move between cells, and press **Enter** or **Space** to add a point.
+  **Home** / **End** move to the first / last cell in the row; hold **Control**
+  to move to the first / last cell on the board.
+- **Close a dialog** — press **Escape** to close only the topmost panel,
+  leaving any parent panel open. The end-of-round winner dialog stays open
+  until you choose **Play Again**.
 - **New Game** — click the **New Game** button in the top bar (it asks you to
   confirm).
 - **Board stats** — turn on **Settings → Board stats panel** to show a

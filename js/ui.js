@@ -813,20 +813,33 @@
 
   // --- build the grid once -------------------------------------------------
   var cellEls = [];
+  var focusedCellIndex = 0;
   function buildGrid() {
     boardEl.innerHTML = '';
     boardEl.style.gridTemplateColumns = 'repeat(' + state.cols + ', 1fr)';
     boardEl.style.gridTemplateRows = 'repeat(' + state.rows + ', 1fr)';
+    boardEl.setAttribute('aria-rowcount', String(state.rows));
+    boardEl.setAttribute('aria-colcount', String(state.cols));
     cellEls = [];
+    focusedCellIndex = 0;
     for (var r = 0; r < state.rows; r++) {
+      var rowEl = document.createElement('div');
+      rowEl.className = 'board-row';
+      rowEl.setAttribute('role', 'row');
+      rowEl.setAttribute('aria-rowindex', String(r + 1));
+      boardEl.appendChild(rowEl);
       for (var c = 0; c < state.cols; c++) {
         var el = document.createElement('div');
         el.className = 'cell';
         el.setAttribute('role', 'gridcell');
+        el.setAttribute('aria-colindex', String(c + 1));
+        el.tabIndex = (r === 0 && c === 0) ? 0 : -1;
         el.dataset.r = r;
         el.dataset.c = c;
         el.addEventListener('click', onCellClick);
-        boardEl.appendChild(el);
+        el.addEventListener('focus', onCellFocus);
+        el.addEventListener('keydown', onCellKeyDown);
+        rowEl.appendChild(el);
         cellEls.push(el);
       }
     }
@@ -834,6 +847,34 @@
     // diff against. Clear the snapshot so the FIRST render after a (re)build
     // paints without flashing every cell (e.g. on New Game).
     prevRender = null;
+  }
+
+  function onCellFocus() {
+    cellEls[focusedCellIndex].tabIndex = -1;
+    focusedCellIndex = Number(this.dataset.r) * state.cols + Number(this.dataset.c);
+    this.tabIndex = 0;
+  }
+
+  function onCellKeyDown(e) {
+    if (activeDialogs.length > 0 || e.altKey || e.metaKey) return;
+    if (e.ctrlKey && e.key !== 'Home' && e.key !== 'End') return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (!e.repeat) this.click();
+      return;
+    }
+    var r = Number(this.dataset.r);
+    var c = Number(this.dataset.c);
+    var target;
+    if (e.key === 'ArrowUp') target = Math.max(0, r - 1) * state.cols + c;
+    else if (e.key === 'ArrowDown') target = Math.min(state.rows - 1, r + 1) * state.cols + c;
+    else if (e.key === 'ArrowLeft') target = r * state.cols + Math.max(0, c - 1);
+    else if (e.key === 'ArrowRight') target = r * state.cols + Math.min(state.cols - 1, c + 1);
+    else if (e.key === 'Home') target = e.ctrlKey ? 0 : r * state.cols;
+    else if (e.key === 'End') target = e.ctrlKey ? cellEls.length - 1 : (r + 1) * state.cols - 1;
+    else return;
+    e.preventDefault();
+    cellEls[target].focus();
   }
 
   // --- responsive sizing: largest square that fits the board area ----------
@@ -886,13 +927,17 @@
   // --- accessible dialog focus management ----------------------------------
   // Shared by Winner, Settings, About, and What's New dialogs. Maintains a
   // stack of open dialogs so nested dialogs (e.g. What's new inside About)
-  // trap focus strictly within the topmost active dialog without conflicting.
+  // trap focus and handle Escape only within the topmost active dialog.
   var activeDialogs = [];
 
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Tab' || activeDialogs.length === 0) return;
+    if (activeDialogs.length === 0) return;
     var current = activeDialogs[activeDialogs.length - 1];
-    current.onTab(e);
+    if (e.key === 'Tab') current.onTab(e);
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (current.onEscape) current.onEscape();
+    }
   });
 
   function focusables(container) {
@@ -911,7 +956,7 @@
 
   // Build an open/close pair that manages focus for a given overlay + card.
   // `preferredFocusId` is focused first on open (falls back to first focusable).
-  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId) {
+  function makeDialogFocusManager(overlayEl, cardEl, preferredFocusId, onEscape) {
     var lastFocused = null;
 
     function onTab(e) {
@@ -935,25 +980,45 @@
 
     var manager = {
       onTab: onTab,
+      onEscape: onEscape,
+      setCovered: function (covered) {
+        if (covered) {
+          overlayEl.setAttribute('inert', '');
+          overlayEl.setAttribute('aria-hidden', 'true');
+        } else {
+          overlayEl.removeAttribute('inert');
+          overlayEl.removeAttribute('aria-hidden');
+        }
+      },
       onOpen: function () {
         cancelPendingHint();
+        cancelPendingAI();
+        abortAiWorker();
+        setAiThinking(false);
         lastFocused = document.activeElement;
         var pref = preferredFocusId && document.getElementById(preferredFocusId);
         var items = focusables(cardEl);
         var target = pref || items[0] || cardEl;
         if (target && target.focus) target.focus();
+        // Move focus out of the parent before making its subtree inert.
+        if (activeDialogs.length > 0) activeDialogs[activeDialogs.length - 1].setCovered(true);
         activeDialogs.push(manager);
+        syncBoardInput();
       },
       onClose: function () {
         var idx = activeDialogs.indexOf(manager);
         if (idx !== -1) activeDialogs.splice(idx, 1);
+        manager.setCovered(false);
+        if (activeDialogs.length > 0) activeDialogs[activeDialogs.length - 1].setCovered(false);
         if (lastFocused && document.body && document.body.contains(lastFocused) && lastFocused.focus) {
           lastFocused.focus();
         } else if (cellEls && cellEls[0] && cellEls[0].focus) {
           cellEls[0].focus();
         }
         lastFocused = null;
+        syncBoardInput();
         syncHintButton();
+        maybeTriggerAI();
       },
     };
     return manager;
@@ -1131,15 +1196,9 @@
     for (var i = 0; i < state.cells.length; i++) {
       var cell = state.cells[i];
       var el = cellEls[i];
-      el.classList.remove('p1', 'p2', 'p3', 'p4', 'playable',
+      el.classList.remove('p1', 'p2', 'p3', 'p4',
                           'shadow-next', 'shadow-p1', 'shadow-p2');
       if (cell.owner !== G.EMPTY) el.classList.add('p' + cell.owner);
-      // Mark cells the current player can click (helps on touch screens).
-      // Not while a manual cascade is being stepped.
-      if (!stepping.active && state.winner === G.EMPTY &&
-          (cell.owner === G.EMPTY || cell.owner === state.current)) {
-        el.classList.add('playable');
-      }
       // Shadow preview: cells the next step will change.
       if (shadow && shadow.hasOwnProperty(i)) {
         el.classList.add('shadow-next', 'shadow-p' + shadow[i]);
@@ -1147,6 +1206,10 @@
       var cr = Math.floor(i / state.cols);
       var cc = i % state.cols;
       var cap = G.capacity(state, cr, cc);
+      var ownerLabel = cell.owner === G.EMPTY ? 'empty' : playerName(cell.owner);
+      el.setAttribute('aria-label',
+        'Row ' + (cr + 1) + ', column ' + (cc + 1) + ': ' + ownerLabel + ', ' +
+        cell.value + (cell.value === 1 ? ' point' : ' points') + ', capacity ' + cap + '.');
       el.classList.remove('overloaded');
       var overloaded = cell.value > cap;
       if (overloaded) el.classList.add('overloaded');
@@ -1284,6 +1347,7 @@
     // Reflect whether a Hint is available in the current state (human live turn,
     // nothing in progress). Defined later in this IIFE; runtime-only here.
     syncHintButton();
+    syncBoardInput();
   }
 
   // --- turn region → Players panel -----------------------------------------
@@ -1392,16 +1456,23 @@
     autoSaveIfOn();
   }
 
+  function humanTurnAvailable() {
+    return !busy && !stepping.active && !paused && activeDialogs.length === 0 &&
+      state.winner === G.EMPTY && !isAITurn();
+  }
+
+  function syncBoardInput() {
+    var available = humanTurnAvailable();
+    for (var i = 0; i < cellEls.length; i++) {
+      var owner = state.cells[i].owner;
+      var playable = available && (owner === G.EMPTY || owner === state.current);
+      cellEls[i].setAttribute('aria-disabled', String(!playable));
+      cellEls[i].classList.toggle('playable', playable);
+    }
+  }
+
   function onCellClick(e) {
-    if (busy || state.winner !== G.EMPTY) return;
-    // Don't let a human click STEAL an AI seat's move. During an AI's turn the
-    // seat is driven by maybeTriggerAI(); a stray click on a legal cell would
-    // otherwise place the AI's move for it (and, in an AI-vs-AI match, do so
-    // even while PAUSED — when `busy` is false and the scheduled move is held).
-    // isAITurn() consults the same AI-type policy (AGENTS.isAIType) the move
-    // scheduler uses, so the click guard and the scheduler can never disagree
-    // about whose turn it is.
-    if (isAITurn()) return;
+    if (!humanTurnAvailable()) return;
     var r = parseInt(this.dataset.r, 10);
     var c = parseInt(this.dataset.c, 10);
     if (!G.canPlay(state, state.current, r, c)) return;
@@ -1559,7 +1630,7 @@
   //
   // maybeTriggerAI() is scheduled (deferred) after every finalised turn, after
   // New Game, and after boot-restore. It is heavily gated so it never fires
-  // mid-cascade, while the Settings dialog is paused, or out of turn — and it
+  // mid-cascade, while a dialog is open, or out of turn — and it
   // chains naturally for AI-vs-AI (each AI move finalises, which schedules the
   // next). `aiTimer` + `playToken` let New Game cancel a pending AI move.
   var aiAgents = {};        // cache: type -> agent instance
@@ -1735,8 +1806,8 @@
     else pend.onResult(null, true); // worker-side error -> let caller fall back
   }
 
-  // Abort any in-flight worker search. Used by Pause (true mid-think abort) and
-  // New Game. terminate() stops the search immediately; we recreate the worker
+  // Abort any in-flight worker search. Used by Pause (true mid-think abort),
+  // dialogs and New Game. terminate() stops the search; we recreate the worker
   // lazily on the next request. Clearing aiWorkerPending makes any late reply a
   // no-op via the seq guard above.
   function abortAiWorker() {
@@ -1784,7 +1855,7 @@
     // aiPaused: the user pressed Pause on the AI-vs-AI control. We decline to
     // schedule the NEXT move (an in-progress cascade is NOT frozen — it runs to
     // completion via the animation driver; only the move AFTER it is held).
-    if (busy || stepping.active || paused || aiPaused) return; // let the current action finish
+    if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0) return;
     if (!isAITurn()) return;
     var tokenAtSchedule = playToken;
     // Pace between AI moves. A move that cascades already animates at the chosen
@@ -1802,7 +1873,7 @@
     aiTimer = setTimeout(function () {
       aiTimer = null;
       if (playToken !== tokenAtSchedule) return; // New Game cancelled us
-      if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
+      if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0 || !isAITurn()) return;
       var seat = state.current;
       var type = prefs.getPlayerType(seat);
       var agent = agentFor(type, seat);
@@ -1812,7 +1883,7 @@
       // gates (a lot can change across an async worker hop).
       function playComputed(mv) {
         if (playToken !== tokenAtSchedule) return; // superseded (New Game)
-        if (busy || stepping.active || paused || aiPaused || !isAITurn()) return;
+        if (busy || stepping.active || paused || aiPaused || activeDialogs.length > 0 || !isAITurn()) return;
         if (!mv) return; // no legal move (shouldn't happen before a winner)
         if (settings.stepMode) startStepMode(mv.r, mv.c);
         else playMoveAnimated(mv.r, mv.c, settings.delayMs);
@@ -2398,14 +2469,12 @@
     delayValue.textContent = delayLabel();
   }
 
-  settingsFocus = makeDialogFocusManager(settingsOverlay, settingsCard, 'settings-close');
+  settingsFocus = makeDialogFocusManager(settingsOverlay, settingsCard, 'settings-close', closeSettings);
 
   function openSettings() {
     // Pause any in-flight animated cascade so it doesn't resolve in the
     // background while the dialog is open.
     paused = true;
-    abortAiWorker();       // stop any off-thread AI search while the dialog is open
-    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       // A generation was waiting on the timer: cancel it and arrange to resume
       // the same driver when the dialog closes.
@@ -2426,6 +2495,7 @@
     settingsOverlay.classList.remove('show');
     settingsFocus.onClose();
     paused = false;
+    syncBoardInput();
     syncHintButton();    // restore the Hint button now that play resumes
     // Resume a paused animated cascade, if one was in progress.
     if (resumeAnimation) {
@@ -2446,17 +2516,6 @@
   settingsOverlay.addEventListener('click', function (e) {
     if (e.target === settingsOverlay) closeSettings();
   });
-  // Escape closes it (desktop convenience).
-  document.addEventListener('keydown', function (e) {
-    // Ignore Escape while the reset dialog (layered above Settings) is open —
-    // that dialog's own handler dismisses the topmost layer first, so Settings
-    // must not also close underneath it and strand focus restoration.
-    if (e.key === 'Escape' && settingsOverlay.classList.contains('show') &&
-        !(resetOverlay && resetOverlay.classList.contains('show'))) {
-      closeSettings();
-    }
-  });
-
   delayRange.addEventListener('input', function () {
     var wasStepping = stepping.active;
     sliderIndexToSetting(parseInt(this.value, 10));
@@ -2762,7 +2821,7 @@
   // intercepts Tab and bounces focus back to Settings). Pushed on open, popped
   // on close — the same pattern as the Players/backup/reset panels.
   var boardsizeFocus = (boardsizeOverlay && boardsizeCard)
-    ? makeDialogFocusManager(boardsizeOverlay, boardsizeCard, 'boardsize-close')
+    ? makeDialogFocusManager(boardsizeOverlay, boardsizeCard, 'boardsize-close', closeBoardsize)
     : null;
 
   function openBoardsize() {
@@ -2787,15 +2846,6 @@
       if (e.target === boardsizeOverlay) closeBoardsize();
     });
   }
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && boardsizeOverlay &&
-        boardsizeOverlay.classList.contains('show')) {
-      // Close only the board-size panel (topmost); leave Settings open beneath.
-      e.stopPropagation();
-      closeBoardsize();
-    }
-  }, true);
-
   if (boardsizeRange) {
     boardsizeRange.addEventListener('input', function () {
       prefs.setPendingBoardSize(parseInt(this.value, 10));
@@ -3161,14 +3211,12 @@
   var playersOverlay = document.getElementById('players-overlay');
   var playersCard = document.getElementById('players-card');
   var playersClose = document.getElementById('players-close');
-  var playersFocus = makeDialogFocusManager(playersOverlay, playersCard, null);
+  var playersFocus = makeDialogFocusManager(playersOverlay, playersCard, null, closePlayers);
 
   function openPlayers() {
     // Pause any in-flight animated cascade (mirrors openSettings) so it doesn't
     // resolve in the background while the dialog is open.
     paused = true;
-    abortAiWorker();       // stop any off-thread AI search while the dialog is open
-    setAiThinking(false);  // and clear the thinking cue
     if (animTimer !== null) {
       clearTimeout(animTimer);
       animTimer = null;
@@ -3178,8 +3226,8 @@
     playersOverlay.classList.add('show');
     syncPlayerTypeUI();   // reflect current names / types / difficulty rows
     syncHintButton();     // hide the Hint button while the panel is open (paused)
-    updateTurnRegionAffordance(); // region is now "open" — drop its button role
     playersFocus.onOpen();
+    updateTurnRegionAffordance(); // drop the trigger's role after focus moves into the panel
   }
   function closePlayers() {
     // Commit any name the user left focused (defensive — blur usually fires).
@@ -3189,6 +3237,7 @@
     });
     playersOverlay.classList.remove('show');
     paused = false;
+    syncBoardInput();
     // Restore the #turn region's focusability BEFORE onClose() tries to return
     // focus to it. onClose() focuses the element that was active when the panel
     // opened — the #turn region — but opening removed its tabindex (and the
@@ -3214,12 +3263,6 @@
   playersOverlay.addEventListener('click', function (e) {
     if (e.target === playersOverlay) closePlayers(); // backdrop click closes
   });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && playersOverlay.classList.contains('show')) {
-      closePlayers();
-    }
-  });
-
   // --- confirm dialog ------------------------------------------------------
   // A small in-app yes/no modal, used instead of window.confirm (which prefixes
   // its text with the page origin — "file…" when opened locally). Reuses the
@@ -3239,7 +3282,7 @@
   var confirmOptionRow = document.getElementById('confirm-option-row');
   var confirmOption = document.getElementById('confirm-option');
   var confirmOptionLabel = document.getElementById('confirm-option-label');
-  var confirmFocus = makeDialogFocusManager(confirmOverlay, confirmCard, 'confirm-cancel');
+  var confirmFocus = makeDialogFocusManager(confirmOverlay, confirmCard, 'confirm-cancel', closeConfirm);
   var pendingConfirm = null; // the onConfirm callback for the open dialog
   var confirmHasCheckbox = false; // whether the open dialog shows the checkbox
 
@@ -3281,12 +3324,6 @@
   confirmOverlay.addEventListener('click', function (e) {
     if (e.target === confirmOverlay) closeConfirm(); // backdrop click = cancel
   });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && confirmOverlay.classList.contains('show')) {
-      closeConfirm();
-    }
-  });
-
   // --- reset-to-first-use dialog -------------------------------------------
   // A multi-checkbox dialog (opened from Settings → Persistence) that erases
   // the two persistence stores — "Names, scores & settings" (the whole prefs
@@ -3303,7 +3340,7 @@
   var resetGroupPrefs = document.getElementById('reset-group-prefs');
   var resetGroupBoard = document.getElementById('reset-group-board');
   var resetGroupReload = document.getElementById('reset-group-reload');
-  var resetFocus = makeDialogFocusManager(resetOverlay, resetCard, 'reset-cancel');
+  var resetFocus = makeDialogFocusManager(resetOverlay, resetCard, 'reset-cancel', closeReset);
 
   // The user's explicit preference for the Reload option, remembered across
   // enable/disable transitions so toggling a data group never silently
@@ -3332,23 +3369,10 @@
     resetGroupReload.checked = true;
     syncResetDialog();
     resetOverlay.classList.add('show');
-    // onOpen() moves focus into the reset dialog FIRST (synchronously), so the
-    // trigger (inside Settings) is never focused within an inert subtree.
     resetFocus.onOpen(); // focuses Cancel (safe default for a destructive action)
-    // Reset is opened from the Settings panel, which stays visually behind it.
-    // Make the Settings OVERLAY inert so assistive tech doesn't see two active
-    // modal dialogs (it carries role="dialog" aria-modal="true"), mirroring the
-    // About ⇄ What's new nesting. Removed again in closeReset().
-    settingsOverlay.setAttribute('inert', '');
-    settingsOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeReset() {
     resetOverlay.classList.remove('show');
-    // Re-enable the Settings layer BEFORE restoring focus — focus can't land on
-    // an element inside an inert subtree, and onClose() restores focus to the
-    // Reset trigger, which lives inside the Settings card.
-    settingsOverlay.removeAttribute('inert');
-    settingsOverlay.removeAttribute('aria-hidden');
     resetFocus.onClose();
   }
 
@@ -3460,12 +3484,6 @@
   resetOverlay.addEventListener('click', function (e) {
     if (e.target === resetOverlay) closeReset(); // backdrop click = cancel
   });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && resetOverlay.classList.contains('show')) {
-      closeReset();
-    }
-  });
-
   // --- Save / Load to file (backup / restore) ------------------------------
   // A file-based backup: export the selected sections to a JSON file and import
   // one back. Two optional, independently-selectable sections (both default on):
@@ -3489,7 +3507,7 @@
   var backupImportBtn = document.getElementById('backup-import');
   var backupStatus = document.getElementById('backup-status');
   var backupFile = document.getElementById('backup-file');
-  var backupFocus = makeDialogFocusManager(backupOverlay, backupCard, 'backup-close');
+  var backupFocus = makeDialogFocusManager(backupOverlay, backupCard, 'backup-close', closeBackup);
 
   // Show a status/result line in the panel (polite). `isError` switches to the
   // muted-red styling for a rejected load.
@@ -3781,17 +3799,10 @@
     setBackupStatus('', false);
     syncBackupActions();
     backupOverlay.classList.add('show');
-    // onOpen() moves focus into this dialog FIRST, then inert the Settings
-    // layer beneath it (same nested-dialog pattern as Reset) so assistive tech
-    // doesn't see two active modal dialogs.
     backupFocus.onOpen();
-    settingsOverlay.setAttribute('inert', '');
-    settingsOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeBackup() {
     backupOverlay.classList.remove('show');
-    settingsOverlay.removeAttribute('inert');
-    settingsOverlay.removeAttribute('aria-hidden');
     backupFocus.onClose();
   }
 
@@ -3814,15 +3825,6 @@
   backupOverlay.addEventListener('click', function (e) {
     if (e.target === backupOverlay) closeBackup(); // backdrop click = close
   });
-  document.addEventListener('keydown', function (e) {
-    // Only close Backup on Escape when it is the topmost dialog AND the confirm
-    // dialog (which layers above it for the import confirmation) isn't open.
-    if (e.key === 'Escape' && backupOverlay.classList.contains('show') &&
-        !(confirmOverlay && confirmOverlay.classList.contains('show'))) {
-      closeBackup();
-    }
-  });
-
   // --- help dialog ---------------------------------------------------------
   // A single scrollable page of the concise "How to play" content. The text is
   // the engine's HELP data, which is mirrored from the README (see
@@ -3833,7 +3835,7 @@
   var helpBtn = document.getElementById('help-btn');
   var helpClose = document.getElementById('help-close');
   var helpBody = document.getElementById('help-body');
-  var helpFocus = makeDialogFocusManager(helpOverlay, helpCard, 'help-close');
+  var helpFocus = makeDialogFocusManager(helpOverlay, helpCard, 'help-close', closeHelp);
   var helpRendered = false; // build once, lazily, on first open
 
   // Append `raw` to `parent`, interpreting the small inline markdown subset the
@@ -3927,19 +3929,13 @@
   helpOverlay.addEventListener('click', function (e) {
     if (e.target === helpOverlay) closeHelp(); // backdrop click = close
   });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && helpOverlay.classList.contains('show')) {
-      closeHelp();
-    }
-  });
-
   // --- about dialog --------------------------------------------------------
   // Reached only via the discreet build tag (bottom-left). Shows what the game
   // is, the exact build, a link to the source, and the licence.
   var aboutOverlay = document.getElementById('about-overlay');
   var aboutCard = document.getElementById('about-card');
   var aboutClose = document.getElementById('about-close');
-  var aboutFocus = makeDialogFocusManager(aboutOverlay, aboutCard, 'about-close');
+  var aboutFocus = makeDialogFocusManager(aboutOverlay, aboutCard, 'about-close', closeAbout);
 
   function openAbout() {
     aboutOverlay.classList.add('show');
@@ -3955,15 +3951,6 @@
   aboutOverlay.addEventListener('click', function (e) {
     if (e.target === aboutOverlay) closeAbout();
   });
-  // Escape closes it (desktop convenience) — but only when the What's new
-  // sub-dialog (layered above About) isn't open; that one handles Escape first.
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && aboutOverlay.classList.contains('show') &&
-        !whatsnewOverlay.classList.contains('show')) {
-      closeAbout();
-    }
-  });
-
   // --- what's new (sub-dialog of About) ------------------------------------
   // A short, curated list of recent player-facing changes, sourced from the
   // engine's CHANGELOG. Reached by choice from About; never pushed at the user.
@@ -3972,7 +3959,7 @@
   var whatsnewOpen = document.getElementById('whatsnew-open');
   var whatsnewClose = document.getElementById('whatsnew-close');
   var whatsnewList = document.getElementById('whatsnew-list');
-  var whatsnewFocus = makeDialogFocusManager(whatsnewOverlay, whatsnewCard, 'whatsnew-close');
+  var whatsnewFocus = makeDialogFocusManager(whatsnewOverlay, whatsnewCard, 'whatsnew-close', closeWhatsNew);
 
   // Render the curated entries (newest first, as authored in the engine). Built
   // with DOM APIs (not innerHTML) so entry text is inserted as plain text and
@@ -4070,26 +4057,10 @@
     whatsnewExpanded = false;
     renderWhatsNew();
     whatsnewOverlay.classList.add('show');
-    // onOpen() runs first and moves focus into the What's new dialog
-    // synchronously; only then do we make the About layer inert. This ordering
-    // means the trigger (inside About) never sits focused inside an inert
-    // subtree, even transiently.
     whatsnewFocus.onOpen();
-    // The About layer stays visually behind this sub-dialog, but must not be a
-    // second active modal for assistive tech. Inert the whole About OVERLAY
-    // (the element that carries role="dialog" aria-modal="true"), so its modal
-    // semantics are removed too — not just the card contents. The What's new
-    // overlay is a sibling, so it is unaffected.
-    aboutOverlay.setAttribute('inert', '');
-    aboutOverlay.setAttribute('aria-hidden', 'true');
   }
   function closeWhatsNew() {
     whatsnewOverlay.classList.remove('show');
-    // Re-enable the About layer BEFORE restoring focus — focus can't land on an
-    // element inside an inert subtree, and onClose() restores focus to the
-    // What's new trigger, which lives inside the About card.
-    aboutOverlay.removeAttribute('inert');
-    aboutOverlay.removeAttribute('aria-hidden');
     whatsnewFocus.onClose(); // restores focus to the What's new trigger in About
   }
 
@@ -4098,13 +4069,6 @@
   whatsnewOverlay.addEventListener('click', function (e) {
     if (e.target === whatsnewOverlay) closeWhatsNew();
   });
-  // Escape closes the What's new sub-dialog first (it's on top of About).
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && whatsnewOverlay.classList.contains('show')) {
-      closeWhatsNew();
-    }
-  });
-
   // Resize handling (orientation changes, window resize).
   window.addEventListener('resize', sizeBoard);
   window.addEventListener('orientationchange', function () {

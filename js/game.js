@@ -59,7 +59,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '57';
+  var VERSION = '60';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -82,6 +82,7 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '60', text: 'Escape now closes only the topmost dialog and returns focus to its parent. You can also play using the keyboard: Tab into the board, move with arrow keys, and add a point with Enter or Space. A clear focus outline and cell descriptions show the selected square, owner, points and capacity. Pending computer moves wait until all dialogs close, and only the topmost dialog is exposed to screen readers.' },
     { v: '57', text: 'Hints now think in the background, keeping the game responsive on large boards. A spinner appears during a slow search, and moving or opening a dialog cancels the old hint. If background search is unavailable, hints report that instead of freezing the interface.' },
     { v: '56', text: 'Loading settings from a file now keeps your current board and saved game at their existing size. The imported board-size choice applies on your next New Game instead of preventing your current game from resuming after a reload.' },
     { v: '55', text: 'The strongest computer player (Shark) now thinks OFF the main thread, so the game stays responsive while it works out a move on a big board. The pay-off: the pause button in a computer-vs-computer match now interrupts a move mid-think \u2014 press pause and the current search stops right away, instead of only taking effect after it finishes. A calm cyan \u201Cthinking\u201D pulse appears on the pause button while a slow move is being computed. On browsers that don\u2019t allow this, the game quietly falls back to the old behaviour \u2014 nothing breaks.' },
@@ -93,7 +94,6 @@
     { v: '44', text: 'New: Settings \u2192 Persistence has a \u201CSave / Load to file\u201D panel. Save the current game board and/or your settings & scores to a JSON file, and load one back \u2014 handy for sharing a board, making puzzles, or keeping a full backup. Pick which sections to include (both by default); a board-only file is marked in its name. Loading replaces only the sections in the file and keeps the rest; boards are strictly validated (no mid-cascade positions).' },
     { v: '43', text: 'The Players settings moved out of \u2699 Settings into their own panel: click the top-left area (the coloured dot and player name) to open it. There you set who controls each player (Human or an AI) and rename players \u2014 now BOTH players, any time, even mid-game. Only human players can be renamed; AI seats show their agent name. The top bar looks the same at rest; hovering the top-left shows a square outline (the old name underline is gone). Settings now holds just the propagation delay, the hint light-up, and saved-data options.' },
     { v: '42', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.' },
-    { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.
@@ -164,6 +164,14 @@
       "items": [
         {
           "text": "**Add a point** — click an empty or your own cell on your turn.",
+          "children": []
+        },
+        {
+          "text": "**Keyboard** — press **Tab** to enter the board, use the **arrow keys** to move between cells, and press **Enter** or **Space** to add a point. **Home** / **End** move to the first / last cell in the row; hold **Control** to move to the first / last cell on the board.",
+          "children": []
+        },
+        {
+          "text": "**Close a dialog** — press **Escape** to close only the topmost panel, leaving any parent panel open. The end-of-round winner dialog stays open until you choose **Play Again**.",
           "children": []
         },
         {
