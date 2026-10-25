@@ -59,7 +59,7 @@
   // cache-busting "?v=N" query strings on the <script> tags in index.html are
   // separate and must be edited by hand to match — the browser only re-fetches
   // a script when its URL literally changes.
-  var VERSION = '55';
+  var VERSION = '57';
 
   // Curated "What's new" list, surfaced in the About > What's new panel.
   //
@@ -82,6 +82,8 @@
   // link. A test enforces this cap and the newest-version/ordering invariants.
   var WHATSNEW_MAX = 12;
   var CHANGELOG = [
+    { v: '57', text: 'Hints now think in the background, keeping the game responsive on large boards. A spinner appears during a slow search, and moving or opening a dialog cancels the old hint. If background search is unavailable, hints report that instead of freezing the interface.' },
+    { v: '56', text: 'Loading settings from a file now keeps your current board and saved game at their existing size. The imported board-size choice applies on your next New Game instead of preventing your current game from resuming after a reload.' },
     { v: '55', text: 'The strongest computer player (Shark) now thinks OFF the main thread, so the game stays responsive while it works out a move on a big board. The pay-off: the pause button in a computer-vs-computer match now interrupts a move mid-think \u2014 press pause and the current search stops right away, instead of only taking effect after it finishes. A calm cyan \u201Cthinking\u201D pulse appears on the pause button while a slow move is being computed. On browsers that don\u2019t allow this, the game quietly falls back to the old behaviour \u2014 nothing breaks.' },
     { v: '50', text: 'AI pause feedback is clearer. Pressing pause now flips the control immediately when you catch it between moves (the next move simply never starts), and shows a distinct amber \u201Cpausing\u2026\u201D state when a move is still finishing before the hold takes effect \u2014 so you can tell the press registered. (A long think still can\u2019t be interrupted mid-search yet: that needs the AI to run off the main thread, which is on the roadmap.)' },
     { v: '49', text: 'New: pause/play for computer-vs-computer matches. When both players are AIs, the bottom-right corner \u2014 where the Hint bulb sits on your turn \u2014 becomes a pause/play button instead. Press pause to hold the match before the next move (a cascade already running finishes first), and play to resume. Handy for pausing a slow thinker on a big board. (For now pause takes effect between moves, not mid-think \u2014 interrupting a move mid-search needs the AI to run off the main thread, which is on the roadmap.)' },
@@ -92,8 +94,6 @@
     { v: '43', text: 'The Players settings moved out of \u2699 Settings into their own panel: click the top-left area (the coloured dot and player name) to open it. There you set who controls each player (Human or an AI) and rename players \u2014 now BOTH players, any time, even mid-game. Only human players can be renamed; AI seats show their agent name. The top bar looks the same at rest; hovering the top-left shows a square outline (the old name underline is gone). Settings now holds just the propagation delay, the hint light-up, and saved-data options.' },
     { v: '42', text: 'New: a Hint button in the bottom-right corner. It rests as a quiet dim bulb and \u201Clights up\u201D once you\u2019ve paused without moving, offering a strong move worked out by the strongest computer player \u2014 so you\u2019re nudged to think (or check Help) first. The button always works if you click it. Settings \u2192 \u201CHint light-up\u201D sets how long it waits (Always on, 5\u201330 s, or Off). Advisory only \u2014 it never takes your turn.' },
     { v: '41', text: 'New: a Help button (the ? icon in the top bar, next to \u2699 Settings) opens a concise \u201CHow to play\u201D \u2014 the goal, the rules, and the controls \u2014 as a single scrollable page. The top-bar Settings control is now a matching gear icon (same size as the turn dot) to make room; both icons have tooltips.' },
-    { v: '40', text: 'New: Settings \u2192 Persistence now has a \u201CReset to first-use state\u201D button. It opens a dialog where you pick exactly what to erase \u2014 Names, scores & settings; the current game; and whether to reload afterwards (reload is available only when you\u2019re clearing something) \u2014 all selected by default, so one confirm restores the game to how it was before you first used it.' },
-    { v: '39', text: 'Tutor Medium is stronger and no longer falls for the \u201Capproach a corner and out-build it\u201D trick: it keeps its main strength (don\u2019t leave a cell you could capture next turn) and adds watching the cells next to its own pieces to contest local races \u2014 matching an adjacent build-up and claiming the edge cell between its piece and a diagonal intruder.' },
   ];
 
   // In-app Help content, MIRRORED from the README "How to play" HELP block.

@@ -159,9 +159,11 @@ a cascade, a manual step, or after a win). It **rests dim** and **lights up** on
 its own once you've paused **without moving** for a while — nudging you to think
 (or check **Help**) first, and offering the hint only when it might help. Set
 that idle delay — **Always on**, **5–30 s**, or **Off** — under **Settings →
-Hint light-up** (default **10 s**). On a large/slow board the search may take a
-moment, so a brief *thinking* spinner can show on the bulb; on the current 5×5
-it's effectively instant.
+Hint light-up** (default **10 s**). Hints search in the background, so you can
+keep playing or open a dialog while they work; either action cancels the old
+hint. A *thinking* spinner appears if the search takes longer than 400 ms.
+If the browser cannot run background searches, hints announce that they are
+unavailable instead of freezing the interface.
 
 **Players — play against the computer.** Open the **Players** panel (click the
 **top-left area** — the coloured dot and player name), then set either player
@@ -916,4 +918,3 @@ This is an **independent, from-scratch implementation** inspired by the
 This section reflects a good-faith understanding of software copyright (game
 *rules* are not copyrightable; only specific *code/expression* is) and is not
 legal advice.
-
