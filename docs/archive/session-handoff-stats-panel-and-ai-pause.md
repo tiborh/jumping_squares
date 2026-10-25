@@ -4,6 +4,13 @@
 -->
 # Session handoff — stats panel + AI pause (feature branch)
 
+> **ARCHIVED (historical).** The work this note tracked has shipped: the stats
+> panel + AI pause/play and Plan B (off-main-thread Web Worker AI search) merged
+> to `main` in v55 (PR #63), tagged `v55`, with the optional Playwright e2e
+> suite in PR #68. Both feature branches referenced below are merged and
+> deleted. This file is kept only as a record of how that work was planned and
+> staged; it is **not** a live to-do and should not be used to "resume" anything.
+
 A resume note for continuing this work in a future session. Captures *where
 things stand*, *what is left*, and *the gotchas* so the next session doesn't
 re-derive context.
