@@ -134,11 +134,10 @@
       align-items: center;
       gap: 8px;
     }
-    /* The tile-count readout doubles as the New Game control (clicking it asks
-       "New game?" with confirmation). Styled as a subtle pushable pill, like
-       the tally, but tuned for its longer text. Disabled once the game is over
-       — then the end-game bar's New Game button is the sole restart path. */
-    #status-counts {
+    /* Permanent New Game control in the top bar. Always available (it asks for
+       confirmation before clearing an in-progress board). Styled as a subtle
+       pushable pill, matching the tally. */
+    #newgame-btn {
       font: inherit;
       color: inherit;
       background: #262b34;
@@ -150,20 +149,14 @@
       white-space: nowrap;
       transition: background-color 120ms ease, border-color 120ms ease;
     }
-    #status-counts:hover {
+    #newgame-btn:hover {
       background: #2f3540;
       border-color: #4a5160;
     }
-    #status-counts:active { background: #3a4150; }
-    #status-counts:focus-visible {
+    #newgame-btn:active { background: #3a4150; }
+    #newgame-btn:focus-visible {
       outline: 2px solid #9fd0ff;
       outline-offset: 2px;
-    }
-    #status-counts:disabled {
-      cursor: default;
-      background: transparent;
-      border-color: transparent;
-      opacity: 1;
     }
 
     /* The win tally rendered as a pushable control: a subtle pill that invites
@@ -380,6 +373,98 @@
       .cell.hint-flash::before { animation: none; opacity: 1; }
     }
 
+    /* --- AI-vs-AI pause/play control --------------------------------------
+       Shares the Hint button's bottom-right corner slot (same fixed position,
+       size and round shape) so the one location reads consistently whether it
+       is the human-turn Hint bulb or this AI-match control. Only one of the two
+       is ever shown (JS keeps them mutually exclusive), so they never overlap.
+       Styled on the Hint button's QUIET resting look; it does not "light up"
+       (no idle nudge) — it is a direct control, present only when it has a
+       function. */
+    #aipause-btn {
+      position: fixed;
+      right: 10px;
+      bottom: 10px;
+      bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      z-index: 6;                 /* same layer as the Hint button */
+      font-size: clamp(16px, 4vw, 22px);
+      line-height: 1;
+      width: 2.4em;
+      height: 2.4em;
+      padding: 0;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(44, 49, 60, 0.55);
+      border: 1px solid rgba(58, 65, 80, 0.6);
+      color: #8a92a0;
+      -webkit-tap-highlight-color: transparent;
+      transition: background-color 200ms ease, border-color 200ms ease,
+                  color 200ms ease, transform 80ms ease, opacity 200ms ease;
+    }
+    #aipause-btn[hidden] { display: none; }
+    #aipause-btn.appearing { animation: hintAppear 320ms ease-out 1; }
+    #aipause-btn:hover {
+      background: rgba(52, 59, 71, 0.85);
+      color: #c7ccd4;
+    }
+    #aipause-btn:active { transform: scale(0.94); }
+    #aipause-btn:focus-visible {
+      outline: 2px solid #9fd0ff;
+      outline-offset: 2px;
+    }
+    .aipause-icon { display: block; }
+    /* Default (not playing / currently running) shows PAUSE; .is-playing (the
+       match is held, waiting for Play) shows the PLAY triangle. JS toggles the
+       class; CSS picks the icon so the swap is a pure class change. */
+    #aipause-btn .aipause-play { display: none; }
+    #aipause-btn.is-playing .aipause-pause { display: none; }
+    #aipause-btn.is-playing .aipause-play { display: block; }
+    /* HELD (fully paused, ready to resume): a clear, slightly brighter/greenish
+       Play affordance so "it's paused, press to go" reads at a glance. */
+    #aipause-btn.is-playing:not(.pausing) {
+      color: #bfe3a0;
+      border-color: rgba(122, 170, 85, 0.6);
+      background: rgba(60, 80, 48, 0.55);
+    }
+    /* PAUSING (press registered, but a move/cascade is still finishing): an
+       amber "pending" look with a gentle pulse, so the user sees the press was
+       accepted even though the hold hasn't fully taken effect yet. This is the
+       key Plan-A feedback for the moment just after the main thread frees up
+       following a blocking search. */
+    #aipause-btn.pausing {
+      color: #ffd65c;
+      border-color: rgba(255, 214, 92, 0.6);
+      background: rgba(80, 68, 36, 0.55);
+      animation: aipausePausing 0.9s ease-in-out infinite;
+    }
+    @keyframes aipausePausing {
+      0%, 100% { opacity: 0.75; }
+      50%      { opacity: 1; }
+    }
+    /* THINKING (Plan B): a real off-main-thread Shark search is running and
+       the seat is slow enough (over the max-wait threshold, per the shared
+       cost model) to warrant a cue. A calm cyan breathing pulse distinct from
+       the amber "pausing" look, so "the AI is thinking" reads at a glance while
+       the board stays interactive. Driven by the aiThinking flag in js/ui.js
+       (set around the worker request, cleared on reply / Pause / New Game). */
+    #aipause-btn.thinking {
+      color: #9fd0ff;
+      border-color: rgba(159, 208, 255, 0.55);
+      background: rgba(40, 56, 80, 0.55);
+      animation: aipauseThinking 1.1s ease-in-out infinite;
+    }
+    @keyframes aipauseThinking {
+      0%, 100% { opacity: 0.7; }
+      50%      { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #aipause-btn.appearing,
+      #aipause-btn.pausing,
+      #aipause-btn.thinking { animation: none; }
+    }
+
     button {
       font: inherit;
       color: #e8e8ea;
@@ -400,11 +485,101 @@
     #board-wrap {
       flex: 1 1 auto;
       display: flex;
+      /* Default (landscape / wide): panel BESIDE the board (row). Switched to
+         a column (panel ABOVE) in portrait via the media query below. */
+      flex-direction: row;
+      align-items: stretch;
+      justify-content: center;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    /* The board's own flex cell: it takes the space left after the stats panel,
+       and sizeBoard() measures THIS element (not the wrap) so the square board
+       fits the remaining area. The former wrap padding lives here now, incl.
+       the tag-safe bottom strip. */
+    #board-area {
+      flex: 1 1 auto;
+      display: flex;
       align-items: center;
       justify-content: center;
       padding: 8px;
       padding-bottom: 28px; /* 8px base + ~20px tag-safe strip */
       min-height: 0;
+      min-width: 0;
+    }
+
+    /* Board-metrics scoreboard. A compact panel beside/above the board. It is
+       a flex sibling of #board-area; `hidden` removes it entirely (display:none
+       via the attribute) so a disabled panel takes no space and triggers no
+       layout. */
+    #stats-panel {
+      flex: 0 0 auto;
+      box-sizing: border-box;
+      background: #262b34;
+      border: 1px solid #3a4150;
+      border-radius: 10px;
+      margin: 8px;
+      padding: 10px 12px;
+      overflow: auto;
+      min-height: 0;
+      min-width: 0;
+      font-size: 0.9rem;
+    }
+    #stats-panel[hidden] { display: none; }
+    #stats-panel h2 {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      opacity: 0.9;
+    }
+    #stats-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #stats-table th,
+    #stats-table td {
+      padding: 3px 8px;
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    #stats-table th[scope="row"] {
+      text-align: left;
+      font-weight: 400;
+      opacity: 0.85;
+    }
+    #stats-table thead th {
+      font-weight: 700;
+      border-bottom: 1px solid #3a4150;
+    }
+    /* A small coloured dot in each player's column header, set inline by JS. */
+    #stats-table .stat-dot {
+      display: inline-block;
+      width: 0.7em;
+      height: 0.7em;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: baseline;
+    }
+    #stats-note {
+      margin: 8px 0 0;
+      font-size: 0.75rem;
+      opacity: 0.6;
+    }
+
+    /* Portrait / tall viewports: stack the panel ABOVE the board. */
+    @media (orientation: portrait) {
+      #board-wrap { flex-direction: column; }
+      #stats-panel {
+        /* Keep the panel from eating the board on short screens. */
+        max-height: 32vh;
+      }
+    }
+    /* Landscape / wide viewports: panel BESIDE the board (its natural width),
+       capped so a wide table can't crowd out the board. */
+    @media (orientation: landscape) {
+      #stats-panel { max-width: 40vw; }
     }
 
     #board {
@@ -1633,9 +1808,9 @@
         <span id="turn-label">Player 1</span>
       </div>
       <div id="status">
-        <button id="status-counts" type="button"
+        <button id="newgame-btn" type="button"
                 title="New Game"
-                aria-label="Player tile counts; activate to start a new game"></button>
+                aria-label="Start a new game">New Game</button>
         <button id="tally-btn" type="button"
                 title="Reset the win tally"
                 aria-label="Win tally; activate to reset it"></button>
@@ -1653,7 +1828,23 @@
       </div>
     </div>
     <div id="board-wrap">
-      <div id="board" role="grid" aria-label="Jumping Squares board"></div>
+      <!-- Board-metrics scoreboard. Hidden unless enabled in Settings. Reflows
+           relative to the board: ABOVE it in portrait, BESIDE it (left/right by
+           available space) in landscape — see the #board-wrap media queries.
+           Its per-player table is built by renderStats() in js/ui.js, which
+           only computes metrics when the panel is enabled AND the board is
+           settled (no mid-cascade refresh). -->
+      <aside id="stats-panel" aria-label="Board statistics" hidden>
+        <h2 id="stats-title">Board stats</h2>
+        <table id="stats-table">
+          <thead id="stats-head"></thead>
+          <tbody id="stats-body"></tbody>
+        </table>
+        <p id="stats-note">Updated after each settled move.</p>
+      </aside>
+      <div id="board-area">
+        <div id="board" role="grid" aria-label="Jumping Squares board"></div>
+      </div>
     </div>
   </div>
 
@@ -1700,6 +1891,39 @@
        announcement doesn't interrupt. -->
   <div id="hint-live" class="visually-hidden" role="status" aria-live="polite"></div>
 
+  <!-- AI-vs-AI pause / play control. Occupies the SAME bottom-right corner slot
+       as the Hint button, but is a DIFFERENT function and look: the Hint bulb
+       is a human-only aid (hidden on AI turns), so during an AI-vs-AI match this
+       control takes the slot instead. One location, context-dependent role.
+
+       Pause blocks the NEXT AI move from being scheduled (a cascade already in
+       progress finishes first); Play resumes. js/ui.js toggles .is-playing to
+       swap which icon shows (pause bars vs. play triangle) and shows/hides the
+       whole button per turn (hidden on human turns and at game over). The icons
+       are inline SVG line-icons drawn with the same stroke/caps as the bulb and
+       the top-bar ? / gear, so the slot reads consistently in either mode.
+
+       A polite live region (#aipause-live) announces state changes. -->
+  <button id="aipause-btn" type="button" hidden
+          title="Pause: hold the next AI move"
+          aria-label="Pause the AI match (hold the next move)">
+    <svg class="aipause-icon aipause-pause" viewBox="0 0 24 24" aria-hidden="true"
+         width="1em" height="1em" fill="none"
+         stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round">
+      <!-- two bars -->
+      <path d="M9 5v14M15 5v14"/>
+    </svg>
+    <svg class="aipause-icon aipause-play" viewBox="0 0 24 24" aria-hidden="true"
+         width="1em" height="1em" fill="none"
+         stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round">
+      <!-- play triangle -->
+      <path d="M8 5.5v13l11-6.5z"/>
+    </svg>
+  </button>
+  <div id="aipause-live" class="visually-hidden" role="status" aria-live="polite"></div>
+
   <div id="endgame-bar">
     <button id="endgame-new" type="button">New Game</button>
   </div>
@@ -1715,6 +1939,26 @@
       <div class="settings-head">
         <h2 id="settings-title">Settings</h2>
         <button id="settings-close" title="Close settings" aria-label="Close settings">✕</button>
+      </div>
+
+      <div class="setting">
+        <div class="setting-label">
+          <label for="statspanel-toggle" id="statspanel-label">Board stats panel</label>
+          <span class="switch">
+            <input type="checkbox" id="statspanel-toggle" role="switch"
+                   aria-describedby="statspanel-hint" />
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-knob"></span>
+            </span>
+          </span>
+        </div>
+        <div class="setting-hint" id="statspanel-hint">
+          Shows a scoreboard of board metrics (material, saturation,
+          cells about to overflow, and more) beside the board — above it on a
+          portrait screen, to the side in landscape. Updates after each settled
+          move. Turn it off to hide it; while off the figures aren't computed at
+          all, so it costs nothing.
+        </div>
       </div>
 
       <div class="setting">
@@ -2198,9 +2442,9 @@
     </div>
   </div>
 
-  <script src="js/game.js?v=47"></script>
-  <script src="js/agents.js?v=47"></script>
-  <script src="js/calibrate.js?v=47"></script>
-  <script src="js/ui.js?v=47"></script>
+  <script src="js/game.js?v=55"></script>
+  <script src="js/agents.js?v=55"></script>
+  <script src="js/calibrate.js?v=55"></script>
+  <script src="js/ui.js?v=55"></script>
 </body>
 </html>
