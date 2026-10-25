@@ -187,7 +187,7 @@
           "children": []
         },
         {
-          "text": "**Pause / Play an AI match** — when **both** players are computers, the bottom-right corner (where the Hint bulb sits on your turn) becomes a **pause/play** button instead. Press **pause** to hold the match before the next move — any cascade already running finishes first — and **play** to resume. It's handy for pausing a slow thinker on a big board; fast players move too quickly to interrupt mid-think.",
+          "text": "**Pause / Play an AI match** — when **both** players are computers, the bottom-right corner (where the Hint bulb sits on your turn) becomes a **pause/play** button instead. Press **pause** to hold the match and **play** to resume. The strongest player (Shark) thinks off the main thread, so pause stops it **right away** — even mid-think — while any cascade already on screen finishes first; a cyan pulse on the button shows when a slow move is being worked out. It's handy for pausing a slow thinker on a big board.",
           "children": []
         },
         {

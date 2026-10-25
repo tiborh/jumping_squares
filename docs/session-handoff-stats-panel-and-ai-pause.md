@@ -56,47 +56,44 @@ Three sequential, interdependent features plus review-fix bumps:
 Status checks: `node test/game.test.js` → **301 passed, 0 failed**;
 `node tools/gen-help.js --check` in sync; all PR #63 CI checks green.
 
-## The KNOWN LIMITATION (reason for the hold)
+## The former KNOWN LIMITATION — now RESOLVED by Plan B (v55)
 
-The Shark minimax search (`js/agents.js`, `makeShark`/`search`) is
-**synchronous on the main thread**. So:
-- `busy` only becomes true *after* `chooseMove()` returns (when
-  `playMoveAnimated` starts a cascade).
-- A pause click during a multi-second search is **queued by the browser** and
-  can't be processed until the search returns → pressing pause right after a
-  move on a big board (e.g. 9×9 Shark-Hard) looks like it does nothing until the
-  next piece lands. (The press *is* registered; only the feedback/effect are
-  delayed by one in-flight search.)
-- Plan A made the **between-moves** case instant and the **still-finishing**
-  case clearly acknowledged, but **cannot** interrupt a search already running.
+Up to v54 the Shark minimax search (`js/agents.js`, `makeShark`/`search`) ran
+**synchronously on the main thread**, so a pause click during a multi-second
+search was queued by the browser and couldn't take effect until the search
+returned. **v55 fixes this**: the Shark search now runs in a Web Worker (see
+below), so pause interrupts a think immediately. The paragraphs that follow are
+kept only as the historical reason the branch was held — they no longer describe
+current behaviour.
 
-## NEXT TASK — Plan B (Web Worker AI search)
+(Historical.) The synchronous limitation was: `busy` only became true *after*
+`chooseMove()` returned; a pause click during a long search was queued and
+couldn't be processed until it returned; Plan A made the between-moves case
+instant but couldn't interrupt a running search.
 
-On the README roadmap ("Off-main-thread AI search (Web Worker)"). Goal: run the
-Shark search in a **Web Worker** so the main thread stays responsive during a
-long think, which:
-1. lets the pause control repaint instantly and show a real "thinking" spinner;
-2. lets pause **abort an in-flight search** (true mid-think interruption);
-3. is the honest foundation for any later "prepare next move in parallel" idea
-   (which is itself **deferred/speculative** — minimax is reactive, so
-   precomputing means searching a ply deeper = more work, not less).
+## Plan B — Web Worker AI search (DONE in v55)
 
-Scope notes: serialise board state to the worker, run `AGENTS.bestMove` / the
-Shark search there, handle cancellation (Pause / New Game invalidating an
-in-flight search via the `playToken` pattern), and the `file://` worker-loading
-caveat (classic worker script; no build step, same constraints as the rest).
-When reintroducing the "thinking" pulse, drive it from a real **searching**
-phase and gate it on the calibration threshold (the removed `isSlowAiSeat`
-logic: `CALIB.estimateMs({agent:'Shark',depth}, COLS, samples)` +
-`isOverThreshold` vs `getCalibMaxWaitMs`).
+Implemented. The Shark search runs in a **self-contained Blob-URL Web Worker**
+(inlines each module's own `__factorySource`; no `importScripts`/`fetch`, so it
+works under `file://`), verified in Firefox + Chromium with a synchronous
+fallback. Pause now **aborts an in-flight search** via `worker.terminate()`
+(true mid-think interruption); the "thinking" cue returns, driven by a real
+searching phase and gated on the calibration threshold (`isSlowAiSeat` →
+`CALIB.estimateMs` + `isOverThreshold` vs `getCalibMaxWaitMs`). A drift test
+("AI Web Worker source integrity") keeps the inlined worker source faithful.
 
-## OUTSTANDING (not code) — needs the user / a browser
+Two pre-existing bugs were fixed alongside (each behind a pure, Node-tested
+helper): valid non-current-size saves were deleted on boot (now
+`G.classifySave` keeps them), and a human click could steal an AI seat's move
+(now gated via `AGENTS.isAIType`). See PR #67 for the optional Playwright e2e
+suite covering these browser-only paths.
 
-- **Browser validation** of the pause UX (the Node harness can't drive
-  `file://` DOM). Specifically on 9×9 Shark-Hard: (a) pause clicked *between*
-  moves flips to ▶ immediately and halts play; (b) pause clicked *during* a move
-  shows amber "pausing…" the moment the move lands; (c) control vanishes at game
-  over; (d) switching a paused seat to Human doesn't strand play.
+## OUTSTANDING — none blocking
+
+- **Browser validation: DONE.** Pause/resume responsiveness, mid-think abort,
+  the click-guard, and non-5×5 restore across reload were all confirmed in a
+  browser. The Playwright e2e suite (PR #67) now guards the restore and
+  click-guard paths automatically.
 
 ## Branch / sync state (as of this handoff)
 
