@@ -30,7 +30,7 @@ jobs:
         # failing the PR — it remains a guardrail that activates automatically
         # once real dependencies are introduced.
         continue-on-error: true
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           # Fail the PR if a dependency has a known vulnerability of this
           # severity or higher.
